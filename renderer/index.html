@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实时财经信息聚合 V2.1 wolfjkd制作</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 顶部工具栏 -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span class="logo-text">鼓掌财经</span>
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-text" id="statusText">连接中...</span>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-icon active" id="btnAutoscroll" title="自动滚动">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnPin" title="窗口置顶">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnLoadMore" title="加载更早的消息">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnSettings" title="设置">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 新闻列表 -->
+  <div class="news-container" id="newsContainer">
+    <div class="loading-indicator show" id="loadingIndicator">
+      <div class="spinner"></div>
+      <span>加载历史消息...</span>
+    </div>
+    <div id="newsList"></div>
+  </div>
+
+  <!-- 底部状态栏 -->
+  <div class="statusbar">
+    <span id="newsCount">0 条消息</span>
+    <span id="authStatus" class="auth-status"></span>
+    <span id="lastUpdate">--</span>
+  </div>
+
+  <!-- 授权到期遮罩（试用到期时弹出，只显示提示，不放激活入口） -->
+  <div class="auth-overlay" id="authOverlay" style="display:none;">
+    <div class="auth-panel">
+      <div class="auth-icon">🔒</div>
+      <h2 class="auth-title" id="authTitle">试用期已结束</h2>
+      <p class="auth-desc" id="authDesc">请联系作者获取激活码，然后在「设置 → 软件授权」中输入</p>
+      <button class="auth-btn" id="authOpenSettingsBtn" style="margin-top:8px;">打开设置</button>
+      <p class="auth-contact" style="margin-top:20px;">微信联系作者：wolfjkd</p>
+    </div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h3>设置</h3>
+        <button class="settings-close" id="settingsClose">&times;</button>
+      </div>
+
+      <!-- 消息来源筛选 -->
+      <div class="settings-section">
+        <div class="settings-section-title">消息来源</div>
+        <div class="source-list" id="sourceList">
+          <!-- 由 JS 动态生成 -->
+        </div>
+      </div>
+
+      <!-- 语音播报 -->
+      <div class="settings-section">
+        <div class="settings-section-title">语音播报</div>
+        <div class="setting-row">
+          <span class="setting-label">开启语音播报</span>
+          <label class="toggle">
+            <input type="checkbox" id="voiceEnabled">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="voice-row" id="voiceSettings" style="display:none;">
+          <select class="voice-select" id="voiceSelect"></select>
+          <button class="voice-test-btn" id="voiceTest">试听</button>
+        </div>
+        <div class="setting-row" id="voiceSpeedRow" style="display:none;">
+          <span class="setting-label">播报语速</span>
+          <select class="voice-select" id="voiceRate" style="width:80px;">
+            <option value="1">正常</option>
+            <option value="1.5" selected>偏快</option>
+            <option value="2">快</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 消息去重 -->
+      <div class="settings-section">
+        <div class="settings-section-title">消息去重</div>
+        <div class="setting-row">
+          <span class="setting-label">隐藏相似消息</span>
+          <label class="toggle">
+            <input type="checkbox" id="hideDuplicates" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">多个来源推送同一事件时，只显示一条并在下方标注来源数</div>
+      </div>
+
+      <!-- 关键词高亮 -->
+      <div class="settings-section">
+        <div class="settings-section-title">关键词高亮</div>
+        <div class="setting-row">
+          <span class="setting-label">开启关键词高亮</span>
+          <label class="toggle">
+            <input type="checkbox" id="keywordHighlight">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="keyword-input-row" id="keywordInputRow">
+          <input type="text" id="keywordInput" class="keyword-input" placeholder="输入关键词，回车添加（支持多个）">
+          <button id="keywordAddBtn" class="keyword-add-btn">添加</button>
+        </div>
+        <div class="keyword-tags" id="keywordTags"></div>
+        <div class="setting-hint">关键词会以高亮色标记在消息标题和正文中</div>
+      </div>
+
+      <!-- 其他设置 -->
+      <div class="settings-section">
+        <div class="settings-section-title">显示</div>
+        <div class="setting-row">
+          <span class="setting-label">显示关联股票</span>
+          <label class="toggle">
+            <input type="checkbox" id="showStocks" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示关联新闻</span>
+          <label class="toggle">
+            <input type="checkbox" id="showRelated" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 软件授权（放在最下端） -->
+      <div class="settings-section">
+        <div class="settings-section-title">软件授权</div>
+        <!-- 当前状态 -->
+        <div class="auth-info-row" id="authInfoRow">
+          <span class="auth-info-label">当前状态</span>
+          <span class="auth-info-value" id="authInfoValue">加载中...</span>
+        </div>
+        <!-- 机器指纹 -->
+        <div class="auth-info-row">
+          <span class="auth-info-label">本机指纹</span>
+          <div class="auth-fingerprint-row">
+            <code class="auth-fingerprint" id="authFingerprint">--</code>
+            <button class="btn-copy" id="btnCopyFingerprint" title="复制">复制</button>
+          </div>
+        </div>
+        <div class="setting-hint">激活码需要绑定此指纹，请将指纹发给作者获取激活码</div>
+        <!-- 激活码输入（始终显示） -->
+        <div class="auth-input-row" id="authInputRow" style="margin-top:10px;">
+          <input type="text" id="authKeyInput" class="auth-input" placeholder="输入激活码" maxlength="24" spellcheck="false">
+          <button class="auth-activate-btn" id="authActivateBtn">激活</button>
+        </div>
+        <p class="auth-hint" id="authHint" style="min-height:16px;margin-top:6px;"></p>
+        <!-- 支付宝收款码 -->
+        <div class="qrcode-section" style="margin-top:15px; text-align:center;">
+          <div class="qrcode-label" style="font-size:13px; color:#666; margin-bottom:10px;">支付宝扫码5元，打赏作者Token消耗，获得永久激活</div>
+          <img src="收款码5元.png" alt="支付宝收款码" class="qrcode-img" style="max-width:156%; max-height:312px; border:1px solid #eee; border-radius:4px;">
+        </div>
+        <!-- GitHub 主页链接 -->
+        <div style="margin-top:15px; text-align:center; padding-top:12px; border-top:1px solid #eee;">
+          <a href="https://github.com/wolfjkd" target="_blank" style="color:#0366d6; font-size:13px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+            访问作者主页，获取更多...
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
