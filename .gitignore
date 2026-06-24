@@ -4,20 +4,6 @@ __pycache__/
 *$py.class
 *.so
 *.egg-info/
-dist/
-build/
-*.spec
-
-# PyInstaller
-*.exe
-*.dll
-*.manifest
-*.spec
-
-# Virtual environment
-venv/
-env/
-.env/
 
 # IDE
 .idea/
@@ -28,9 +14,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
-
-# Auth (sensitive)
-auth.dat
 
 # Temporary files
 *.tmp
