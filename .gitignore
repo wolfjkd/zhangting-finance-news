@@ -18,3 +18,14 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Auth/license data (contains machine-specific info)
+auth.dat
+
+# PyInstaller
+*.manifest

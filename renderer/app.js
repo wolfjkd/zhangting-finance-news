@@ -15,9 +15,11 @@
   let hiddenCount = 0;
   let oldestCtime = null;
   const seenAids = new Set();
+  const newAidBuffer = []; // 本次启动新增的 aid，待持久化
   // 相似消息去重：记录最近显示的消息 { aid, title, el, sources, dupCount }
   const recentItems = [];
   const MAX_RECENT = 80; // 只与最近80条比较，避免性能问题
+  const MAX_DOM_ITEMS = 500; // 虚拟滚动：最多保留 DOM 节点数
 
   // ===== 设置 =====
   const ALL_SOURCES = [
@@ -61,9 +63,21 @@
   const $keywordInput = document.getElementById('keywordInput');
   const $keywordAddBtn = document.getElementById('keywordAddBtn');
   const $keywordTags = document.getElementById('keywordTags');
+  const $keywordAlert = document.getElementById('keywordAlert');
 
   // ===== 初始化 =====
   async function init() {
+    // 1. 从 SQLite 加载已读 aid（持久化去重）
+    try {
+      const persisted = await pywebview.api.get_seen_aids();
+      const aids = typeof persisted === 'string' ? JSON.parse(persisted) : persisted;
+      if (Array.isArray(aids)) {
+        aids.forEach(aid => seenAids.add(aid));
+      }
+    } catch (e) {
+      // ignore
+    }
+
     setStatus('connecting', '正在获取数据...');
     try {
       const result = await pywebview.api.fetch_initial();
@@ -136,6 +150,7 @@
         const aid = li.dataset.aid || '';
         if (!aid || seenAids.has(aid)) return;
         seenAids.add(aid);
+        newAidBuffer.push(aid);
 
         const categoryId = parseInt(li.dataset.categoryId) || 0;
 
@@ -195,10 +210,15 @@
     const source = item.comefrom || '';
     if (settings.sources.length > 0 && source && !settings.sources.includes(source)) {
       seenAids.add(item.aid);
+      newAidBuffer.push(item.aid);
       return;
     }
 
     seenAids.add(item.aid);
+    newAidBuffer.push(item.aid);
+
+    // 新闻分类
+    classifyItem(item);
 
     // === 相似消息去重 ===
     const similar = findSimilarItem(item.title);
@@ -213,6 +233,9 @@
     const el = renderNewsItem(item);
     $newsList.prepend(el);
     newsCount++;
+
+    // 存储到历史
+    storeToHistory(item);
 
     // 记录到最近列表
     const record = { aid: item.aid, title: item.title || '', el: el, sources: [], dupCount: 1 };
@@ -241,6 +264,9 @@
   // ===== 追加历史 =====
   function appendNewsItem(item) {
     // 来源过滤（初始加载不过滤，只过滤实时推送）
+
+    // 新闻分类
+    classifyItem(item);
 
     // === 相似消息去重（历史加载也做） ===
     const similar = findSimilarItem(item.title);
@@ -277,6 +303,11 @@
       div.classList.add('highlight');
     }
 
+    // 优先级样式
+    if (item.classification && item.classification.priority) {
+      div.classList.add('priority-' + item.classification.priority);
+    }
+
     const timeStr = item.ptime || formatTime(item.ctime);
     const source = item.comefrom || '';
 
@@ -288,12 +319,24 @@
       return '';
     };
 
+    // 分类标签
+    let tagsHTML = '';
+    if (item.classification && window.newsClassifier) {
+      tagsHTML = window.newsClassifier.getCategoryTagsHTML(item.classification) +
+                 window.newsClassifier.getPriorityBadgeHTML(item.classification);
+    }
+
+    // 判断是否为可展开详情的数据源（东方财富公告/券商研报）
+    const isDetailSource = source === '东方财富' || source === '券商研报';
+    const titleClickable = isDetailSource ? 'clickable' : '';
+
     let html = `
       <div class="news-header">
         <span class="news-time">${esc(timeStr)}</span>
         ${source ? `<span class="news-source">${esc(source)}</span>` : ''}
       </div>
-      <div class="news-title">${esc(item.title || '')}</div>
+      ${tagsHTML ? `<div class="news-tags">${tagsHTML}</div>` : ''}
+      <div class="news-title ${titleClickable}">${esc(item.title || '')}${isDetailSource ? '<span class="news-detail-hint">▸详情</span>' : ''}</div>
     `;
 
     if (item.content) {
@@ -328,6 +371,17 @@
       highlightElement(div);
     }
 
+    // 关键词触发警报
+    checkKeywordAlert(item.title, item.content);
+
+    // 可点击展开详情（东方财富公告/券商研报）
+    if (isDetailSource) {
+      const titleEl = div.querySelector('.news-title');
+      if (titleEl) {
+        titleEl.addEventListener('click', () => showNewsDetail(item));
+      }
+    }
+
     return div;
   }
 
@@ -344,6 +398,7 @@
         data.data.forEach(item => {
           if (!seenAids.has(item.aid)) {
             seenAids.add(item.aid);
+            newAidBuffer.push(item.aid);
             appendNewsItem(item);
           }
         });
@@ -427,7 +482,9 @@
       showRelated: true,
       hideDuplicates: true,
       keywordHighlight: false,
-      keywords: []
+      keywords: [],
+      keywordAlert: false, // 关键词触发警报声
+      keywordAlertKeywords: [], // 触发警报的关键词（可独立于高亮关键词）
     };
   }
 
@@ -511,6 +568,13 @@
       } else {
         removeHighlightAll();
       }
+    });
+
+    // 关键词警报开关
+    $keywordAlert.checked = settings.keywordAlert;
+    $keywordAlert.addEventListener('change', () => {
+      settings.keywordAlert = $keywordAlert.checked;
+      saveSettings();
     });
 
     renderKeywordTags();
@@ -668,6 +732,191 @@
     $newsList.normalize();
   }
 
+  // ===== 关键词触发警报 =====
+  let lastAlertTime = 0;
+  const ALERT_COOLDOWN = 3000; // 3秒冷却，防止连续轰炸
+
+  /**
+   * 检测标题/内容是否命中警报关键词，命中则播放警报音+弹窗通知
+   */
+  function checkKeywordAlert(title, content) {
+    if (!settings.keywordAlert) return;
+    const alertKws = settings.keywordAlertKeywords && settings.keywordAlertKeywords.length > 0
+      ? settings.keywordAlertKeywords
+      : settings.keywords; // 如果没单独设置，用高亮关键词
+    if (!alertKws || alertKws.length === 0) return;
+
+    const text = (title || '') + ' ' + (content || '');
+    for (const kw of alertKws) {
+      if (text.includes(kw)) {
+        triggerAlert(title, kw);
+        return;
+      }
+    }
+  }
+
+  function triggerAlert(title, keyword) {
+    const now = Date.now();
+    if (now - lastAlertTime < ALERT_COOLDOWN) return;
+    lastAlertTime = now;
+
+    // 播放警报音（用 AudioContext 合成，无需外部文件）
+    playAlertSound();
+
+    // 弹窗通知
+    showKeywordNotification(title, keyword);
+  }
+
+  function playAlertSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // 两声短促的蜂鸣
+      [0, 0.15].forEach(offset => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + offset + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + 0.15);
+      });
+    } catch (e) {
+      // fallback: 尝试系统 beep
+    }
+  }
+
+  function showKeywordNotification(title, keyword) {
+    // 创建浮层通知
+    const notif = document.createElement('div');
+    notif.className = 'kw-alert-notification';
+    notif.innerHTML = `
+      <div class="kw-alert-header">
+        <span class="kw-alert-icon">🔔</span>
+        <span class="kw-alert-title">关键词命中：${esc(keyword)}</span>
+        <span class="kw-alert-close">&times;</span>
+      </div>
+      <div class="kw-alert-body">${esc(title || '')}</div>
+    `;
+    document.body.appendChild(notif);
+
+    notif.querySelector('.kw-alert-close').addEventListener('click', () => {
+      notif.classList.add('kw-alert-dismiss');
+      setTimeout(() => notif.remove(), 300);
+    });
+
+    // 5秒后自动消失
+    setTimeout(() => {
+      if (notif.parentNode) {
+        notif.classList.add('kw-alert-dismiss');
+        setTimeout(() => notif.remove(), 300);
+      }
+    }, 5000);
+  }
+
+  // ===== 新闻分类 =====
+  function classifyItem(item) {
+    if (!window.newsClassifier) return;
+    try {
+      const cls = window.newsClassifier.classifyNews(item.title || '', item.content || '');
+      item.classification = cls;
+      item.category = cls.categories.length > 0 ? cls.categories[0].name : '';
+      item.priority = cls.priority;
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // ===== 历史存储 =====
+  function storeToHistory(item) {
+    if (!window.historyStorage) return;
+    try {
+      window.historyStorage.storeMessage(item).catch(() => {});
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // ===== 新闻详情弹窗 =====
+  async function showNewsDetail(item) {
+    // 加载状态
+    const overlay = document.createElement('div');
+    overlay.className = 'news-detail-overlay';
+    overlay.innerHTML = `
+      <div class="news-detail-panel">
+        <div class="news-detail-header">
+          <span class="detail-source">${esc(item.comefrom || '详情')}</span>
+          <button class="news-detail-close">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#e53935">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="news-detail-body">
+          <div class="detail-title">${esc(item.title || '')}</div>
+          <div class="detail-time">${esc(item.ptime || '')}  ${esc(item.comefrom || '')}</div>
+          <div class="detail-content" style="color:#999;">加载详情中...</div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // 点击遮罩关闭
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    overlay.querySelector('.news-detail-close').addEventListener('click', () => overlay.remove());
+    const escHandler = (e) => {
+      if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+    };
+    document.addEventListener('keydown', escHandler);
+
+    // 请求后端获取详情正文
+    try {
+      console.log('[详情] 请求详情, item keys:', Object.keys(item), 'art_code:', item.art_code, 'info_code:', item.info_code);
+      let detailContent = '';
+      if (item.art_code && window.pywebview && window.pywebview.api) {
+        console.log('[详情] 调用 get_announcement_detail, art_code:', item.art_code);
+        const resp = await pywebview.api.get_announcement_detail(item.art_code);
+        console.log('[详情] 公告详情返回:', resp);
+        const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
+        if (data.status === 'ok' && data.content) {
+          detailContent = data.content;
+        }
+      } else if (item.info_code && window.pywebview && window.pywebview.api) {
+        console.log('[详情] 调用 get_research_detail, info_code:', item.info_code);
+        const resp = await pywebview.api.get_research_detail(item.info_code);
+        console.log('[详情] 研报详情返回:', resp);
+        const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
+        if (data.status === 'ok' && data.content) {
+          detailContent = data.content;
+        }
+      } else {
+        console.log('[详情] 没有 art_code 或 info_code，无法请求详情');
+      }
+
+      const contentEl = overlay.querySelector('.detail-content');
+      if (contentEl) {
+        if (detailContent) {
+          contentEl.style.color = '';
+          contentEl.textContent = detailContent;
+        } else {
+          contentEl.textContent = item.content || '暂无详细内容';
+          contentEl.style.color = '#666';
+        }
+      }
+    } catch (err) {
+      const contentEl = overlay.querySelector('.detail-content');
+      if (contentEl) {
+        contentEl.textContent = '加载详情失败: ' + err.message;
+        contentEl.style.color = '#f44336';
+      }
+    }
+  }
+
   // ===== 标题相似度去重 =====
 
   /**
@@ -796,6 +1045,35 @@
     $newsCount.textContent = text;
     const d = new Date();
     $lastUpdate.textContent = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+
+    // 虚拟滚动：超出上限时移除最旧的 DOM 节点
+    trimOldDomItems();
+
+    // 定期持久化已读 aid（每 50 条批量写一次）
+    if (newAidBuffer.length >= 50) {
+      flushAidBuffer();
+    }
+  }
+
+  function trimOldDomItems() {
+    const children = $newsList.children;
+    if (children.length <= MAX_DOM_ITEMS) return;
+    const toRemove = children.length - MAX_DOM_ITEMS;
+    // 移除最旧的（列表末尾的）
+    for (let i = 0; i < toRemove; i++) {
+      const el = children[children.length - 1];
+      if (el) $newsList.removeChild(el);
+    }
+    // 从 recentItems 中也清理
+    if (recentItems.length > MAX_RECENT) {
+      recentItems.splice(0, recentItems.length - MAX_RECENT);
+    }
+  }
+
+  function flushAidBuffer() {
+    if (newAidBuffer.length === 0) return;
+    const batch = newAidBuffer.splice(0, newAidBuffer.length);
+    pywebview.api.persist_seen_aids(JSON.stringify(batch)).catch(() => {});
   }
 
   // ===== 滚动检测 =====
@@ -936,6 +1214,11 @@
   }
 
   // ===== 启动 =====
+  // 页面关闭前持久化剩余 aid
+  window.addEventListener('beforeunload', () => {
+    flushAidBuffer();
+  });
+
   function waitForApi(retries) {
     if (typeof pywebview !== 'undefined' && pywebview.api && typeof pywebview.api.fetch_initial === 'function') {
       init();

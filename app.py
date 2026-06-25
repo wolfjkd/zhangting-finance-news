@@ -20,8 +20,71 @@ import websocket
 import re
 import hashlib
 import uuid
+import logging
+import sqlite3
 
+# ===== 直连 HTTP Session（不走系统代理）=====
+_http = requests.Session()
+_http.trust_env = False  # 国内 API 必须直连
+_http.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+})
 
+# ===== 日志系统 =====
+_LOG_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'GuzhangNews')
+os.makedirs(_LOG_DIR, exist_ok=True)
+_LOG_FILE = os.path.join(_LOG_DIR, 'app.log')
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(_LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler(sys.stdout),
+    ]
+)
+logger = logging.getLogger('guzhang')
+
+# ===== 去重持久化（SQLite）=====
+_DB_PATH = os.path.join(_LOG_DIR, 'seen_aid.db')
+
+def _init_seen_db():
+    """初始化去重数据库"""
+    conn = sqlite3.connect(_DB_PATH)
+    conn.execute('CREATE TABLE IF NOT EXISTS seen_aid (aid TEXT PRIMARY KEY, ts INTEGER)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_ts ON seen_aid(ts)')
+    conn.commit()
+    conn.close()
+    logger.info('去重数据库已初始化: %s', _DB_PATH)
+
+def _persist_seen_aids(aid_list):
+    """批量持久化已读 aid（前端调用，传入新添加的 aid 列表）"""
+    if not aid_list:
+        return
+    conn = sqlite3.connect(_DB_PATH)
+    now = int(time.time())
+    conn.executemany('INSERT OR IGNORE INTO seen_aid (aid, ts) VALUES (?, ?)',
+                     [(aid, now) for aid in aid_list])
+    conn.commit()
+    conn.close()
+
+def _get_all_seen_aids():
+    """获取所有已读 aid（前端初始化时加载）"""
+    conn = sqlite3.connect(_DB_PATH)
+    rows = conn.execute('SELECT aid FROM seen_aid').fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+def _cleanup_old_seen_aids(days=7):
+    """清理超过 N 天的旧记录，防止数据库无限膨胀"""
+    conn = sqlite3.connect(_DB_PATH)
+    cutoff = int(time.time()) - days * 86400
+    deleted = conn.execute('DELETE FROM seen_aid WHERE ts < ?', (cutoff,)).rowcount
+    conn.commit()
+    conn.close()
+    if deleted > 0:
+        logger.info('清理了 %d 条过期去重记录', deleted)
 SOURCE_URL = 'https://724.guzhang.com/'
 
 # ===== 授权配置 =====
@@ -169,6 +232,7 @@ class Api:
         self._ws = None
         self._ws_thread = None
         self._running = False
+        self._data_source_manager = None
 
     def activate_license(self, key):
         """前端调用：用户输入激活码"""
@@ -176,8 +240,24 @@ class Api:
             return json.dumps({'status': 'ok'})
         return json.dumps({'status': 'error', 'message': '激活码无效或不匹配本机'}, ensure_ascii=False)
 
+    def get_seen_aids(self):
+        """前端初始化时获取所有已读 aid"""
+        aids = _get_all_seen_aids()
+        return json.dumps(aids)
+
+    def persist_seen_aids(self, aid_list):
+        """前端批量持久化新添加的 aid"""
+        try:
+            aids = json.loads(aid_list) if isinstance(aid_list, str) else aid_list
+            _persist_seen_aids(aids)
+            return json.dumps({'status': 'ok', 'count': len(aids)})
+        except Exception as e:
+            logger.error('持久化aid失败: %s', e)
+            return json.dumps({'status': 'error', 'message': str(e)})
+
     def fetch_initial(self):
         """抓取初始页面，返回解析后的新闻列表和 WS 配置"""
+        logger.info('开始抓取初始页面: %s', SOURCE_URL)
         try:
             resp = requests.get(SOURCE_URL, timeout=15, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -197,6 +277,7 @@ class Api:
                 except:
                     self._ws_config = None
 
+            logger.info('初始页面抓取成功，token=%s, wsConfig=%s', bool(self._token), bool(self._ws_config))
             return json.dumps({
                 'status': 'ok',
                 'html': html,
@@ -204,6 +285,7 @@ class Api:
                 'wsConfig': self._ws_config
             }, ensure_ascii=False)
         except Exception as e:
+            logger.error('初始页面抓取失败: %s', e)
             return json.dumps({
                 'status': 'error',
                 'message': str(e)
@@ -212,12 +294,15 @@ class Api:
     def start_ws(self):
         """启动 WebSocket 代理线程"""
         if not self._token or not self._ws_config:
+            logger.warning('启动WS失败: 缺少 token 或 wsConfig')
             return json.dumps({'status': 'error', 'message': '缺少 token 或 wsConfig'})
         if self._ws_thread and self._running:
+            logger.info('WS已在运行，跳过')
             return json.dumps({'status': 'ok', 'message': '已在运行'})
         self._running = True
         self._ws_thread = threading.Thread(target=self._ws_loop, daemon=True)
         self._ws_thread.start()
+        logger.info('WebSocket 代理线程已启动')
         return json.dumps({'status': 'ok'})
 
     def stop_ws(self):
@@ -268,14 +353,17 @@ class Api:
                 )
                 self._ws.run_forever(ping_interval=30, ping_timeout=10)
             except Exception as e:
+                logger.error('WebSocket 异常: %s', e)
                 self._notify_js('ws_error', str(e))
 
             if not self._running:
                 break
+            logger.info('WebSocket 断线，%d秒后重连...', int(delay))
             time.sleep(delay)
             delay = min(delay * 1.5, 30)
 
     def _on_ws_open(self):
+        logger.info('WebSocket 连接已建立')
         self._notify_js('ws_open', '')
 
     def _on_ws_message(self, raw):
@@ -288,9 +376,11 @@ class Api:
         self._notify_js('ws_message', raw)
 
     def _on_ws_error(self, err):
+        logger.warning('WebSocket 错误: %s', err)
         self._notify_js('ws_error', err)
 
     def _on_ws_close(self):
+        logger.info('WebSocket 连接关闭')
         self._notify_js('ws_close', '')
 
     def _notify_js(self, event, data):
@@ -304,6 +394,185 @@ class Api:
             except:
                 pass
 
+    def init_data_source_manager(self):
+        """初始化数据源管理器"""
+        try:
+            from data_source_manager import data_source_manager
+            self._data_source_manager = data_source_manager
+            # 设置回调：数据源消息 → 推送到前端（走 ws_message 通道）
+            data_source_manager.set_message_callback(self._on_data_source_message)
+            data_source_manager.start_all_enabled_sources()
+            logger.info('数据源管理器初始化完成')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.error('初始化数据源管理器失败: %s', e)
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def _on_data_source_message(self, message):
+        """数据源消息回调 → 推送到前端"""
+        try:
+            self._notify_js('ws_message', json.dumps(message, ensure_ascii=False))
+        except Exception as e:
+            logger.error('推送数据源消息失败: %s', e)
+
+    def get_stock_quote(self, code):
+        """获取实时股票行情（腾讯财经 API，直连）"""
+        try:
+            code = str(code).strip()
+            # 转换为腾讯格式
+            if code.startswith('6'):
+                tdx_code = f'sh{code}'
+            elif code.startswith(('0', '3')):
+                tdx_code = f'sz{code}'
+            elif code.startswith(('8', '4')):
+                tdx_code = f'bj{code}'
+            else:
+                return json.dumps({'status': 'error', 'message': '无法识别的股票代码'})
+
+            url = f'https://qt.gtimg.cn/q={tdx_code}'
+            resp = _http.get(url, timeout=5)
+            resp.encoding = 'gbk'
+            text = resp.text.strip()
+
+            # 解析腾讯行情格式：v_sh600000="1~浦发银行~600000~10.15~..."
+            match = re.search(r'v_\w+="([^"]+)"', text)
+            if not match:
+                return json.dumps({'status': 'error', 'message': '行情数据解析失败'})
+
+            fields = match.group(1).split('~')
+            if len(fields) < 35:
+                return json.dumps({'status': 'error', 'message': '行情数据不完整'})
+
+            quote = {
+                'code': code,
+                'name': fields[1],
+                'price': float(fields[3]) if fields[3] else 0,
+                'yesterdayClose': float(fields[4]) if fields[4] else 0,
+                'open': float(fields[5]) if fields[5] else 0,
+                'volume': int(float(fields[6])) * 100 if fields[6] else 0,  # 手 → 股
+                'amount': float(fields[37]) * 10000 if len(fields) > 37 and fields[37] else 0,  # 万元 → 元
+                'high': float(fields[33]) if fields[33] else 0,
+                'low': float(fields[34]) if fields[34] else 0,
+                'timestamp': fields[30] if len(fields) > 30 else '',
+            }
+
+            # 计算涨跌额和涨跌幅
+            if quote['yesterdayClose'] > 0:
+                quote['change'] = round(quote['price'] - quote['yesterdayClose'], 4)
+                quote['changePercent'] = round(
+                    (quote['price'] - quote['yesterdayClose']) / quote['yesterdayClose'] * 100, 2
+                )
+            else:
+                quote['change'] = 0
+                quote['changePercent'] = 0
+
+            # 市场标识
+            if code.startswith('6'):
+                quote['market'] = 'SH'
+            elif code.startswith(('0', '3')):
+                quote['market'] = 'SZ'
+            elif code.startswith(('8', '4')):
+                quote['market'] = 'BJ'
+            else:
+                quote['market'] = ''
+
+            return json.dumps({'status': 'ok', 'quote': quote}, ensure_ascii=False)
+
+        except Exception as e:
+            logger.error('获取行情失败 %s: %s', code, e)
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_announcement_detail(self, art_code):
+        """获取公告详情正文"""
+        try:
+            url = 'https://np-cnotice-stock.eastmoney.com/api/content/ann'
+            params = {'art_code': art_code, 'client_source': 'web'}
+            resp = _http.get(url, params=params, timeout=15)
+            data = resp.json()
+            content = ''
+            if data and data.get('data'):
+                content = data['data'].get('notice_content', '')
+            return json.dumps({'status': 'ok', 'content': content}, ensure_ascii=False)
+        except Exception as e:
+            logger.error('获取公告详情失败 %s: %s', art_code, e)
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_research_detail(self, info_code):
+        """获取研报详情（结构化数据，研报正文为PDF无法直接提取）"""
+        try:
+            url = 'https://reportapi.eastmoney.com/report/list'
+            params = {
+                'industryCode': '*', 'pageSize': 50, 'industry': '*',
+                'rating': '', 'ratingChange': '',
+                'beginTime': '2024-01-01', 'endTime': '2026-12-31',
+                'pageNo': 1, 'fields': '', 'qType': 0, 'orgCode': '',
+            }
+            resp = _http.get(url, params=params, timeout=15)
+            data = resp.json()
+            rows = data.get('data', [])
+            content = ''
+            for row in rows:
+                if row.get('infoCode') == info_code:
+                    parts = []
+                    if row.get('stockName'):
+                        parts.append(f"股票: {row['stockName']}({row.get('stockCode','')})")
+                    if row.get('emRatingName'):
+                        parts.append(f"评级: {row['emRatingName']}")
+                    if row.get('lastEmRatingName') and row.get('lastEmRatingName') != row.get('emRatingName'):
+                        parts.append(f"上次评级: {row['lastEmRatingName']}")
+                    if row.get('orgSName') or row.get('orgName'):
+                        parts.append(f"研究机构: {row.get('orgSName') or row.get('orgName', '')}")
+                    if row.get('researcher'):
+                        parts.append(f"研究员: {row['researcher']}")
+                    if row.get('indvAimPriceT'):
+                        parts.append(f"目标价: {row['indvAimPriceT']}")
+                    if row.get('indvInduName'):
+                        parts.append(f"行业: {row['indvInduName']}")
+                    if row.get('publishDate'):
+                        parts.append(f"发布日期: {row['publishDate']}")
+                    if row.get('attachPages'):
+                        parts.append(f"页数: {row['attachPages']}页")
+                    if row.get('title'):
+                        parts.append(f"\n研报标题: {row['title']}")
+                    content = '\n'.join(parts)
+                    break
+            return json.dumps({'status': 'ok', 'content': content}, ensure_ascii=False)
+        except Exception as e:
+            logger.error('获取研报详情失败 %s: %s', info_code, e)
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_data_sources(self):
+        """获取所有数据源列表"""
+        if not self._data_source_manager:
+            return json.dumps({'status': 'error', 'message': '数据源管理器未初始化'})
+        
+        sources = self._data_source_manager.get_all_sources()
+        return json.dumps({'status': 'ok', 'sources': sources}, ensure_ascii=False)
+
+    def enable_data_source(self, source_id):
+        """启用数据源"""
+        if not self._data_source_manager:
+            return json.dumps({'status': 'error', 'message': '数据源管理器未初始化'})
+        
+        success = self._data_source_manager.enable_source(source_id)
+        return json.dumps({'status': 'ok' if success else 'error'})
+
+    def disable_data_source(self, source_id):
+        """禁用数据源"""
+        if not self._data_source_manager:
+            return json.dumps({'status': 'error', 'message': '数据源管理器未初始化'})
+        
+        success = self._data_source_manager.disable_source(source_id)
+        return json.dumps({'status': 'ok' if success else 'error'})
+
+    def test_data_source(self, source_id):
+        """测试数据源连接"""
+        if not self._data_source_manager:
+            return json.dumps({'status': 'error', 'message': '数据源管理器未初始化'})
+        
+        result = self._data_source_manager.test_source_connection(source_id)
+        return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)
+
 
 def get_html_path():
     """获取 HTML 文件路径"""
@@ -315,6 +584,12 @@ def get_html_path():
 
 
 def main():
+    logger.info('=== 财经信息聚合播报 V3.1版 启动 ===')
+
+    # 初始化去重数据库 + 清理旧记录
+    _init_seen_db()
+    _cleanup_old_seen_aids(days=7)
+
     window_ref = None
 
     def on_loaded(window):
@@ -325,9 +600,10 @@ def main():
 
     # 检查授权
     status, message, expiry = check_license()
+    logger.info('授权状态: %s - %s', status, message)
 
     window = webview.create_window(
-        '实时财经信息聚合 V2.1 wolfjkd制作',
+        '财经信息聚合播报 V3.1版  开发：wolfjkd',
         url=get_html_path(),
         width=500,
         height=800,
@@ -356,6 +632,20 @@ def main():
             w.evaluate_js(f"window._authInfo = {auth_json}; window._onAuthReady && window._onAuthReady();")
         except:
             pass
+
+    # 自动初始化数据源管理器（不再依赖前端手动触发）
+    try:
+        from data_source_manager import data_source_manager
+        api._data_source_manager = data_source_manager
+        data_source_manager.set_message_callback(api._on_data_source_message)
+        # 启动数据源轮询（延迟3秒，等窗口加载完）
+        threading.Thread(
+            target=lambda: (time.sleep(3), data_source_manager.start_all_enabled_sources()),
+            daemon=True
+        ).start()
+        logger.info('数据源管理器自动初始化完成')
+    except Exception as e:
+        logger.error('数据源管理器自动初始化失败: %s', e)
 
     def on_loaded_with_auth(window):
         nonlocal window_ref

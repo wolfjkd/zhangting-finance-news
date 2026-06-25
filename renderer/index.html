@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>实时财经信息聚合 V2.1 wolfjkd制作</title>
+  <title>实时财经信息聚合 V3.1 wolfjkd制作</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,6 +28,21 @@
       <button class="btn btn-icon" id="btnLoadMore" title="加载更早的消息">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnHistory" title="历史消息搜索">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnExport" title="导出消息">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnDataSources" title="数据源管理">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
         </svg>
       </button>
       <button class="btn btn-icon" id="btnSettings" title="设置">
@@ -71,6 +86,19 @@
       <div class="settings-header">
         <h3>设置</h3>
         <button class="settings-close" id="settingsClose">&times;</button>
+      </div>
+
+      <!-- 数据源 -->
+      <div class="settings-section">
+        <div class="settings-section-title">数据源</div>
+        <div class="setting-row">
+          <span class="setting-label">鼓掌财经</span>
+          <label class="toggle">
+            <input type="checkbox" id="guzhangEnabled" checked disabled>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">数据来源：鼓掌财经聚合平台</div>
       </div>
 
       <!-- 消息来源筛选 -->
@@ -134,6 +162,14 @@
         </div>
         <div class="keyword-tags" id="keywordTags"></div>
         <div class="setting-hint">关键词会以高亮色标记在消息标题和正文中</div>
+        <div class="setting-row" style="margin-top:8px;">
+          <span class="setting-label">关键词触发警报</span>
+          <label class="toggle">
+            <input type="checkbox" id="keywordAlert">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">命中关键词时播放警报声并弹窗提醒（使用高亮关键词列表）</div>
       </div>
 
       <!-- 其他设置 -->
@@ -196,6 +232,12 @@
     </div>
   </div>
 
+  <!-- 新功能模块 -->
+  <script src="modules/news-classifier.js"></script>
+  <script src="modules/stock-quote.js"></script>
+  <script src="modules/history-storage.js"></script>
+  <script src="modules/ui-enhancements.js"></script>
+  
   <script src="app.js"></script>
 </body>
 </html>
