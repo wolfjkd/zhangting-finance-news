@@ -8,7 +8,7 @@ class NewsClassifier {
     // 分类规则配置
     this.categories = {
       '政策': {
-        keywords: ['央行', '财政部', '国务院', '发改委', '证监会', '银保监', '政策', '法规', '监管', '改革', '调控'],
+        keywords: ['央行', '财政部', '国务院', '发改委', '银保监', '政策', '法规', '监管改革', '调控', '降准', '加息', '降息', 'MLF', 'LPR', '逆回购', '国债', '财政部发文', '证监会政策'],
         color: '#FF6B6B',
         icon: '🏛️'
       },
@@ -18,7 +18,7 @@ class NewsClassifier {
         icon: '💰'
       },
       '公司': {
-        keywords: ['业绩', '财报', '营收', '净利润', '公告', '重组', '并购', '增持', '减持', '回购', '分红'],
+        keywords: ['业绩', '财报', '营收', '净利润', '公告', '重组', '并购', '增持', '减持', '回购', '分红', '证监会问询', '问询函', '关注函', '警示函', '处罚', '立案', '被ST', '摘帽', '业绩预告', '业绩快报'],
         color: '#45B7D1',
         icon: '🏢'
       },
@@ -32,8 +32,8 @@ class NewsClassifier {
         color: '#FFEAA7',
         icon: '📊'
       },
-      '技术': {
-        keywords: ['突破', '支撑', '压力', '均线', 'MACD', 'KDJ', 'RSI', '金叉', '死叉', '背离'],
+      '技术指标': {
+        keywords: ['突破', '支撑', '压力', '均线', 'MACD', 'KDJ', 'RSI', '金叉', '死叉', '背离', '布林', '成交量', '换手率', '量价'],
         color: '#DDA0DD',
         icon: '📈'
       }
@@ -81,7 +81,7 @@ class NewsClassifier {
     const text = `${title} ${content}`;
     const result = {
       categories: [],
-      priority: 'low',
+      priority: '',
       priorityScore: 0,
       stocks: [],
       amounts: [],
@@ -150,10 +150,18 @@ class NewsClassifier {
    * 获取优先级标识HTML
    */
   getPriorityBadgeHTML(classification) {
+    if (!classification.priority || classification.priority === 'low') return '';
     const config = this.priorityRules[classification.priority];
+    if (!config) return '';
+    const priorityNames = {
+      'critical': '重要',
+      'high': '高',
+      'medium': '中',
+      'low': '普通'
+    };
     return `<span class="priority-badge priority-${classification.priority}" 
       style="background-color: ${config.color}20; color: ${config.color}; border: 1px solid ${config.color}40">
-      ${classification.priority.toUpperCase()}
+      ${priorityNames[classification.priority]}
     </span>`;
   }
 

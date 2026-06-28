@@ -5,6 +5,10 @@ __pycache__/
 *.so
 *.egg-info/
 
+# WorkBuddy / Trae 本地开发目录
+.workbuddy/
+.workbuddy记忆目录/
+
 # IDE
 .idea/
 .vscode/

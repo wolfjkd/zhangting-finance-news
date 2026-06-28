@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>实时财经信息聚合 V3.1 wolfjkd制作</title>
+  <title>财经信息聚合播报 v3.6.0版</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- 顶部工具栏 -->
   <div class="toolbar">
     <div class="toolbar-left">
-      <span class="logo-text">鼓掌财经</span>
       <span class="status-dot" id="statusDot"></span>
       <span class="status-text" id="statusText">连接中...</span>
     </div>
@@ -42,7 +41,12 @@
       </button>
       <button class="btn btn-icon" id="btnDataSources" title="数据源管理">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnWatchlist" title="自选股">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
         </svg>
       </button>
       <button class="btn btn-icon" id="btnSettings" title="设置">
@@ -66,7 +70,25 @@
   <div class="statusbar">
     <span id="newsCount">0 条消息</span>
     <span id="authStatus" class="auth-status"></span>
-    <span id="lastUpdate">--</span>
+    <div class="statusbar-right">
+      <span id="lastUpdate">--</span>
+      <button class="btn btn-icon theme-toggle-btn" id="btnThemeToggle" title="切换主题">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <defs>
+            <clipPath id="themeLeft">
+              <rect x="2" y="2" width="10" height="20"/>
+            </clipPath>
+            <clipPath id="themeRight">
+              <rect x="12" y="2" width="10" height="20"/>
+            </clipPath>
+          </defs>
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+          <circle cx="12" cy="12" r="10" fill="white" clip-path="url(#themeLeft)"/>
+          <circle cx="12" cy="12" r="10" fill="currentColor" clip-path="url(#themeRight)"/>
+          <path d="M12 2v20" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <!-- 授权到期遮罩（试用到期时弹出，只显示提示，不放激活入口） -->
@@ -85,20 +107,11 @@
     <div class="settings-panel">
       <div class="settings-header">
         <h3>设置</h3>
-        <button class="settings-close" id="settingsClose">&times;</button>
-      </div>
-
-      <!-- 数据源 -->
-      <div class="settings-section">
-        <div class="settings-section-title">数据源</div>
-        <div class="setting-row">
-          <span class="setting-label">鼓掌财经</span>
-          <label class="toggle">
-            <input type="checkbox" id="guzhangEnabled" checked disabled>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-hint">数据来源：鼓掌财经聚合平台</div>
+        <button class="settings-close" id="settingsClose" title="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="#e53935">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          </svg>
+        </button>
       </div>
 
       <!-- 消息来源筛选 -->
@@ -191,6 +204,36 @@
         </div>
       </div>
 
+      <!-- 自选股异动提醒 -->
+      <div class="settings-section">
+        <div class="settings-section-title">自选股异动提醒</div>
+        <div class="setting-row">
+          <span class="setting-label">开启异动提醒</span>
+          <label class="toggle">
+            <input type="checkbox" id="watchlistAlertEnabled">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">自选股涨跌幅超过阈值时弹窗+声音提醒</div>
+        <div class="setting-row" style="margin-top:10px;">
+          <span class="setting-label">提醒阈值（%）</span>
+          <input type="number" id="watchlistAlertThreshold" value="5" min="1" max="20" step="0.5" style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-align:center;">
+        </div>
+        <div class="setting-hint">涨跌幅超过此值时触发提醒（正值为涨，负值为跌）</div>
+        <div class="setting-row" style="margin-top:10px;">
+          <span class="setting-label">提醒间隔（分钟）</span>
+          <input type="number" id="watchlistAlertInterval" value="5" min="1" max="60" style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-align:center;">
+        </div>
+        <div class="setting-hint">同一只股票提醒后的冷却时间，避免频繁提醒</div>
+        <div class="setting-row" style="margin-top:10px;">
+          <span class="setting-label">提醒声音</span>
+          <label class="toggle">
+            <input type="checkbox" id="watchlistAlertSound" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
       <!-- 软件授权（放在最下端） -->
       <div class="settings-section">
         <div class="settings-section-title">软件授权</div>
@@ -236,7 +279,6 @@
   <script src="modules/news-classifier.js"></script>
   <script src="modules/stock-quote.js"></script>
   <script src="modules/history-storage.js"></script>
-  <script src="modules/ui-enhancements.js"></script>
   
   <script src="app.js"></script>
 </body>

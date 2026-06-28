@@ -1,5 +1,5 @@
 /**
- * 鼓掌财经聚合消息 - 桌面端渲染进程
+ * 财经信息聚合播报 - 桌面端渲染进程
  * 
  * 架构：Python 后端抓取 + WebSocket 代理 → 前端渲染
  * 通过 pywebview.api 调用 Python 后端
@@ -7,6 +7,9 @@
 
 (function () {
   'use strict';
+
+  // ===== 调试开关 =====
+  const DEBUG_MODE = false; // 生产环境设为 false
 
   // ===== 状态 =====
   let autoScroll = true;
@@ -29,6 +32,8 @@
   ];
 
   let settings = loadSettings();
+  // 立即保存设置到文件（确保 Python 端能读取主题配置）
+  try { saveSettings(); } catch(e) {}
   let synth = window.speechSynthesis;
   let voiceList = [];
   let speaking = false;
@@ -46,6 +51,10 @@
   const $btnPin = document.getElementById('btnPin');
   const $btnLoadMore = document.getElementById('btnLoadMore');
   const $btnSettings = document.getElementById('btnSettings');
+  const $btnFavorites = null; // 已移除
+  const $btnReview = null; // 已移除
+  const $btnWatchlist = document.getElementById('btnWatchlist');
+  const $btnThemeToggle = document.getElementById('btnThemeToggle');
   const $settingsOverlay = document.getElementById('settingsOverlay');
   const $settingsClose = document.getElementById('settingsClose');
   const $sourceList = document.getElementById('sourceList');
@@ -333,7 +342,9 @@
     let html = `
       <div class="news-header">
         <span class="news-time">${esc(timeStr)}</span>
-        ${source ? `<span class="news-source">${esc(source)}</span>` : ''}
+        <button class="btn-favorite" data-aid="${item.aid}" title="收藏消息">
+          <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+        </button>
       </div>
       ${tagsHTML ? `<div class="news-tags">${tagsHTML}</div>` : ''}
       <div class="news-title ${titleClickable}">${esc(item.title || '')}${isDetailSource ? '<span class="news-detail-hint">▸详情</span>' : ''}</div>
@@ -363,6 +374,11 @@
       html += '</div>';
     }
 
+    // 来源标签放到内容左下方
+    if (source) {
+      html += `<div class="news-footer"><span class="news-source">${esc(source)}</span></div>`;
+    }
+
     div.innerHTML = html;
     setTimeout(() => div.classList.remove('new-item'), 1500);
 
@@ -382,7 +398,724 @@
       }
     }
 
+    // 收藏按钮事件
+    const favBtn = div.querySelector('.btn-favorite');
+    if (favBtn) {
+      // 检查是否已收藏
+      checkFavoriteStatus(item.aid, favBtn);
+      favBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(item, favBtn);
+      });
+    }
+
+    // 自选股匹配标记
+    markWatchlistMatch(div, item);
+
     return div;
+  }
+
+  // ===== 自选股匹配标记 =====
+  async function markWatchlistMatch(el, item) {
+    if (!window.historyStorage) return;
+    
+    try {
+      const text = (item.title || '') + ' ' + (item.content || '');
+      const matches = await window.historyStorage.matchWatchlistInText(text);
+      
+      if (matches && matches.length > 0) {
+        el.classList.add('watchlist-match');
+        
+        const header = el.querySelector('.news-header');
+        if (header) {
+          const badge = document.createElement('span');
+          badge.className = 'watchlist-badge';
+          badge.title = '涉及自选股: ' + matches.map(m => m.name || m.code).join(', ');
+          badge.textContent = '⭐自选';
+          badge.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (matches.length === 1) {
+              showStockQuoteDialog(matches[0].code);
+            }
+          });
+          header.insertBefore(badge, header.firstChild);
+        }
+      }
+    } catch (err) {
+      if (DEBUG_MODE) console.warn('自选股匹配失败:', err);
+    }
+  }
+
+  // ===== 收藏功能 =====
+  async function checkFavoriteStatus(messageId, btn) {
+    if (!window.historyStorage) return;
+    try {
+      const isFav = await window.historyStorage.isFavorite(messageId);
+      if (isFav) {
+        btn.classList.add('favorited');
+      }
+    } catch (err) {
+      if (DEBUG_MODE) console.warn('检查收藏状态失败:', err);
+    }
+  }
+
+  async function toggleFavorite(item, btn) {
+    if (!window.historyStorage) {
+      console.warn('收藏功能未初始化');
+      return;
+    }
+    
+    const messageId = item.aid;
+    try {
+      const isFav = await window.historyStorage.isFavorite(messageId);
+      
+      if (isFav) {
+        await window.historyStorage.removeFavorite(messageId);
+        btn.classList.remove('favorited');
+        if (DEBUG_MODE) console.log('取消收藏:', item.title);
+      } else {
+        await window.historyStorage.addFavorite(item);
+        btn.classList.add('favorited');
+        if (DEBUG_MODE) console.log('已收藏:', item.title);
+      }
+    } catch (err) {
+      console.error('收藏操作失败:', err);
+    }
+  }
+
+
+
+  // ===== 自选股功能 =====
+  async function showWatchlistDialog() {
+    if (!window.historyStorage) {
+      console.warn('自选股功能未初始化');
+      return;
+    }
+    
+    try {
+      const watchlist = await window.historyStorage.getAllWatchlist();
+      const groups = await window.historyStorage.getAllWatchlistGroups();
+      const count = await window.historyStorage.getWatchlistCount();
+      
+      const dialog = document.createElement('div');
+      dialog.className = 'watchlist-dialog';
+      
+      // 生成分组列表HTML
+      let listHTML = '';
+      
+      // 未分组的股票
+      const ungroupedStocks = watchlist.filter(s => s.groupId === 'ungrouped' || !s.groupId);
+      if (ungroupedStocks.length > 0) {
+        listHTML += `
+          <div class="watchlist-group" data-group="ungrouped">
+            <div class="watchlist-group-header">
+              <span class="watchlist-group-name">未分组</span>
+              <span class="watchlist-group-count">(${ungroupedStocks.length})</span>
+            </div>
+            <div class="watchlist-group-stocks">
+              ${ungroupedStocks.map(stock => createStockItemHTML(stock)).join('')}
+            </div>
+          </div>
+        `;
+      }
+      
+      // 其他分组
+      for (const group of groups) {
+        const groupStocks = watchlist.filter(s => s.groupId === group.id);
+        if (groupStocks.length > 0) {
+          listHTML += `
+            <div class="watchlist-group" data-group="${group.id}">
+              <div class="watchlist-group-header">
+                <span class="watchlist-group-name" data-group-id="${group.id}">${esc(group.name)}</span>
+                <span class="watchlist-group-count">(${groupStocks.length})</span>
+                <button class="watchlist-group-menu-btn" data-group="${group.id}">⋮</button>
+                <div class="watchlist-group-menu" id="menu_${group.id}">
+                  <button class="watchlist-group-rename" data-group="${group.id}">重命名</button>
+                  <button class="watchlist-group-delete" data-group="${group.id}">删除分组</button>
+                </div>
+              </div>
+              <div class="watchlist-group-stocks">
+                ${groupStocks.map(stock => createStockItemHTML(stock)).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
+      
+      if (watchlist.length === 0) {
+        listHTML = '<div class="watchlist-empty">暂无自选股</div>';
+      }
+      
+      dialog.innerHTML = `
+        <div class="watchlist-header">
+          <div class="watchlist-header-left">
+            <h3>自选股</h3>
+            <button class="watchlist-add-group-btn" id="watchlistAddGroupBtn" title="添加分组">+ 分组</button>
+            <button class="watchlist-add-btn-header" id="watchlistAddBtnHeader" title="添加自选股">+ 自选</button>
+            <span class="watchlist-count">${count} 只</span>
+          </div>
+          <button class="dialog-close-btn" title="关闭">
+            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+        <div class="watchlist-add-row" id="watchlistAddRow" style="display:none;">
+          <input type="text" id="watchlistAddInput" placeholder="输入股票代码（如601868）" maxlength="6">
+          <select id="watchlistAddGroupSelect">
+            <option value="ungrouped">未分组</option>
+            ${groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}
+          </select>
+          <button class="watchlist-add-btn" id="watchlistAddBtn">添加</button>
+        </div>
+        <div class="watchlist-list">${listHTML}</div>
+      `;
+      
+      document.body.appendChild(dialog);
+      
+      // 关闭按钮
+      dialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
+        dialog.remove();
+      });
+
+      // "+ 添加"按钮 - 切换添加行显示
+      const addBtnHeader = dialog.querySelector('#watchlistAddBtnHeader');
+      const addRow = dialog.querySelector('#watchlistAddRow');
+      if (addBtnHeader && addRow) {
+        addBtnHeader.addEventListener('click', () => {
+          const isVisible = addRow.style.display !== 'none';
+          addRow.style.display = isVisible ? 'none' : 'flex';
+          if (!isVisible) {
+            dialog.querySelector('#watchlistAddInput').focus();
+          }
+        });
+      }
+
+      // 添加股票
+      dialog.querySelector('#watchlistAddBtn').addEventListener('click', async () => {
+        const input = dialog.querySelector('#watchlistAddInput');
+        const select = dialog.querySelector('#watchlistAddGroupSelect');
+        const code = input.value.trim();
+        const groupId = select.value;
+        
+        if (!/^\d{6}$/.test(code)) {
+          alert('请输入6位股票代码');
+          return;
+        }
+        
+        try {
+          const result = await pywebview.api.get_stock_quote(code);
+          const resp = typeof result === 'string' ? JSON.parse(result) : result;
+          
+          if (resp.status === 'ok' && resp.quote) {
+            await window.historyStorage.addWatchlistStock({
+              code: code,
+              name: resp.quote.name
+            }, groupId);
+            
+            // 刷新对话框
+            dialog.remove();
+            showWatchlistDialog();
+          } else {
+            alert('未找到该股票，请检查代码');
+          }
+        } catch (err) {
+          console.error('添加自选股失败:', err);
+          alert('添加失败: ' + err.message);
+        }
+      });
+      
+      // 添加分组按钮
+      dialog.querySelector('#watchlistAddGroupBtn').addEventListener('click', async () => {
+        const name = prompt('输入分组名称：');
+        if (name && name.trim()) {
+          await window.historyStorage.createWatchlistGroup(name.trim());
+          dialog.remove();
+          showWatchlistDialog();
+        }
+      });
+      
+      // 分组菜单按钮
+      dialog.querySelectorAll('.watchlist-group-menu-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const menu = btn.nextElementSibling;
+          document.querySelectorAll('.watchlist-group-menu.show').forEach(m => {
+            if (m !== menu) m.classList.remove('show');
+          });
+          menu.classList.toggle('show');
+        };
+      });
+      
+      // 重命名分组
+      dialog.querySelectorAll('.watchlist-group-rename').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const groupId = btn.dataset.group;
+          const groupName = btn.closest('.watchlist-group-header').querySelector('.watchlist-group-name').textContent;
+          const newName = prompt('输入新名称：', groupName);
+          if (newName && newName.trim()) {
+            await window.historyStorage.renameWatchlistGroup(groupId, newName.trim());
+            dialog.remove();
+            showWatchlistDialog();
+          }
+        };
+      });
+      
+      // 删除分组
+      dialog.querySelectorAll('.watchlist-group-delete').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const groupId = btn.dataset.group;
+          if (confirm('删除分组后，组内股票将移至"未分组"，确定删除？')) {
+            await window.historyStorage.deleteWatchlistGroup(groupId);
+            dialog.remove();
+            showWatchlistDialog();
+          }
+        };
+      });
+      
+      // 键盘事件
+      dialog.querySelector('#watchlistAddInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          dialog.querySelector('#watchlistAddBtn').click();
+        }
+      });
+      
+      // 绑定股票项事件
+      bindWatchlistItemEvents(dialog);
+      
+    } catch (err) {
+      console.error('加载自选股列表失败:', err);
+    }
+  }
+  
+  function createStockItemHTML(stock) {
+    return `
+      <div class="watchlist-item" data-code="${stock.code}">
+        <button class="watchlist-remove-btn" title="移除自选股">×</button>
+        <div class="watchlist-stock-info">
+          <span class="watchlist-stock-name">${esc(stock.name || '未知')}</span>
+          <span class="watchlist-stock-code">${esc(stock.code)}</span>
+        </div>
+        <button class="watchlist-move-btn" title="移动到分组">→</button>
+        <button class="watchlist-quote-btn" title="查看行情">📊</button>
+      </div>
+    `;
+  }
+  
+  function bindWatchlistItemEvents(dialog) {
+    // 移除按钮
+    dialog.querySelectorAll('.watchlist-remove-btn').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const item = btn.closest('.watchlist-item');
+        const code = item.dataset.code;
+        
+        if (!confirm(`确定移除 ${code} 吗？`)) return;
+        
+        try {
+          await window.historyStorage.removeWatchlistStock(code);
+          item.remove();
+          
+          const newCount = await window.historyStorage.getWatchlistCount();
+          dialog.querySelector('.watchlist-count').textContent = newCount + ' 只';
+          
+          // 检查是否需要显示空状态
+          const listEl = dialog.querySelector('.watchlist-list');
+          if (listEl.querySelectorAll('.watchlist-item').length === 0) {
+            listEl.innerHTML = '<div class="watchlist-empty">暂无自选股</div>';
+          }
+        } catch (err) {
+          console.error('移除自选股失败:', err);
+        }
+      };
+    });
+    
+    // 查看行情按钮
+    dialog.querySelectorAll('.watchlist-quote-btn').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const item = btn.closest('.watchlist-item');
+        const code = item.dataset.code;
+        await showStockQuoteDialog(code);
+      };
+    });
+    
+    // 移动到分组按钮
+    dialog.querySelectorAll('.watchlist-move-btn').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const item = btn.closest('.watchlist-item');
+        const code = item.dataset.code;
+        
+        const groups = await window.historyStorage.getAllWatchlistGroups();
+        
+        // 显示分组选择对话框
+        const menu = document.createElement('div');
+        menu.className = 'watchlist-move-menu';
+        menu.innerHTML = '<div class="watchlist-move-title">移动到分组</div>';
+        
+        const ungroupedBtn = document.createElement('button');
+        ungroupedBtn.textContent = '未分组';
+        ungroupedBtn.onclick = async () => {
+          await window.historyStorage.updateWatchlistStockGroup(code, 'ungrouped');
+          menu.remove();
+          dialog.remove();
+          showWatchlistDialog();
+        };
+        menu.appendChild(ungroupedBtn);
+        
+        for (const group of groups) {
+          const groupBtn = document.createElement('button');
+          groupBtn.textContent = group.name;
+          groupBtn.onclick = async () => {
+            await window.historyStorage.updateWatchlistStockGroup(code, group.id);
+            menu.remove();
+            dialog.remove();
+            showWatchlistDialog();
+          };
+          menu.appendChild(groupBtn);
+        }
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '取消';
+        closeBtn.className = 'watchlist-move-close';
+        closeBtn.onclick = () => menu.remove();
+        menu.appendChild(closeBtn);
+        
+        document.body.appendChild(menu);
+        
+        // 定位菜单
+        const rect = btn.getBoundingClientRect();
+        menu.style.top = (rect.bottom + 5) + 'px';
+        menu.style.left = rect.left + 'px';
+        
+        // 点击外部关闭
+        setTimeout(() => {
+          document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target)) {
+              menu.remove();
+              document.removeEventListener('click', closeMenu);
+            }
+          });
+        }, 0);
+      };
+    });
+  }
+  
+  async function showStockQuoteDialog(code) {
+    try {
+      const result = await pywebview.api.get_stock_quote(code);
+      const resp = typeof result === 'string' ? JSON.parse(result) : result;
+      
+      if (resp.status !== 'ok' || !resp.quote) {
+        alert('获取行情失败');
+        return;
+      }
+      
+      const q = resp.quote;
+      const changePercent = q.changePercent || 0;
+      const changeClass = changePercent > 0 ? 'up' : changePercent < 0 ? 'down' : '';
+      const changeSign = changePercent > 0 ? '+' : '';
+      
+      const dialog = document.createElement('div');
+      dialog.className = 'quote-dialog';
+      
+      dialog.innerHTML = `
+        <div class="quote-header">
+          <div>
+            <h3>${esc(q.name)}</h3>
+            <span class="quote-code">${esc(q.code)} · ${esc(q.market || '')}</span>
+          </div>
+          <button class="dialog-close-btn" title="关闭">
+            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+        <div class="quote-body">
+          <div class="quote-price ${changeClass}">${q.price.toFixed(2)}</div>
+          <div class="quote-change ${changeClass}">
+            ${changeSign}${q.change?.toFixed(2) || '0.00'}
+            (${changeSign}${changePercent.toFixed(2)}%)
+          </div>
+          <div class="quote-grid">
+            <div class="quote-grid-item">
+              <div class="quote-grid-label">今开</div>
+              <div class="quote-grid-value">${q.open?.toFixed(2) || '--'}</div>
+            </div>
+            <div class="quote-grid-item">
+              <div class="quote-grid-label">昨收</div>
+              <div class="quote-grid-value">${q.yesterdayClose?.toFixed(2) || '--'}</div>
+            </div>
+            <div class="quote-grid-item">
+              <div class="quote-grid-label">最高</div>
+              <div class="quote-grid-value up">${q.high?.toFixed(2) || '--'}</div>
+            </div>
+            <div class="quote-grid-item">
+              <div class="quote-grid-label">最低</div>
+              <div class="quote-grid-value down">${q.low?.toFixed(2) || '--'}</div>
+            </div>
+            <div class="quote-grid-item">
+              <div class="quote-grid-label">成交量</div>
+              <div class="quote-grid-value">${formatVolume(q.volume || 0)}</div>
+            </div>
+            <div class="quote-grid-item">
+              <div class="quote-grid-label">成交额</div>
+              <div class="quote-grid-value">${formatAmount(q.amount || 0)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(dialog);
+      
+      dialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
+        dialog.remove();
+      });
+      
+    } catch (err) {
+      console.error('显示行情失败:', err);
+      alert('获取行情失败: ' + err.message);
+    }
+  }
+  
+  function formatVolume(volume) {
+    if (volume >= 100000000) return (volume / 100000000).toFixed(2) + '亿股';
+    if (volume >= 10000) return (volume / 10000).toFixed(2) + '万股';
+    return volume + '股';
+  }
+  
+  function formatAmount(amount) {
+    if (amount >= 100000000) return (amount / 100000000).toFixed(2) + '亿';
+    if (amount >= 10000) return (amount / 10000).toFixed(2) + '万';
+    return amount + '元';
+  }
+
+  // ===== 自选股异动提醒 =====
+  let watchlistAlertTimer = null;
+  let watchlistAlertLastTime = {}; // {code: timestamp} 记录每只股票上次提醒时间
+
+  function startWatchlistAlertMonitor() {
+    if (watchlistAlertTimer) return;
+    
+    // 立即检查一次
+    checkWatchlistAlerts();
+    
+    // 每分钟检查一次
+    watchlistAlertTimer = setInterval(() => {
+      checkWatchlistAlerts();
+    }, 60000);
+    
+    if (DEBUG_MODE) console.log('[自选股提醒] 监控已启动');
+  }
+
+  function stopWatchlistAlertMonitor() {
+    if (watchlistAlertTimer) {
+      clearInterval(watchlistAlertTimer);
+      watchlistAlertTimer = null;
+    }
+    if (DEBUG_MODE) console.log('[自选股提醒] 监控已停止');
+  }
+
+  async function checkWatchlistAlerts() {
+    if (!settings.watchlistAlertEnabled) return;
+    if (!window.historyStorage) return;
+    
+    try {
+      const watchlist = await window.historyStorage.getAllWatchlist();
+      if (!watchlist || watchlist.length === 0) return;
+      
+      // 获取所有自选股代码
+      const codes = watchlist.map(s => s.code);
+      
+      // 批量查询行情
+      const batchResult = await batchGetQuotes(codes);
+      if (!batchResult || batchResult.length === 0) return;
+      
+      const now = Date.now();
+      const threshold = settings.watchlistAlertThreshold || 5;
+      const intervalMs = (settings.watchlistAlertInterval || 5) * 60 * 1000;
+      
+      // 检查每只股票
+      for (const q of batchResult) {
+        if (!q || !q.quote) continue;
+        
+        const changePercent = Math.abs(q.quote.changePercent || 0);
+        
+        // 检查是否超过阈值
+        if (changePercent >= threshold) {
+          const code = q.quote.code;
+          const lastTime = watchlistAlertLastTime[code] || 0;
+          
+          // 检查是否在冷却期内
+          if (now - lastTime < intervalMs) {
+            if (DEBUG_MODE) console.log(`[自选股提醒] ${code} 在冷却期内，跳过`);
+            continue;
+          }
+          
+          // 触发提醒
+          watchlistAlertLastTime[code] = now;
+          showWatchlistAlertPopup(q.quote);
+        }
+      }
+    } catch (err) {
+      if (DEBUG_MODE) console.error('[自选股提醒] 检查失败:', err);
+    }
+  }
+
+  async function batchGetQuotes(codes) {
+    if (!codes || codes.length === 0) return [];
+    
+    // 腾讯行情支持批量查询
+    const tdxCodes = codes.map(code => {
+      if (code.startsWith('6')) return `sh${code}`;
+      if (code.startsWith(('0', '3'))) return `sz${code}`;
+      if (code.startsWith(('8', '4'))) return `bj${code}`;
+      return code;
+    });
+    
+    const quotes = [];
+    
+    // 分批查询，每批最多20个
+    const batchSize = 20;
+    for (let i = 0; i < tdxCodes.length; i += batchSize) {
+      const batch = tdxCodes.slice(i, i + batchSize);
+      try {
+        const resp = await fetch(`https://qt.gtimg.cn/q=${batch.join(',')}`);
+        const text = await resp.text();
+        
+        const lines = text.trim().split('\n');
+        for (const line of lines) {
+          const match = line.match(/v_\w+="([^"]+)"/);
+          if (match) {
+            const fields = match[1].split('~');
+            if (fields.length >= 35) {
+              const rawCode = fields[2];
+              const code = rawCode.replace(/^(sh|sz|bj)/, '');
+              const price = parseFloat(fields[3]) || 0;
+              const yesterdayClose = parseFloat(fields[4]) || 0;
+              const change = price - yesterdayClose;
+              const changePercent = yesterdayClose > 0 ? (change / yesterdayClose) * 100 : 0;
+              
+              quotes.push({
+                quote: {
+                  code: code,
+                  name: fields[1],
+                  price: price,
+                  yesterdayClose: yesterdayClose,
+                  change: change,
+                  changePercent: changePercent,
+                  high: parseFloat(fields[33]) || 0,
+                  low: parseFloat(fields[34]) || 0,
+                  open: parseFloat(fields[5]) || 0,
+                  volume: parseInt(fields[6]) * 100 || 0,
+                  amount: parseFloat(fields[37]) * 10000 || 0,
+                }
+              });
+            }
+          }
+        }
+      } catch (err) {
+        if (DEBUG_MODE) console.error('[自选股提醒] 批量查询失败:', err);
+      }
+    }
+    
+    return quotes;
+  }
+
+  function showWatchlistAlertPopup(quote) {
+    const changePercent = quote.changePercent || 0;
+    const change = quote.change || 0;
+    const isUp = changePercent > 0;
+    const direction = isUp ? '上涨' : '下跌';
+    
+    // 播放提醒声音
+    if (settings.watchlistAlertSound) {
+      playAlertSound();
+    }
+    
+    // 创建弹窗
+    const dialog = document.createElement('div');
+    dialog.className = 'watchlist-alert-dialog';
+    
+    const changeStr = `${isUp ? '+' : ''}${change.toFixed(2)} (${isUp ? '+' : ''}${changePercent.toFixed(2)}%)`;
+    
+    dialog.innerHTML = `
+      <div class="alert-header">
+        <div class="alert-icon ${isUp ? 'up' : 'down'}">${isUp ? '📈' : '📉'}</div>
+        <div class="alert-title">自选股异动提醒</div>
+        <button class="dialog-close-btn" title="关闭">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
+      <div class="alert-body">
+        <div class="alert-stock-name">${esc(quote.name)}</div>
+        <div class="alert-stock-code">${esc(quote.code)}</div>
+        <div class="alert-price ${isUp ? 'up' : 'down'}">${quote.price.toFixed(2)}</div>
+        <div class="alert-change ${isUp ? 'up' : 'down'}">${changeStr}</div>
+        <div class="alert-message">${direction}幅度超过 ${settings.watchlistAlertThreshold}%</div>
+        <div class="alert-actions">
+          <button class="alert-view-btn" data-code="${quote.code}">查看详情</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(dialog);
+    
+    // 关闭按钮
+    dialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
+      dialog.remove();
+    });
+    
+    // 查看详情按钮
+    dialog.querySelector('.alert-view-btn').addEventListener('click', () => {
+      dialog.remove();
+      showStockQuoteDialog(quote.code);
+    });
+    
+    // 5秒后自动关闭
+    setTimeout(() => {
+      if (dialog.parentNode) {
+        dialog.remove();
+      }
+    }, 5000);
+    
+    if (DEBUG_MODE) console.log(`[自选股提醒] 触发提醒: ${quote.name} ${changePercent.toFixed(2)}%`);
+  }
+
+  function playAlertSound() {
+    // 使用 Web Audio API 生成简单的警报音
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = 880; // A5
+      oscillator.type = 'sine';
+      gainNode.gain.value = 0.3;
+      
+      oscillator.start();
+      
+      // 响2次
+      setTimeout(() => {
+        oscillator.stop();
+      }, 200);
+      
+      setTimeout(() => {
+        const osc2 = audioContext.createOscillator();
+        const gain2 = audioContext.createGain();
+        osc2.connect(gain2);
+        gain2.connect(audioContext.destination);
+        osc2.frequency.value = 1047; // C6
+        osc2.type = 'sine';
+        gain2.gain.value = 0.3;
+        osc2.start();
+        setTimeout(() => osc2.stop(), 300);
+      }, 300);
+    } catch (err) {
+      if (DEBUG_MODE) console.warn('播放提醒音失败:', err);
+    }
   }
 
   // ===== 加载更多 =====
@@ -485,12 +1218,24 @@
       keywords: [],
       keywordAlert: false, // 关键词触发警报声
       keywordAlertKeywords: [], // 触发警报的关键词（可独立于高亮关键词）
+      autoScroll: true, // 自动滚动状态
+      isPinned: false, // 窗口置顶状态
+      // 自选股异动提醒
+      watchlistAlertEnabled: false,
+      watchlistAlertThreshold: 5,
+      watchlistAlertInterval: 5,
+      watchlistAlertSound: true,
+      darkMode: false,
     };
   }
 
   function saveSettings() {
     try {
       localStorage.setItem('guzhang-settings', JSON.stringify(settings));
+      // 同步保存到 Python 端文件（供启动时读取主题）
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.persist_settings) {
+        pywebview.api.persist_settings(JSON.stringify(settings)).catch(() => {});
+      }
     } catch (e) {}
   }
 
@@ -535,7 +1280,7 @@
     $voiceTest.addEventListener('click', () => {
       if (synth) {
         synth.cancel();
-        const utter = new SpeechSynthesisUtterance('这是一条测试语音，鼓掌财经消息推送已开启。');
+        const utter = new SpeechSynthesisUtterance('这是一条测试语音，财经聚合消息推送已开启。');
         utter.lang = 'zh-CN';
         utter.rate = parseFloat($voiceRate.value) || 1.5;
         if (voiceList.length > 0) {
@@ -597,9 +1342,83 @@
       saveSettings();
     });
 
+    // 自选股异动提醒设置
+    const $watchlistAlertEnabled = document.getElementById('watchlistAlertEnabled');
+    const $watchlistAlertThreshold = document.getElementById('watchlistAlertThreshold');
+    const $watchlistAlertInterval = document.getElementById('watchlistAlertInterval');
+    const $watchlistAlertSound = document.getElementById('watchlistAlertSound');
+
+    $watchlistAlertEnabled.checked = settings.watchlistAlertEnabled;
+    $watchlistAlertThreshold.value = settings.watchlistAlertThreshold;
+    $watchlistAlertInterval.value = settings.watchlistAlertInterval;
+    $watchlistAlertSound.checked = settings.watchlistAlertSound;
+
+    $watchlistAlertEnabled.addEventListener('change', () => {
+      settings.watchlistAlertEnabled = $watchlistAlertEnabled.checked;
+      saveSettings();
+      if (settings.watchlistAlertEnabled) {
+        startWatchlistAlertMonitor();
+      } else {
+        stopWatchlistAlertMonitor();
+      }
+    });
+
+    $watchlistAlertThreshold.addEventListener('change', () => {
+      settings.watchlistAlertThreshold = parseFloat($watchlistAlertThreshold.value) || 5;
+      saveSettings();
+    });
+
+    $watchlistAlertInterval.addEventListener('change', () => {
+      settings.watchlistAlertInterval = parseInt($watchlistAlertInterval.value) || 5;
+      saveSettings();
+    });
+
+    $watchlistAlertSound.addEventListener('change', () => {
+      settings.watchlistAlertSound = $watchlistAlertSound.checked;
+      saveSettings();
+    });
+
+    // 如果开启，启动异动监控
+    if (settings.watchlistAlertEnabled) {
+      startWatchlistAlertMonitor();
+    }
+
     // 打开/关闭
     $btnSettings.addEventListener('click', () => {
       $settingsOverlay.classList.add('show');
+    });
+
+    $btnWatchlist.addEventListener('click', () => {
+      showWatchlistDialog();
+    });
+
+    // 主题切换
+    function applyTheme() {
+      if (settings.darkMode) {
+        document.body.classList.add('dark-mode');
+      } else {
+        document.body.classList.remove('dark-mode');
+      }
+      setWindowTitlebarTheme(settings.darkMode);
+    }
+
+    function setWindowTitlebarTheme(isDark) {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.set_theme) {
+        pywebview.api.set_theme(isDark ? 'dark' : 'light').catch(() => {});
+      }
+    }
+
+    applyTheme();
+
+    // pywebview API 就绪后重新应用主题（解决初始化时序问题）
+    window.addEventListener('pywebviewready', () => {
+      setWindowTitlebarTheme(settings.darkMode);
+    });
+
+    $btnThemeToggle.addEventListener('click', () => {
+      settings.darkMode = !settings.darkMode;
+      applyTheme();
+      saveSettings();
     });
 
     $settingsClose.addEventListener('click', () => {
@@ -829,11 +1648,40 @@
     }
   }
 
-  // ===== 历史存储 =====
+  // ===== 历史存储（批量优化） =====
+  let historyBuffer = [];  // 消息缓冲
+  let historyFlushTimer = null;  // 刷新定时器
+  const BATCH_SIZE = 10;  // 批量大小
+  const FLUSH_INTERVAL = 2000;  // 刷新间隔(ms)
+
+  function flushHistoryBuffer() {
+    if (!window.historyStorage || historyBuffer.length === 0) return;
+    const items = historyBuffer.splice(0, historyBuffer.length);
+    window.historyStorage.storeMessagesBatch(items).catch(() => {});
+  }
+
+  function scheduleFlush() {
+    if (historyFlushTimer) return;
+    historyFlushTimer = setTimeout(() => {
+      historyFlushTimer = null;
+      flushHistoryBuffer();
+    }, FLUSH_INTERVAL);
+  }
+
   function storeToHistory(item) {
     if (!window.historyStorage) return;
     try {
-      window.historyStorage.storeMessage(item).catch(() => {});
+      historyBuffer.push(item);
+      // 达到批量大小则立即刷新
+      if (historyBuffer.length >= BATCH_SIZE) {
+        if (historyFlushTimer) {
+          clearTimeout(historyFlushTimer);
+          historyFlushTimer = null;
+        }
+        flushHistoryBuffer();
+      } else {
+        scheduleFlush();
+      }
     } catch (e) {
       // ignore
     }
@@ -876,26 +1724,26 @@
 
     // 请求后端获取详情正文
     try {
-      console.log('[详情] 请求详情, item keys:', Object.keys(item), 'art_code:', item.art_code, 'info_code:', item.info_code);
+      if (DEBUG_MODE) console.log('[详情] 请求详情, item keys:', Object.keys(item), 'art_code:', item.art_code, 'info_code:', item.info_code);
       let detailContent = '';
       if (item.art_code && window.pywebview && window.pywebview.api) {
-        console.log('[详情] 调用 get_announcement_detail, art_code:', item.art_code);
+        if (DEBUG_MODE) console.log('[详情] 调用 get_announcement_detail, art_code:', item.art_code);
         const resp = await pywebview.api.get_announcement_detail(item.art_code);
-        console.log('[详情] 公告详情返回:', resp);
+        if (DEBUG_MODE) console.log('[详情] 公告详情返回:', resp);
         const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
         if (data.status === 'ok' && data.content) {
           detailContent = data.content;
         }
       } else if (item.info_code && window.pywebview && window.pywebview.api) {
-        console.log('[详情] 调用 get_research_detail, info_code:', item.info_code);
+        if (DEBUG_MODE) console.log('[详情] 调用 get_research_detail, info_code:', item.info_code);
         const resp = await pywebview.api.get_research_detail(item.info_code);
-        console.log('[详情] 研报详情返回:', resp);
+        if (DEBUG_MODE) console.log('[详情] 研报详情返回:', resp);
         const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
         if (data.status === 'ok' && data.content) {
           detailContent = data.content;
         }
       } else {
-        console.log('[详情] 没有 art_code 或 info_code，无法请求详情');
+        if (DEBUG_MODE) console.log('[详情] 没有 art_code 或 info_code，无法请求详情');
       }
 
       const contentEl = overlay.querySelector('.detail-content');
@@ -1090,14 +1938,24 @@
   });
 
   // ===== 按钮事件 =====
+  // 初始化按钮状态（从 settings 恢复）
+  autoScroll = settings.autoScroll;
+  isPinned = settings.isPinned;
+  $btnAutoscroll.classList.toggle('active', autoScroll);
+  $btnPin.classList.toggle('active', isPinned);
+
   $btnAutoscroll.addEventListener('click', () => {
     autoScroll = !autoScroll;
+    settings.autoScroll = autoScroll;
+    saveSettings();
     $btnAutoscroll.classList.toggle('active', autoScroll);
     if (autoScroll) $container.scrollTop = 0;
   });
 
   $btnPin.addEventListener('click', () => {
     isPinned = !isPinned;
+    settings.isPinned = isPinned;
+    saveSettings();
     $btnPin.classList.toggle('active', isPinned);
   });
 
@@ -1234,5 +2092,238 @@
   } else {
     waitForApi(30);
   }
+
+  // ===== 对话框功能（原 ui-enhancements.js）=====
+
+  // 导出对话框
+  function showExportDialog() {
+    const dialog = document.createElement('div');
+    dialog.className = 'export-dialog';
+    dialog.innerHTML = `
+      <div class="export-header">
+        <h3>导出消息</h3>
+        <button class="dialog-close-btn" title="关闭">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
+      <div class="export-content">
+        <div class="export-options">
+          <div class="export-option">
+            <input type="checkbox" id="exportAll" checked>
+            <label for="exportAll">导出所有消息</label>
+          </div>
+          <div class="export-option">
+            <input type="checkbox" id="exportPriority">
+            <label for="exportPriority">仅导出重要消息</label>
+          </div>
+          <div class="export-option">
+            <input type="checkbox" id="exportToday">
+            <label for="exportToday">仅导出今日消息</label>
+          </div>
+        </div>
+        <div class="export-format">
+          <label>导出格式:</label>
+          <select id="exportFormat">
+            <option value="markdown">Markdown</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
+      </div>
+      <div class="export-buttons">
+        <button class="btn-export secondary" id="exportCancel">取消</button>
+        <button class="btn-export primary" id="exportConfirm">导出</button>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.querySelector('.dialog-close-btn').addEventListener('click', () => dialog.remove());
+    dialog.querySelector('#exportCancel').addEventListener('click', () => dialog.remove());
+    dialog.querySelector('#exportConfirm').addEventListener('click', async () => {
+      await executeExport(dialog);
+      dialog.remove();
+    });
+  }
+
+  async function executeExport(dialog) {
+    if (!window.historyStorage) { alert('历史存储模块未加载'); return; }
+    const options = {
+      limit: dialog.querySelector('#exportAll').checked ? 10000 : 1000,
+      priority: dialog.querySelector('#exportPriority').checked ? 'high' : null,
+      startDate: dialog.querySelector('#exportToday').checked ? new Date().setHours(0, 0, 0, 0) : null
+    };
+    const format = dialog.querySelector('#exportFormat').value;
+    try {
+      const exportData = await window.historyStorage.exportMessages(options);
+      let content, filename, mimeType;
+      if (format === 'markdown') {
+        content = window.historyStorage.generateMarkdownExport(exportData);
+        filename = `guzhang-news-${new Date().toISOString().slice(0, 10)}.md`;
+        mimeType = 'text/markdown';
+      } else {
+        content = JSON.stringify(exportData, null, 2);
+        filename = `guzhang-news-${new Date().toISOString().slice(0, 10)}.json`;
+        mimeType = 'application/json';
+      }
+      downloadFile(content, filename, mimeType);
+    } catch (e) {
+      alert('导出失败: ' + e.message);
+    }
+  }
+
+  function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // 历史搜索对话框
+  function showHistoryDialog() {
+    const dialog = document.createElement('div');
+    dialog.className = 'history-dialog';
+    dialog.innerHTML = `
+      <div class="history-header">
+        <h3>历史消息搜索</h3>
+        <button class="dialog-close-btn" title="关闭">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
+      <div class="history-content">
+        <div class="history-search">
+          <input type="text" id="historySearchInput" placeholder="搜索关键词...">
+          <button id="historySearchBtn">搜索</button>
+        </div>
+        <div class="history-filters">
+          <select class="filter-select" id="historyCategory">
+            <option value="">所有分类</option>
+            <option value="政策">政策</option><option value="资金">资金</option>
+            <option value="公司">公司</option><option value="宏观">宏观</option><option value="行业">行业</option>
+          </select>
+          <select class="filter-select" id="historyPriority">
+            <option value="">所有优先级</option>
+            <option value="critical">重磅</option><option value="high">重要</option>
+            <option value="medium">关注</option><option value="low">一般</option>
+          </select>
+        </div>
+      </div>
+      <div class="history-results" id="historyResults"><div class="history-empty">输入关键词开始搜索...</div></div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.querySelector('.dialog-close-btn').addEventListener('click', () => dialog.remove());
+    dialog.querySelector('#historySearchBtn').addEventListener('click', () => executeHistorySearch(dialog));
+    dialog.querySelector('#historySearchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') executeHistorySearch(dialog); });
+  }
+
+  async function executeHistorySearch(dialog) {
+    if (!window.historyStorage) { alert('历史存储模块未加载'); return; }
+    const query = dialog.querySelector('#historySearchInput').value;
+    const category = dialog.querySelector('#historyCategory').value;
+    const priority = dialog.querySelector('#historyPriority').value;
+    const options = { limit: 50, category: category || null, priority: priority || null };
+    try {
+      const results = await window.historyStorage.searchMessages(query, options);
+      const container = dialog.querySelector('#historyResults');
+      if (results.length === 0) { container.innerHTML = '<div class="history-empty">未找到匹配的消息</div>'; return; }
+      container.innerHTML = results.map(msg => `
+        <div class="history-item">
+          <div class="history-item-title">${esc(msg.title)}</div>
+          <div class="history-item-meta">
+            <span>${new Date(msg.timestamp).toLocaleString()}</span>
+            <span>${esc(msg.source)}</span>
+            <span>${esc(msg.category)}</span>
+          </div>
+          <div class="history-item-content">${esc(msg.content)}</div>
+        </div>
+      `).join('');
+    } catch (e) {
+      alert('搜索失败: ' + e.message);
+    }
+  }
+
+  // 数据源管理对话框
+  async function showDataSourceDialog() {
+    if (!window.pywebview || !window.pywebview.api) {
+      alert('数据源管理需要 pywebview 后端支持，请稍后重试');
+      return;
+    }
+    try {
+      const resp = await pywebview.api.get_data_sources();
+      const data = JSON.parse(resp);
+      if (data.status !== 'ok') { alert('获取数据源失败'); return; }
+      const sources = data.sources || [];
+      const dialog = document.createElement('div');
+      dialog.className = 'datasource-overlay';
+      dialog.innerHTML = `
+        <div class="datasource-panel">
+          <div class="datasource-header">
+            <span class="datasource-title">数据源管理</span>
+            <button class="dialog-close-btn" title="关闭">
+              <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+          </div>
+          <div class="datasource-list">
+            ${sources.map(s => `
+              <div class="datasource-item" data-source-id="${s.id}">
+                <div class="datasource-item-left">
+                  <div class="datasource-status-dot ${s.enabled ? 'dot-on' : 'dot-off'}"></div>
+                  <div class="datasource-info">
+                    <div class="datasource-name">${esc(s.name)}</div>
+                    <div class="datasource-desc">${esc(s.description || '')}</div>
+                  </div>
+                </div>
+                <div class="datasource-item-right">
+                  <button class="datasource-test-btn" data-source-id="${s.id}">测试</button>
+                  <label class="datasource-toggle">
+                    <input type="checkbox" ${s.enabled ? 'checked' : ''}>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          <div class="datasource-test-result"></div>
+        </div>
+      `;
+      document.body.appendChild(dialog);
+      dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.remove(); });
+      dialog.querySelector('.dialog-close-btn').addEventListener('click', () => dialog.remove());
+      dialog.querySelectorAll('.datasource-toggle input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+          const item = e.target.closest('.datasource-item');
+          const sourceId = item.dataset.sourceId;
+          const enabled = e.target.checked;
+          try {
+            const apiMethod = enabled ? 'enable_data_source' : 'disable_data_source';
+            await pywebview.api[apiMethod](sourceId);
+            item.querySelector('.datasource-status-dot').className = `datasource-status-dot ${enabled ? 'dot-on' : 'dot-off'}`;
+          } catch (err) { alert('操作失败: ' + err.message); e.target.checked = !enabled; }
+        });
+      });
+      dialog.querySelectorAll('.datasource-test-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const sourceId = btn.dataset.sourceId;
+          const resultDiv = dialog.querySelector('.datasource-test-result');
+          btn.disabled = true; btn.textContent = '测试中...';
+          try {
+            const resp = await pywebview.api.test_data_source(sourceId);
+            const d = JSON.parse(resp); const r = d.result || {};
+            resultDiv.textContent = `${r.success ? '✓' : '✗'} ${r.message || '连接失败'}${r.latency ? ' (' + r.latency + 'ms)' : ''}`;
+            resultDiv.style.color = r.success ? '#4caf50' : '#f44336';
+          } catch (err) { resultDiv.textContent = '测试失败: ' + err.message; resultDiv.style.color = '#f44336'; }
+          btn.disabled = false; btn.textContent = '测试';
+        });
+      });
+    } catch (e) { alert('数据源管理加载失败: ' + e.message); }
+  }
+
+  // 绑定对话框按钮事件
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#btnExport')) showExportDialog();
+    if (e.target.closest('#btnHistory')) showHistoryDialog();
+    if (e.target.closest('#btnDataSources')) showDataSourceDialog();
+  });
 
 })();

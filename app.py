@@ -1,5 +1,5 @@
 """
-鼓掌财经聚合消息 - 桌面端
+财经信息聚合播报 - 桌面端
 基于 pywebview 的轻量级桌面新闻推送客户端
 
 功能：
@@ -22,6 +22,8 @@ import hashlib
 import uuid
 import logging
 import sqlite3
+import ctypes
+from ctypes import wintypes
 
 # ===== 直连 HTTP Session（不走系统代理）=====
 _http = requests.Session()
@@ -221,6 +223,93 @@ def activate_license(key):
     return False
 
 
+# ===== Windows DWM 标题栏颜色设置 =====
+GA_ROOT = 2
+
+
+def _get_main_hwnd_from_renderer(renderer_hwnd):
+    """从浏览器控件句柄获取顶层主窗口句柄"""
+    try:
+        main_hwnd = ctypes.windll.user32.GetAncestor(renderer_hwnd, GA_ROOT)
+        logger.info(f'GetAncestor: renderer={renderer_hwnd:#x} -> main={main_hwnd:#x}')
+        return main_hwnd
+    except Exception as e:
+        logger.warning(f'GetAncestor 失败: {e}')
+        return None
+
+
+def set_titlebar_dark_mode(hwnd, dark=True):
+    """通过 Windows DWM API 设置标题栏暗色模式"""
+    try:
+        dwmapi = ctypes.windll.dwmapi
+        # Win10 1903+ 用 20，旧版用 19
+        for attr_id in [20, 19]:
+            value = ctypes.c_int(1 if dark else 0)
+            result = dwmapi.DwmSetWindowAttribute(
+                hwnd, attr_id, ctypes.byref(value), ctypes.sizeof(value)
+            )
+            if result == 0:
+                logger.info(f'DwmSetWindowAttribute 成功: hwnd={hwnd:#x}, attr={attr_id}, dark={dark}')
+                return True
+        logger.warning(f'DwmSetWindowAttribute 失败: hwnd={hwnd:#x}, result={result}')
+        return False
+    except Exception as e:
+        logger.warning(f'设置标题栏暗色模式异常: {e}')
+        return False
+
+
+def _apply_initial_theme(window):
+    """启动时应用标题栏主题（双保险：文件 + JS localStorage）"""
+    import time
+    time.sleep(1)
+    try:
+        dark_mode = False
+
+        # 方法1: 从配置文件读取
+        try:
+            config_path = os.path.join(os.environ.get('APPDATA', ''), 'GuzhangNews', 'settings.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                    dark_mode = cfg.get('darkMode', False)
+                logger.info(f'从文件读取 darkMode={dark_mode}')
+        except Exception as e:
+            logger.debug(f'从文件读取设置失败: {e}')
+
+        # 方法2: 从 JS localStorage 读取（如果文件读取失败）
+        if not dark_mode:
+            try:
+                result = window.evaluate_js(
+                    "(function() { try { return JSON.parse(localStorage.getItem('guzhang-settings') || '{}').darkMode || false; } catch(e) { return false; } })()"
+                )
+                if result is True or str(result) == 'true':
+                    dark_mode = True
+                logger.info(f'从 JS 读取 darkMode={dark_mode}, result={result}')
+            except Exception as e:
+                logger.debug(f'从 JS 读取设置失败: {e}')
+
+        # 查找主窗口句柄
+        hwnd = None
+        try:
+            renderer_hwnd = window.gui.renderer_hwnd
+            if renderer_hwnd:
+                hwnd = _get_main_hwnd_from_renderer(renderer_hwnd)
+        except Exception as e:
+            logger.debug(f'获取 renderer_hwnd 失败: {e}')
+
+        if not hwnd:
+            hwnd = ctypes.windll.user32.FindWindowW(None, '财经信息聚合播报 v3.6.0版')
+
+        if not hwnd:
+            logger.warning('初始主题应用失败: 未找到窗口句柄')
+            return
+
+        success = set_titlebar_dark_mode(hwnd, dark_mode)
+        logger.info(f'初始主题应用: dark={dark_mode}, hwnd={hwnd:#x}, success={success}')
+    except Exception as e:
+        logger.warning(f'初始主题应用失败: {e}')
+
+
 class Api:
     """pywebview JS API，前端通过 window.pywebview.api.xxx 调用"""
 
@@ -233,12 +322,99 @@ class Api:
         self._ws_thread = None
         self._running = False
         self._data_source_manager = None
+        self._main_hwnd = None  # 缓存主窗口句柄
 
     def activate_license(self, key):
         """前端调用：用户输入激活码"""
         if activate_license(key):
             return json.dumps({'status': 'ok'})
         return json.dumps({'status': 'error', 'message': '激活码无效或不匹配本机'}, ensure_ascii=False)
+
+    def minimize_window(self):
+        """最小化窗口"""
+        self._window.minimize()
+        return json.dumps({'status': 'ok'})
+
+    def toggle_maximize(self):
+        """切换窗口最大化/还原"""
+        if self._window.is_maximized:
+            self._window.restore()
+        else:
+            self._window.maximize()
+        return json.dumps({'status': 'ok'})
+
+    def resize_window(self, width, height):
+        """调整窗口大小"""
+        self._window.resize(int(width), int(height))
+        return json.dumps({'status': 'ok'})
+
+    def get_window_size(self):
+        """获取窗口当前大小"""
+        return json.dumps({
+            'width': self._window.width,
+            'height': self._window.height
+        })
+
+    def _find_hwnd(self):
+        """查找并缓存主窗口句柄"""
+        if self._main_hwnd:
+            # 验证句柄是否仍然有效
+            if ctypes.windll.user32.IsWindow(self._main_hwnd):
+                return self._main_hwnd
+            self._main_hwnd = None
+
+        # 方法1: 从 renderer_hwnd 向上找
+        try:
+            renderer_hwnd = self._window().gui.renderer_hwnd
+            if renderer_hwnd:
+                main_hwnd = _get_main_hwnd_from_renderer(renderer_hwnd)
+                if main_hwnd:
+                    self._main_hwnd = main_hwnd
+                    return main_hwnd
+        except Exception as e:
+            logger.debug(f'从 renderer 获取 HWND 失败: {e}')
+
+        # 方法2: FindWindowW
+        hwnd = ctypes.windll.user32.FindWindowW(None, '财经信息聚合播报 v3.6.0版')
+        if hwnd:
+            self._main_hwnd = hwnd
+            return hwnd
+
+        return None
+
+    def set_theme(self, theme):
+        """设置主题（影响Windows标题栏颜色）"""
+        try:
+            import platform
+            if platform.system() != 'Windows':
+                return json.dumps({'status': 'unsupported'})
+
+            dark = (theme == 'dark')
+            hwnd = self._find_hwnd()
+
+            if hwnd:
+                success = set_titlebar_dark_mode(hwnd, dark)
+                logger.info(f'set_theme: dark={dark}, hwnd={hwnd:#x}, success={success}')
+                return json.dumps({'status': 'ok' if success else 'failed'})
+            logger.warning('set_theme: 未找到窗口句柄')
+            return json.dumps({'status': 'no_hwnd'})
+        except Exception as e:
+            logger.warning(f'设置主题失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def persist_settings(self, settings_json):
+        """前端调用：保存设置到文件（供 Python 端读取主题等）"""
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'GuzhangNews')
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, 'settings.json')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(settings_json)
+            logger.info(f'设置已保存到 {config_path}')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.warning(f'保存设置失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
 
     def get_seen_aids(self):
         """前端初始化时获取所有已读 aid"""
@@ -584,7 +760,7 @@ def get_html_path():
 
 
 def main():
-    logger.info('=== 财经信息聚合播报 V3.1版 启动 ===')
+    logger.info('=== 财经信息聚合播报 v3.6.0版 启动 ===')
 
     # 初始化去重数据库 + 清理旧记录
     _init_seen_db()
@@ -603,7 +779,7 @@ def main():
     logger.info('授权状态: %s - %s', status, message)
 
     window = webview.create_window(
-        '财经信息聚合播报 V3.1版  开发：wolfjkd',
+        '财经信息聚合播报 v3.6.0版',
         url=get_html_path(),
         width=500,
         height=800,
@@ -651,6 +827,8 @@ def main():
         nonlocal window_ref
         window_ref = window
         threading.Thread(target=inject_auth_info, args=(window,), daemon=True).start()
+        # 从 Python 端直接应用初始主题（不依赖 JS 调用）
+        threading.Thread(target=_apply_initial_theme, args=(window,), daemon=True).start()
 
     window.events.loaded -= on_loaded
     window.events.loaded += on_loaded_with_auth

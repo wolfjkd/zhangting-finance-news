@@ -17,6 +17,51 @@
   --radius: 6px;
   --toolbar-h: 40px;
   --statusbar-h: 28px;
+  --priority-critical-bg: #fff5f5;
+  --priority-high-bg: #fff8f0;
+  --priority-medium-bg: #fffdf0;
+  --toggle-knob: #ffffff;
+  --keyword-tag-bg: #fff3cd;
+  --keyword-tag-text: #856404;
+  --highlight-bg: #fff176;
+  --highlight-text: #333;
+  --trial-bg: #fff3cd;
+  --trial-text: #856404;
+  --trial-border: #ffc107;
+  --success-bg: #d4edda;
+  --success-text: #155724;
+  --danger-bg: #f8d7da;
+  --danger-text: #721c24;
+}
+
+body.dark-mode {
+  --bg: #242526;
+  --bg-card: #3a3b3c;
+  --bg-card-hover: #4e4f50;
+  --border: #4e4f50;
+  --text: #e4e6eb;
+  --text-secondary: #a0a0a0;
+  --text-time: #58a6ff;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --orange: #e3b341;
+  --tag-bg: #3a3b3c;
+  --priority-critical-bg: #4a1a1a;
+  --priority-high-bg: #4a331a;
+  --priority-medium-bg: #4a4a1a;
+  --toggle-knob: #e4e6eb;
+  --keyword-tag-bg: #3a331a;
+  --keyword-tag-text: #e3b341;
+  --highlight-bg: #4a4a1a;
+  --highlight-text: #e4e6eb;
+  --trial-bg: #3a331a;
+  --trial-text: #e3b341;
+  --trial-border: #e3b341;
+  --success-bg: #1a3a1a;
+  --success-text: #3fb950;
+  --danger-bg: #3a1a1a;
+  --danger-text: #f85149;
 }
 
 html, body {
@@ -39,20 +84,27 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  -webkit-app-region: drag;
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+body.dark-mode .toolbar {
+  background: var(--bg-card) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+body.dark-mode .toolbar-left,
+body.dark-mode .toolbar-right {
+  background: transparent !important;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.logo-text {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--accent);
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .status-dot {
@@ -61,6 +113,7 @@ html, body {
   border-radius: 50%;
   background: var(--orange);
   transition: background 0.3s;
+  flex-shrink: 0;
 }
 
 .status-dot.connected { background: var(--green); }
@@ -69,6 +122,10 @@ html, body {
 .status-text {
   font-size: 12px;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .toolbar-right {
@@ -76,6 +133,9 @@ html, body {
   align-items: center;
   gap: 4px;
   -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  overflow: hidden;
+  max-width: 60%;
 }
 
 .btn {
@@ -165,7 +225,9 @@ html, body {
 /* ===== 新闻卡片 ===== */
 .news-item {
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  margin: 4px 8px;
+  background: var(--bg-card);
+  border-radius: 8px;
   border-left: 3px solid transparent;
   transition: background 0.15s;
   animation: slideIn 0.3s ease-out;
@@ -183,15 +245,15 @@ html, body {
 /* 优先级边框 */
 .news-item.priority-critical {
   border-left-color: #FF0000;
-  background: #fff5f5;
+  background: var(--priority-critical-bg);
 }
 .news-item.priority-high {
   border-left-color: #FF6B35;
-  background: #fff8f0;
+  background: var(--priority-high-bg);
 }
 .news-item.priority-medium {
   border-left-color: #FFC107;
-  background: #fffdf0;
+  background: var(--priority-medium-bg);
 }
 
 /* 分类标签 */
@@ -272,6 +334,12 @@ html, body {
   background: var(--tag-bg);
   padding: 1px 6px;
   border-radius: 3px;
+}
+
+.news-footer {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
 }
 
 .news-title {
@@ -358,6 +426,30 @@ html, body {
   font-size: 11px;
   color: var(--text-secondary);
   flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.statusbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.statusbar > span {
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-toggle-btn {
+  opacity: 0.6;
+}
+
+.theme-toggle-btn:hover {
+  opacity: 1;
 }
 
 /* ===== 日期分隔线 ===== */
@@ -524,7 +616,7 @@ html, body {
   width: 16px;
   left: 3px;
   bottom: 3px;
-  background: #fff;
+  background: var(--toggle-knob);
   border-radius: 50%;
   transition: 0.2s;
 }
@@ -624,9 +716,9 @@ html, body {
   gap: 4px;
   padding: 3px 8px;
   font-size: 12px;
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffc107;
+  background: var(--keyword-tag-bg);
+  color: var(--keyword-tag-text);
+  border: 1px solid var(--trial-border);
   border-radius: 12px;
   cursor: default;
 }
@@ -638,7 +730,7 @@ html, body {
   width: 14px;
   height: 14px;
   font-size: 11px;
-  color: #856404;
+  color: var(--keyword-tag-text);
   cursor: pointer;
   border-radius: 50%;
   transition: background 0.15s;
@@ -650,12 +742,76 @@ html, body {
 
 /* 高亮标记 */
 .kw-hl {
-  background: #fff176;
-  color: #333;
+  background: var(--highlight-bg);
+  color: var(--highlight-text);
   padding: 0 2px;
   border-radius: 2px;
   font-weight: 700;
 }
+
+/* ===== 通用对话框样式 ===== */
+.dialog-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.dialog-overlay.show { display: flex; }
+
+.dialog-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 90%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dialog-header h3 {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.dialog-close-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.dialog-close-btn:hover {
+  background: rgba(229,57,53,0.1);
+}
+
+.dialog-close-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: #e53935;
+}
+
+.dialog-content {
+  padding: 20px;
+}
+
+
 
 /* 设置提示文字 */
 .setting-hint {
@@ -708,10 +864,10 @@ html, body {
   border-radius: 3px;
   white-space: nowrap;
 }
-.auth-status.trial { color: #856404; background: #fff3cd; }
-.auth-status.licensed { color: #155724; background: #d4edda; }
+.auth-status.trial { color: var(--trial-text); background: var(--trial-bg); }
+.auth-status.licensed { color: var(--success-text); background: var(--success-bg); }
 .auth-status.expired,
-.auth-status.trial_expired { color: #721c24; background: #f8d7da; }
+.auth-status.trial_expired { color: var(--danger-text); background: var(--danger-bg); }
 
 /* ===== 授权到期遮罩 ===== */
 .auth-overlay {
@@ -829,10 +985,10 @@ html, body {
   padding: 2px 8px;
   border-radius: 4px;
 }
-.auth-info-value.trial     { color: #856404; background: #fff3cd; }
-.auth-info-value.licensed  { color: #155724; background: #d4edda; }
+.auth-info-value.trial     { color: var(--trial-text); background: var(--trial-bg); }
+.auth-info-value.licensed  { color: var(--success-text); background: var(--success-bg); }
 .auth-info-value.expired,
-.auth-info-value.trial_expired { color: #721c24; background: #f8d7da; }
+.auth-info-value.trial_expired { color: var(--danger-text); background: var(--danger-bg); }
 
 .auth-fingerprint-row {
   display: flex;
@@ -911,7 +1067,7 @@ html, body {
   top: 48px;
   right: 10px;
   width: 280px;
-  background: #fff;
+  background: var(--toggle-knob);
   border: 2px solid var(--red);
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
@@ -1011,22 +1167,6 @@ html, body {
   color: var(--text);
 }
 
-.datasource-close {
-  background: none;
-  border: none;
-  padding: 2px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: background 0.15s;
-}
-
-.datasource-close:hover {
-  background: rgba(229,57,53,0.1);
-}
-
 .datasource-list {
   padding: 0 16px 8px;
   display: flex;
@@ -1117,7 +1257,7 @@ html, body {
   width: 16px;
   left: 3px;
   bottom: 3px;
-  background: #fff;
+  background: var(--toggle-knob);
   border-radius: 50%;
   transition: 0.2s;
 }
@@ -1271,4 +1411,821 @@ html, body {
   color: var(--accent);
   margin-left: 4px;
   opacity: 0.7;
+}
+
+/* ===== 股票标签组 ===== */
+.stock-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+/* ===== 股票行情样式 ===== */
+.stock-quote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.stock-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.stock-price {
+  font-weight: 600;
+}
+
+.stock-change {
+  font-size: 11px;
+}
+
+/* ===== 消息卡片增强（优先级边框） ===== */
+.news-item-enhanced {
+  border-left: 3px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.news-item-enhanced.priority-critical {
+  border-left-color: #FF0000;
+  background-color: var(--priority-critical-bg);
+}
+
+.news-item-enhanced.priority-high {
+  border-left-color: #FF6B35;
+  background-color: var(--priority-high-bg);
+}
+
+.news-item-enhanced.priority-medium {
+  border-left-color: #FFC107;
+  background-color: var(--priority-medium-bg);
+}
+
+/* ===== 导出对话框样式 ===== */
+.export-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 100;
+  width: 90%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.export-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.export-content {
+  padding: 20px;
+}
+
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.export-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 20px;
+  border-top: 1px solid #eee;
+}
+
+.btn-export {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-export.primary {
+  background-color: #2196F3;
+  color: white;
+}
+
+.btn-export.secondary {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+/* ===== 历史搜索对话框样式 ===== */
+.history-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 100;
+  width: 90%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-content {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.history-search input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.history-search button {
+  padding: 8px 16px;
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.history-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.history-results {
+  padding: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.history-item {
+  padding: 12px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.history-item-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.history-item-meta {
+  font-size: 12px;
+  color: #666;
+  display: flex;
+  gap: 12px;
+}
+
+.history-item-content {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #444;
+}
+
+/* ===== 自选股相关 ===== */
+
+/* 自选股匹配标记 */
+.watchlist-match {
+  border-left: 3px solid #ffb300 !important;
+}
+
+.watchlist-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #e65100;
+  background: rgba(255, 179, 0, 0.12);
+  border: 1px solid rgba(255, 179, 0, 0.3);
+  border-radius: 10px;
+  cursor: pointer;
+  margin-right: 6px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.watchlist-badge:hover {
+  background: rgba(255, 179, 0, 0.2);
+}
+
+/* 自选股对话框 */
+.watchlist-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 420px;
+  max-height: 80vh;
+  background: var(--bg);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.watchlist-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.watchlist-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.watchlist-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.watchlist-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--tag-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.watchlist-add-row {
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.watchlist-add-row input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.watchlist-add-row input:focus {
+  border-color: var(--accent);
+}
+
+.watchlist-add-btn {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.watchlist-add-btn:hover {
+  background: #0257b5;
+}
+
+.watchlist-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.watchlist-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  gap: 8px;
+  margin-bottom: 4px;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.watchlist-item:hover {
+  background: var(--hover);
+}
+
+.watchlist-remove-btn {
+  background: none;
+  border: none;
+  color: #e53935;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  line-height: 1;
+}
+
+.watchlist-item:hover .watchlist-remove-btn {
+  opacity: 1;
+}
+
+.watchlist-remove-btn:hover {
+  background: rgba(229, 57, 53, 0.1);
+}
+
+.watchlist-stock-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.watchlist-stock-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.watchlist-stock-code {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.watchlist-quote-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.watchlist-quote-btn:hover {
+  background: rgba(3, 102, 214, 0.1);
+}
+
+.watchlist-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* 行情弹窗 */
+.quote-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 420px;
+  background: var(--bg);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  overflow: hidden;
+}
+
+.quote-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quote-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.quote-code {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.quote-body {
+  padding: 20px;
+}
+
+.quote-price {
+  font-size: 36px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.quote-change {
+  font-size: 16px;
+  text-align: center;
+  margin-bottom: 20px;
+  font-weight: 500;
+}
+
+.quote-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.quote-grid-item {
+  padding: 10px 12px;
+  background: var(--hover);
+  border-radius: 8px;
+}
+
+.quote-grid-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.quote-grid-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.quote-grid-value.up {
+  color: #e53935;
+}
+
+.quote-grid-value.down {
+  color: #43a047;
+}
+
+.up {
+  color: #e53935;
+}
+
+.down {
+  color: #43a047;
+}
+
+/* ===== 自选股异动提醒弹窗 ===== */
+
+.watchlist-alert-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 360px;
+  background: var(--bg);
+  border-radius: 12px;
+  border: 2px solid #ffb300;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  z-index: 2000;
+  overflow: hidden;
+  animation: alertPulse 0.5s ease-out;
+}
+
+@keyframes alertPulse {
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+  50% { transform: translate(-50%, -50%) scale(1.05); }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+.alert-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 179, 0, 0.1);
+  border-bottom: 1px solid rgba(255, 179, 0, 0.2);
+}
+
+.alert-icon {
+  font-size: 24px;
+  margin-right: 10px;
+}
+
+.alert-icon.up {
+  animation: bounce 0.5s ease infinite;
+}
+
+.alert-icon.down {
+  animation: shake 0.5s ease infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+.alert-title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e65100;
+}
+
+.alert-body {
+  padding: 20px;
+  text-align: center;
+}
+
+.alert-stock-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.alert-stock-code {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.alert-price {
+  font-size: 42px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.alert-change {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.alert-message {
+  font-size: 14px;
+  color: #e65100;
+  background: rgba(255, 179, 0, 0.1);
+  padding: 8px 16px;
+  border-radius: 20px;
+  margin-bottom: 16px;
+}
+
+.alert-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.alert-view-btn {
+  padding: 10px 24px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.alert-view-btn:hover {
+  background: #0257b5;
+}
+
+/* ===== 自选股分组管理 ===== */
+
+.watchlist-group {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.watchlist-group-header {
+  padding: 10px 12px;
+  background: var(--hover);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.watchlist-group-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.watchlist-group-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--tag-bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.watchlist-group-menu-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.watchlist-group-menu-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.watchlist-group-menu {
+  display: none;
+  position: absolute;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.watchlist-group-menu.show {
+  display: block;
+}
+
+.watchlist-group-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.watchlist-group-menu button:hover {
+  background: var(--hover);
+}
+
+.watchlist-group-stocks {
+  padding: 8px;
+}
+
+.watchlist-move-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.watchlist-item:hover .watchlist-move-btn {
+  opacity: 1;
+}
+
+.watchlist-move-btn:hover {
+  background: rgba(3, 102, 214, 0.1);
+  color: var(--accent);
+}
+
+.watchlist-move-menu {
+  position: fixed;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  z-index: 2001;
+  min-width: 160px;
+  overflow: hidden;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.watchlist-move-title {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: var(--hover);
+}
+
+.watchlist-move-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.watchlist-move-menu button:hover {
+  background: var(--hover);
+}
+
+.watchlist-move-close {
+  color: var(--text-secondary) !important;
+  border-top: 1px solid var(--border);
+}
+
+.watchlist-add-group-btn {
+  padding: 4px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: 16px;
+}
+
+.watchlist-add-group-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.watchlist-add-btn-header {
+  padding: 4px 10px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: 16px;
+}
+
+.watchlist-add-btn-header:hover {
+  opacity: 0.85;
 }
