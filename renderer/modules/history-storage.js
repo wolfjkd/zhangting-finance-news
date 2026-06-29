@@ -5,7 +5,7 @@
 
 class HistoryStorage {
   constructor() {
-    this.dbName = 'GuzhangNewsHistory';
+    this.dbName = 'ZTFINewsHistory';
     this.dbVersion = 4; // 升级版本以添加watchlist分组
     this.db = null;
     this.maxRecords = 10000; // 最大存储记录数

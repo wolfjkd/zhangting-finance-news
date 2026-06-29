@@ -169,7 +169,7 @@ body.dark-mode .toolbar-right {
 .news-container {
   position: absolute;
   top: var(--toolbar-h);
-  bottom: var(--statusbar-h);
+  bottom: calc(var(--statusbar-h) + 28px);
   left: 0;
   right: 0;
   overflow-y: auto;
@@ -410,6 +410,22 @@ body.dark-mode .toolbar-right {
   color: var(--text-secondary);
 }
 
+/* ===== 金融风险提示条 ===== */
+.risk-bar {
+  position: absolute;
+  bottom: var(--statusbar-h);
+  left: 0;
+  right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
 /* ===== 底部状态栏 ===== */
 .statusbar {
   position: absolute;
@@ -452,6 +468,24 @@ body.dark-mode .toolbar-right {
   opacity: 1;
 }
 
+.donate-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #e53935;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.donate-btn:hover {
+  background: rgba(229, 57, 53, 0.1);
+}
+
 /* ===== 日期分隔线 ===== */
 .date-separator {
   padding: 6px 14px;
@@ -483,7 +517,7 @@ body.dark-mode .toolbar-right {
   border-radius: 10px;
   width: 90%;
   max-width: 420px;
-  max-height: 80vh;
+  max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
 }
@@ -857,86 +891,9 @@ body.dark-mode .toolbar-right {
   border: 1px solid var(--border);
 }
 
-/* ===== 授权状态栏文字 ===== */
-.auth-status {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  white-space: nowrap;
-}
-.auth-status.trial { color: var(--trial-text); background: var(--trial-bg); }
-.auth-status.licensed { color: var(--success-text); background: var(--success-bg); }
-.auth-status.expired,
-.auth-status.trial_expired { color: var(--danger-text); background: var(--danger-bg); }
-
-/* ===== 授权到期遮罩 ===== */
-.auth-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.65);
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(4px);
-}
-
-.auth-panel {
-  background: var(--bg);
-  border-radius: 14px;
-  width: 90%;
-  max-width: 380px;
-  padding: 32px 28px 24px;
-  text-align: center;
-  box-shadow: 0 12px 48px rgba(0,0,0,0.25);
-}
-
-.auth-icon {
-  font-size: 40px;
-  margin-bottom: 12px;
-}
-
-.auth-title {
-  font-size: 18px;
-  color: var(--text);
-  margin-bottom: 8px;
-}
-
-.auth-desc {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 20px;
-  line-height: 1.6;
-}
-
-.auth-input-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.auth-input {
-  flex: 1;
-  padding: 10px 14px;
-  border: 2px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-family: 'Consolas', 'Courier New', monospace;
-  letter-spacing: 1px;
-  text-align: center;
-  text-transform: uppercase;
-  outline: none;
-  transition: border-color 0.2s;
-  background: var(--bg);
-  color: var(--text);
-}
-
-.auth-input:focus {
-  border-color: var(--accent);
-}
-
-.auth-btn {
-  padding: 10px 20px;
+/* ===== 通用按钮 ===== */
+.primary-btn {
+  padding: 10px 16px;
   background: var(--accent);
   color: #fff;
   border: none;
@@ -947,119 +904,8 @@ body.dark-mode .toolbar-right {
   transition: opacity 0.15s;
   white-space: nowrap;
 }
-
-.auth-btn:hover { opacity: 0.9; }
-.auth-btn:active { opacity: 0.8; }
-
-.auth-hint {
-  font-size: 12px;
-  min-height: 18px;
-  margin-bottom: 8px;
-}
-.auth-hint.error { color: var(--red); }
-.auth-hint.success { color: var(--green); }
-
-.auth-contact {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-/* 设置面板 - 授权区块 */
-.auth-info-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
-}
-.auth-info-label {
-  font-size: 13px;
-  color: var(--text);
-  flex-shrink: 0;
-}
-.auth-info-value {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-.auth-info-value.trial     { color: var(--trial-text); background: var(--trial-bg); }
-.auth-info-value.licensed  { color: var(--success-text); background: var(--success-bg); }
-.auth-info-value.expired,
-.auth-info-value.trial_expired { color: var(--danger-text); background: var(--danger-bg); }
-
-.auth-fingerprint-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.auth-fingerprint {
-  font-size: 13px;
-  font-family: 'Consolas', 'Courier New', monospace;
-  letter-spacing: 1px;
-  color: var(--text);
-  background: var(--tag-bg);
-  padding: 3px 8px;
-  border-radius: 4px;
-  user-select: all;
-  cursor: pointer;
-}
-.btn-copy {
-  font-size: 11px;
-  padding: 3px 10px;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  background: none;
-  color: var(--accent);
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-.btn-copy:hover { background: var(--accent); color: #fff; }
-.btn-copy.copied { background: var(--green); border-color: var(--green); color: #fff; }
-
-.auth-input-row {
-  display: flex;
-  gap: 8px;
-}
-.auth-input {
-  flex: 1;
-  padding: 7px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 13px;
-  font-family: 'Consolas', 'Courier New', monospace;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  outline: none;
-  transition: border-color 0.2s;
-  background: var(--bg);
-  color: var(--text);
-}
-.auth-input:focus { border-color: var(--accent); }
-
-.auth-activate-btn {
-  padding: 7px 16px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  white-space: nowrap;
-}
-.auth-activate-btn:hover { opacity: 0.9; }
-.auth-activate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.auth-hint {
-  font-size: 12px;
-}
-.auth-hint.error   { color: var(--red); }
-.auth-hint.success { color: var(--green); }
+.primary-btn:hover { opacity: 0.9; }
+.primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ===== 关键词警报通知 ===== */
 .kw-alert-notification {

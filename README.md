@@ -1,6 +1,8 @@
-# 财经新闻聚合播报 v3.6.0
+# 涨停财经聚合播报 v3.8.0（开源版）
 
 轻量级桌面财经新闻推送客户端，基于 pywebview（WebView2 内核），无需浏览器即可实时接收聚合消息推送，并集成了东财公告、券商研报、北向资金等多数据源。
+
+**📢 开源声明：本项目已开源，采用 MIT License，所有功能完全免费开放！**
 
 ---
 
@@ -79,7 +81,7 @@
 - **暗色主题**：深色背景，护眼舒适
 
 ### 多数据源（V3.1 新增）
-- **鼓掌财经聚合平台**：主要数据源，WebSocket 实时推送
+- **涨停财经聚合平台**：主要数据源，WebSocket 实时推送
 - **东方财富公告**：`np-anotice-stock.eastmoney.com`，轮询获取重要公告
 - **券商研报**：`reportapi.eastmoney.com`，轮询获取研报评级变动
 - **北向资金**：`push2delay.eastmoney.com`，轮询获取北向资金实时数据
@@ -118,7 +120,7 @@
 - **历史存储**：IndexedDB 本地存储，支持全文搜索和导出
 - **新闻详情弹窗**：东方财富公告和券商研报的消息，点击标题可弹窗查看详细内容
 - **数据源管理**：可视化管理各数据源的启用/禁用和连接测试
-- **授权系统**：机器指纹绑定 + 试用 3 天 + 永久/限期激活码
+- **赞赏支持**：完全免费开源，欢迎自愿打赏支持开发
 
 ## 运行环境
 
@@ -134,7 +136,7 @@ pip install pywebview requests websocket-client
 ## 启动
 
 **方式一：直接运行 exe（推荐，无需 Python 环境）**
-双击 `dist/财经新闻聚合播报_V3.1.exe`
+双击 `dist/涨停财经聚合播报_V3.7.0.exe`
 
 **方式二：Python 脚本启动**
 ```bash
@@ -145,27 +147,28 @@ python app.py
 ## 项目结构
 
 ```
-guzhang-news-ticker/
+ZTFI-News/
 ├── app.py                  # 主程序入口（Python 后端抓取 + WebSocket 代理 + 行情API）
 ├── data_source_manager.py  # 多数据源管理器（东财公告/研报/北向资金）
-├── gen_key.py              # 激活码生成工具
 ├── test_new_features.py    # 集成测试（24 个用例）
 ├── AGENTS.md               # 开发规则文档（版本管理、打包策略、代码规范）
+├── LICENSE                 # MIT 开源协议
+├── PRIVACY.md              # 隐私政策
+├── RISK_DISCLOSURE.md       # 投资风险提示
 ├── 启动.bat                # 双击启动脚本
-├── 鼓掌财经聚合.spec       # PyInstaller 打包配置
+├── 涨停财经聚合播报.spec   # PyInstaller 打包配置
 ├── dist/
-│   ├── 财经新闻聚合播报_V3.1.exe   # 最新版本
-│   ├── 鼓掌财经聚合_V2.1.exe       # 历史版本
-│   └── 永久激活码生成.exe           # 激活码生成工具
+│   ├── 涨停财经聚合播报_v3.8.0.exe   # 最新版本
+│   └── ...                          # 历史版本
 ├── renderer/
 │   ├── index.html          # 前端页面
 │   ├── style.css           # 样式（暗色主题）
 │   ├── app.js              # 前端主逻辑
+│   ├── 赞赏码.png          # 赞赏收款码
 │   └── modules/
 │       ├── news-classifier.js   # 新闻分类与优先级系统
 │       ├── stock-quote.js       # 行情查询模块
-│       ├── history-storage.js   # 历史存储（IndexedDB）
-│       └── ui-enhancements.js   # UI增强（导出/历史搜索/数据源管理）
+│       └── history-storage.js   # 历史存储（IndexedDB）
 └── README.md
 ```
 
@@ -190,7 +193,7 @@ guzhang-news-ticker/
 详见 `AGENTS.md`，核心规则：
 
 - **版本号格式**：`V{主版本}.{次版本}`（如 V3.1）
-- **exe 命名**：`财经新闻聚合播报_V{版本号}.exe`
+- **exe 命名**：`涨停财经聚合播报_V{版本号}.exe`
 - **打包位置**：`dist/` 目录
 - **历史版本保留**：所有打包好的 exe 都保留，不删除旧版本
 

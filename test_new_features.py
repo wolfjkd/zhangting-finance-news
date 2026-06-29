@@ -1,6 +1,6 @@
 """
-鼓掌财经聚合 — 集成测试
-测试后端数据源、授权系统、去重DB、行情API
+涨停财经聚合播报 v3.8.0 — 集成测试
+测试后端数据源、去重DB、行情API
 所有国内API直连，不走代理
 """
 
@@ -27,7 +27,7 @@ class TestDataSourceManager(unittest.TestCase):
     def test_init_default_sources(self):
         """应有4个默认数据源"""
         self.assertEqual(len(self.manager.sources), 4)
-        self.assertIn("guzhang", self.manager.sources)
+        self.assertIn("ztfi", self.manager.sources)
         self.assertIn("eastmoney", self.manager.sources)
         self.assertIn("research", self.manager.sources)
         self.assertIn("northbound", self.manager.sources)
@@ -214,73 +214,6 @@ class TestTencentQuoteAPI(unittest.TestCase):
         self.assertGreaterEqual(len(valid_lines), 3)
 
 
-class TestAuthSystem(unittest.TestCase):
-    """授权系统测试"""
-
-    def setUp(self):
-        # 使用临时授权文件
-        self._orig_auth_file = None
-        import app as app_module
-        self._orig_auth_file = app_module.AUTH_FILE
-        self._test_dir = os.path.join(os.environ.get('TEMP', os.path.expanduser('~')), 'guzhang_test_auth')
-        os.makedirs(self._test_dir, exist_ok=True)
-        app_module.AUTH_FILE = os.path.join(self._test_dir, 'auth.dat')
-
-    def tearDown(self):
-        import app as app_module
-        # 清理临时文件
-        if os.path.exists(app_module.AUTH_FILE):
-            os.remove(app_module.AUTH_FILE)
-        if os.path.exists(self._test_dir):
-            shutil.rmtree(self._test_dir)
-        app_module.AUTH_FILE = self._orig_auth_file
-
-    def test_machine_id(self):
-        """机器指纹生成"""
-        from app import _get_machine_id
-        mid = _get_machine_id()
-        self.assertIsNotNone(mid)
-        self.assertNotEqual(mid, 'UNKNOWN')
-        self.assertGreater(len(mid), 8)
-
-    def test_generate_license_key(self):
-        """激活码生成格式"""
-        from app import _generate_license_key
-        mid = 'TESTMACHINE1234'
-        perm_key = _generate_license_key(mid, None)
-        self.assertRegex(perm_key, r'^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$')
-
-        days_key = _generate_license_key(mid, 30)
-        self.assertRegex(days_key, r'^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$')
-
-        # 永久码和限期码应不同
-        self.assertNotEqual(perm_key, days_key)
-
-    def test_trial_mode(self):
-        """首次运行 → 试用模式"""
-        from app import check_license, AUTH_FILE
-        # 确保没有授权文件
-        if os.path.exists(AUTH_FILE):
-            os.remove(AUTH_FILE)
-        status, message, expiry = check_license()
-        self.assertEqual(status, 'trial')
-        self.assertIsNotNone(expiry)
-
-    def test_activate_permanent(self):
-        """永久激活码验证"""
-        from app import _get_machine_id, _generate_license_key, activate_license, AUTH_FILE, _write_auth
-        mid = _get_machine_id()
-        perm_key = _generate_license_key(mid, None)
-        result = activate_license(perm_key)
-        self.assertTrue(result)
-
-    def test_activate_invalid_key(self):
-        """无效激活码应失败"""
-        from app import activate_license
-        result = activate_license('INVALID-KEY-XXXX')
-        self.assertFalse(result)
-
-
 class TestSeenAidDB(unittest.TestCase):
     """去重数据库测试"""
 
@@ -345,6 +278,6 @@ class TestSeenAidDB(unittest.TestCase):
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("鼓掌财经聚合 V3.1 — 集成测试")
+    print("涨停财经聚合播报 v3.6.0 — 集成测试")
     print("=" * 60)
     unittest.main(verbosity=2)

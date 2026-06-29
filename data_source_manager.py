@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
-logger = logging.getLogger('guzhang')
+logger = logging.getLogger('ztfi')
 
 # ===== 直连 Session（不走系统代理）=====
 _session = requests.Session()
@@ -39,7 +39,7 @@ def _get_json(url, params=None, timeout=10):
 
 
 def _make_aid(source_id: str, unique_key: str) -> str:
-    """生成唯一 aid，避免与鼓掌财经的 aid 冲突"""
+    """生成唯一 aid，避免与其他数据源的 aid 冲突"""
     h = hashlib.md5(f"{source_id}:{unique_key}".encode()).hexdigest()[:12]
     return f"{source_id}_{h}"
 
@@ -102,7 +102,7 @@ class DataSourceManager:
     def _init_default_sources(self):
         default_sources = [
             DataSourceConfig(
-                id="guzhang", name="鼓掌财经", type=DataSourceType.WEBSOCKET,
+                id="ztfi", name="涨停财经", type=DataSourceType.WEBSOCKET,
                 enabled=True, priority=1, description="实时聚合消息"
             ),
             DataSourceConfig(
@@ -262,6 +262,7 @@ class DataSourceManager:
 
             messages.append({
                 "aid": _make_aid("eastmoney", art_code),
+                "art_code": art_code,  # 留给前端请求详情用
                 "title": f"[公告] {title}",
                 "content": " | ".join(content_parts) if content_parts else "",
                 "comefrom": "东方财富",
@@ -364,6 +365,7 @@ class DataSourceManager:
 
             messages.append({
                 "aid": _make_aid("research", info_code),
+                "info_code": info_code,  # 留给前端请求详情用
                 "title": title,
                 "content": " | ".join(content_parts) if content_parts else "",
                 "comefrom": "券商研报",
@@ -539,11 +541,20 @@ class DataSourceManager:
         if source_id == "northbound":
             url = source.endpoints["realtime"]
             t0 = time.time()
-            data = _get_json(url, timeout=8)
-            latency = int((time.time() - t0) * 1000)
-            if data and data.get("data"):
-                return {"success": True, "message": "连接成功", "latency": latency}
-            return {"success": False, "message": "API 无数据", "latency": latency}
+            try:
+                data = _get_json(url, timeout=8)
+                latency = int((time.time() - t0) * 1000)
+                if data:
+                    # API 可达即视为成功，收盘后 data 字段可能为空但不代表接口故障
+                    has_data = data.get("data") is not None
+                    if has_data:
+                        return {"success": True, "message": "连接成功（有数据）", "latency": latency}
+                    else:
+                        return {"success": True, "message": "连接成功（当前无数据，收盘后正常）", "latency": latency}
+                return {"success": False, "message": "API 无响应", "latency": latency}
+            except Exception as e:
+                latency = int((time.time() - t0) * 1000)
+                return {"success": False, "message": f"连接失败: {e}", "latency": latency}
 
         return {"success": False, "message": "未知数据源类型"}
 

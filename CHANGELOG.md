@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v3.8.0] - 2026-06-29
+
+### Added
+- 隐私政策强制弹窗：首次启动必须阅读并同意才能使用
+- 6大块完整免责声明：隐私政策、金融投资重大风险免责、数据抓取合规声明、软件使用与自愿赞助说明、开源组件版权说明、通用软件免责条款
+- 金融风险提示条：首页底部常驻显示"本工具仅数据展示，不构成任何投资建议"
+- 赞赏支持功能：状态栏红心按钮+弹窗收款码
+- 第三方开源组件声明文件：THIRD_PARTY.md
+- 隐私政策文件：PRIVACY.md（含完整7章声明）
+- 投资风险提示文件：RISK_DISCLOSURE.md
+
+### Changed
+- 移除授权系统：删除所有激活码、机器指纹、授权验证相关代码
+- 删除导出消息功能和历史消息搜索功能
+- 清理授权相关CSS样式（.auth-status、.auth-overlay、.auth-panel等）
+- 删除授权系统测试用例
+- 删除激活码生成工具
+- 项目完全开源：MIT License
+- 所有功能永久免费开放
+
+### Fixed
+- 赞赏码图片加载问题
+- 隐私政策弹窗样式优化
+
+## [v3.7.0] - 2026-06-28
+
+### Added
+- 项目重命名：鼓掌财经 → 涨停财经（ZTFI-News）
+- 全局名称替换：代码、文档、配置文件中的所有旧名称
+
+### Changed
+- 版本号升级至v3.7.0（项目重命名）
+
 ## [v3.6.0] - 2026-06-28
 
 ### Changed
@@ -114,7 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
 - AGENTS.md：项目开发规则文档
 
 ### Changed
-- exe命名格式：`财经新闻聚合播报_V{版本号}.exe`
+- exe命名格式：`涨停财经聚合播报_V{版本号}.exe`
 - 版本管理规范化
 
 ### Fixed

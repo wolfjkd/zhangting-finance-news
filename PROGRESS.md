@@ -1,6 +1,6 @@
 # guzhang-news-ticker 开发进度总览
 
-> 本文档记录鼓掌财经聚合消息桌面端的完整开发进度，供AI助手跨会话参考。
+> 本文档记录涨停财经聚合消息桌面端的完整开发进度，供AI助手跨会话参考。
 > 最后更新：2026-06-28
 > 当前版本：v3.6.0
 
@@ -10,7 +10,7 @@
 
 | 项目 | 说明 |
 |------|------|
-| 项目名称 | 鼓掌财经聚合消息桌面端（guzhang-news-ticker） |
+| 项目名称 | 涨停财经聚合消息桌面端（guzhang-news-ticker） |
 | 技术栈 | Python + pywebview + WebView2 + 原生HTML/CSS/JS |
 | 核心功能 | 实时财经新闻推送、多数据源聚合、消息分类、关键词警报 |
 | 项目路径 | `C:\Users\wolfj\Documents\trae_projects\guzhang-news-ticker` |
@@ -136,7 +136,7 @@
 - [x] 消息卡片（时间/来源/标题/摘要/关联股票）
 
 ### 多数据源
-- [x] 鼓掌财经聚合平台（主数据源，WebSocket）
+- [x] 涨停财经聚合平台（主数据源，WebSocket）
 - [x] 东方财富公告（轮询）
 - [x] 券商研报（轮询）
 - [x] 北向资金（轮询）
@@ -199,19 +199,20 @@
 ## 五、项目文件结构
 
 ```
-guzhang-news-ticker/
+ZTFI-News/
 ├── app.py                    # 主程序入口
 ├── data_source_manager.py    # 多数据源管理器
-├── gen_key.py                # 激活码生成工具
-├── trial_key_generator.py    # 试用激活码生成
 ├── test_new_features.py      # 集成测试（24个用例）
 ├── AGENTS.md                 # 开发规则文档
 ├── PROGRESS.md               # 本文件：开发进度总览
 ├── CHANGELOG.md              # 变更日志
 ├── README.md                 # 用户文档
+├── LICENSE                   # MIT 开源协议
+├── PRIVACY.md                # 隐私政策
+├── RISK_DISCLOSURE.md         # 投资风险提示
 ├── 启动.bat                   # 双击启动
 ├── build.bat                  # 打包脚本
-├── 鼓掌财经聚合.spec          # PyInstaller 配置
+├── 涨停财经聚合播报.spec      # PyInstaller 配置
 ├── dist/                      # 打包产物（所有历史版本）
 ├── renderer/
 │   ├── index.html             # 前端页面
@@ -250,7 +251,7 @@ guzhang-news-ticker/
 - CHANGELOG.md 每次更新
 
 ### 打包规则
-- exe 命名：`财经新闻聚合播报_v{版本号}.exe`
+- exe 命名：`涨停财经聚合播报_v{版本号}.exe`
 - 所有历史版本保留在 dist/
 - 打包命令：双击 build.bat
 
