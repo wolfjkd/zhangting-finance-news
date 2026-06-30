@@ -131,11 +131,45 @@ class DataSourceManager:
             }
             self._seen_ids[source.id] = set()
 
+        self._load_source_enabled_states()
+
+    def _get_source_config_path(self):
+        import os
+        config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+        return os.path.join(config_dir, 'data_sources.json')
+
+    def _load_source_enabled_states(self):
+        try:
+            config_path = self._get_source_config_path()
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    saved = json.loads(f.read())
+                    for sid, state in saved.items():
+                        if sid in self.sources:
+                            self.sources[sid].enabled = state.get('enabled', self.sources[sid].enabled)
+                            logger.info(f"恢复数据源 {sid} 状态: {'启用' if self.sources[sid].enabled else '禁用'}")
+        except Exception as e:
+            logger.warning(f"加载数据源配置失败: {e}")
+
+    def _save_source_enabled_states(self):
+        try:
+            import os
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = self._get_source_config_path()
+            saved = {sid: {'enabled': s.enabled} for sid, s in self.sources.items()}
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(saved))
+            logger.info("数据源配置已保存")
+        except Exception as e:
+            logger.warning(f"保存数据源配置失败: {e}")
+
     # ===== 启停 =====
     def enable_source(self, source_id: str) -> bool:
         if source_id not in self.sources:
             return False
         self.sources[source_id].enabled = True
+        self._save_source_enabled_states()
         self._start_source(source_id)
         return True
 
@@ -143,6 +177,7 @@ class DataSourceManager:
         if source_id not in self.sources:
             return False
         self.sources[source_id].enabled = False
+        self._save_source_enabled_states()
         self._stop_source(source_id)
         return True
 
