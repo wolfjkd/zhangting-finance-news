@@ -46,14 +46,25 @@ class StockQuoteManager {
    */
   async loadStockNames() {
     try {
-      // 从本地存储加载
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_stock_names) {
+        const backendNames = await pywebview.api.get_stock_names();
+        if (backendNames) {
+          const parsed = typeof backendNames === 'string' ? JSON.parse(backendNames) : backendNames;
+          Object.assign(this.stockNames, parsed);
+        }
+      }
+    } catch (e) {
+      console.warn('从后端加载股票名称失败:', e);
+    }
+
+    try {
       const stored = localStorage.getItem('stockNames');
       if (stored) {
         const names = JSON.parse(stored);
         Object.assign(this.stockNames, names);
       }
     } catch (e) {
-      console.warn('加载股票名称失败:', e);
+      console.warn('从本地存储加载股票名称失败:', e);
     }
   }
 
@@ -140,6 +151,9 @@ class StockQuoteManager {
   saveStockNames() {
     try {
       localStorage.setItem('stockNames', JSON.stringify(this.stockNames));
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.persist_stock_names) {
+        pywebview.api.persist_stock_names(JSON.stringify(this.stockNames)).catch(() => {});
+      }
     } catch (e) {
       console.warn('保存股票名称失败:', e);
     }

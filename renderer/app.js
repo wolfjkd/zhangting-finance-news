@@ -23,6 +23,7 @@
   const recentItems = [];
   const MAX_RECENT = 80; // 只与最近80条比较，避免性能问题
   const MAX_DOM_ITEMS = 500; // 虚拟滚动：最多保留 DOM 节点数
+  let windowResizeTimer = null; // 窗口大小保存防抖定时器
 
   // ===== 设置 =====
   const ALL_SOURCES = [
@@ -76,6 +77,20 @@
 
   // ===== 初始化 =====
   async function init() {
+    // 0. 优先从后端读取设置（打包后 localStorage 不稳定）
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_settings) {
+        const backendSettings = await pywebview.api.get_settings();
+        if (backendSettings) {
+          const parsed = typeof backendSettings === 'string' ? JSON.parse(backendSettings) : backendSettings;
+          if (Object.keys(parsed).length > 0) {
+            localStorage.setItem('ztfi-settings', JSON.stringify(parsed));
+            settings = loadSettings();
+          }
+        }
+      }
+    } catch (e) {}
+
     // 1. 从 SQLite 加载已读 aid（持久化去重）
     try {
       const persisted = await pywebview.api.get_seen_aids();
@@ -86,6 +101,13 @@
     } catch (e) {
       // ignore
     }
+
+    // 2. 从后端初始化自选股（打包后 IndexedDB 不稳定）
+    try {
+      if (window.historyStorage && window.historyStorage.initFromBackend) {
+        await window.historyStorage.initFromBackend();
+      }
+    } catch (e) {}
 
     setStatus('connecting', '正在获取数据...');
     try {
@@ -1414,6 +1436,17 @@
     // pywebview API 就绪后重新应用主题（解决初始化时序问题）
     window.addEventListener('pywebviewready', () => {
       setWindowTitlebarTheme(settings.darkMode);
+      // 监听窗口大小变化，保存到后端
+      window.addEventListener('resize', () => {
+        if (windowResizeTimer) clearTimeout(windowResizeTimer);
+        windowResizeTimer = setTimeout(() => {
+          const width = window.outerWidth;
+          const height = window.outerHeight;
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.set_window_size) {
+            window.pywebview.api.set_window_size(width, height).catch(() => {});
+          }
+        }, 1000);
+      });
     });
 
     $btnThemeToggle.addEventListener('click', () => {
@@ -2228,8 +2261,22 @@
     flushAidBuffer();
   });
 
-  function waitForApi(retries) {
+  async function waitForApi(retries) {
     if (typeof pywebview !== 'undefined' && pywebview.api && typeof pywebview.api.fetch_initial === 'function') {
+      // 优先从后端读取设置（打包后 localStorage 不稳定）
+      try {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.get_settings) {
+          const backendSettings = await pywebview.api.get_settings();
+          if (backendSettings) {
+            const parsed = typeof backendSettings === 'string' ? JSON.parse(backendSettings) : backendSettings;
+            if (Object.keys(parsed).length > 0) {
+              localStorage.setItem('ztfi-settings', JSON.stringify(parsed));
+              settings = loadSettings();
+            }
+          }
+        }
+      } catch (e) {}
+
       if (settings.privacyAccepted) {
         init();
       } else {

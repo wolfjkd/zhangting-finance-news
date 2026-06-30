@@ -918,6 +918,7 @@ class HistoryStorage {
       
       request.onsuccess = () => {
         console.log('已添加自选股:', stockData.code, stockData.name, '分组:', groupId);
+        this._syncWatchlistToBackend();
         resolve(true);
       };
       
@@ -944,6 +945,8 @@ class HistoryStorage {
         if (stock) {
           stock.groupId = groupId;
           store.put(stock);
+          this._syncWatchlistToBackend();
+          this._syncWatchlistGroupsToBackend();
           resolve(true);
         } else {
           resolve(false);
@@ -970,6 +973,7 @@ class HistoryStorage {
       
       request.onsuccess = () => {
         console.log('已移除自选股:', code);
+        this._syncWatchlistToBackend();
         resolve(true);
       };
       
@@ -1133,6 +1137,8 @@ class HistoryStorage {
         };
         
         console.log('已删除分组:', groupId);
+        this._syncWatchlistToBackend();
+        this._syncWatchlistGroupsToBackend();
         resolve(true);
       };
       
@@ -1160,6 +1166,7 @@ class HistoryStorage {
           group.name = newName;
           store.put(group);
           console.log('已重命名分组:', groupId, '->', newName);
+          this._syncWatchlistGroupsToBackend();
           resolve(true);
         } else {
           resolve(false);
@@ -1251,6 +1258,103 @@ class HistoryStorage {
         reject(event.target.error);
       };
     });
+  }
+
+  async _syncWatchlistToBackend() {
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.persist_watchlist) {
+        const watchlist = await this.getAllWatchlist();
+        await pywebview.api.persist_watchlist(JSON.stringify(watchlist));
+      }
+    } catch (e) {
+      console.warn('同步自选股到后端失败:', e);
+    }
+  }
+
+  async _syncWatchlistGroupsToBackend() {
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.persist_watchlist_groups) {
+        const groups = await this.getAllWatchlistGroups();
+        await pywebview.api.persist_watchlist_groups(JSON.stringify(groups));
+      }
+    } catch (e) {
+      console.warn('同步自选股分组到后端失败:', e);
+    }
+  }
+
+  async _clearWatchlistStores() {
+    if (!this.db) await this.openDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['watchlist', 'watchlistGroups'], 'readwrite');
+      const watchStore = transaction.objectStore('watchlist');
+      const groupStore = transaction.objectStore('watchlistGroups');
+      
+      const clearWatch = watchStore.clear();
+      const clearGroup = groupStore.clear();
+      
+      clearWatch.onsuccess = () => {
+        clearGroup.onsuccess = () => {
+          resolve(true);
+        };
+      };
+      
+      clearWatch.onerror = (event) => {
+        reject(event.target.error);
+      };
+    });
+  }
+
+  async _importWatchlistGroup(group) {
+    if (!this.db) await this.openDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['watchlistGroups'], 'readwrite');
+      const store = transaction.objectStore('watchlistGroups');
+      
+      store.put(group);
+      transaction.oncomplete = () => {
+        resolve(group);
+      };
+      transaction.onerror = (event) => {
+        reject(event.target.error);
+      };
+    });
+  }
+
+  async initFromBackend() {
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const backendWatchlist = await pywebview.api.get_watchlist();
+        const backendGroups = await pywebview.api.get_watchlist_groups();
+        
+        const hasWatchlist = backendWatchlist && 
+          (typeof backendWatchlist === 'string' ? JSON.parse(backendWatchlist) : backendWatchlist).length > 0;
+        
+        const hasGroups = backendGroups && 
+          (typeof backendGroups === 'string' ? JSON.parse(backendGroups) : backendGroups).length > 0;
+        
+        if (hasWatchlist || hasGroups) {
+          await this._clearWatchlistStores();
+          
+          if (hasGroups) {
+            const parsedGroups = typeof backendGroups === 'string' ? JSON.parse(backendGroups) : backendGroups;
+            for (const group of parsedGroups) {
+              await this._importWatchlistGroup(group);
+            }
+          }
+          
+          if (hasWatchlist) {
+            const parsedWatchlist = typeof backendWatchlist === 'string' ? JSON.parse(backendWatchlist) : backendWatchlist;
+            for (const stock of parsedWatchlist) {
+              await this.addWatchlistStock({ code: stock.code, name: stock.name }, stock.groupId || 'ungrouped');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('从后端初始化自选股失败:', e);
+    }
   }
 }
 

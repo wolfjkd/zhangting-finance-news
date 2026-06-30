@@ -13,7 +13,7 @@
 | 项目名称 | 涨停财经聚合播报（ZTFI-News） |
 | 技术栈 | Python + pywebview + WebView2 + 原生HTML/CSS/JS |
 | 核心功能 | 实时财经新闻推送、多数据源聚合、消息分类、关键词警报 |
-| 项目路径 | `C:\Users\wolfj\Documents\trae_projects\zhangting-finance-news` |
+| 项目路径 | 克隆后本地目录 |
 | GitHub仓库 | wolfjkd/zhangting-finance-news |
 
 ---

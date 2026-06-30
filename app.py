@@ -262,6 +262,21 @@ class Api:
             logger.warning(f'保存设置失败: {e}')
             return json.dumps({'status': 'error', 'message': str(e)})
 
+    def get_settings(self):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            config_path = os.path.join(config_dir, 'settings.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if content.strip():
+                        return content
+                    return json.dumps({})
+            return json.dumps({})
+        except Exception as e:
+            logger.warning(f'读取设置失败: {e}')
+            return json.dumps({})
+
     def get_seen_aids(self):
         aids = _get_all_seen_aids()
         return json.dumps(aids)
@@ -273,6 +288,128 @@ class Api:
             return json.dumps({'status': 'ok', 'count': len(aids)})
         except Exception as e:
             logger.error('持久化aid失败: %s', e)
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def persist_watchlist(self, watchlist_json):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, 'watchlist.json')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(watchlist_json)
+            logger.info(f'自选股已保存到 {config_path}')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.warning(f'保存自选股失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_watchlist(self):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            config_path = os.path.join(config_dir, 'watchlist.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if content.strip():
+                        return content
+                    return json.dumps([])
+            return json.dumps([])
+        except Exception as e:
+            logger.warning(f'读取自选股失败: {e}')
+            return json.dumps([])
+
+    def persist_stock_names(self, stock_names_json):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, 'stock_names.json')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(stock_names_json)
+            logger.info(f'股票名称映射已保存到 {config_path}')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.warning(f'保存股票名称映射失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_stock_names(self):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            config_path = os.path.join(config_dir, 'stock_names.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if content.strip():
+                        return content
+                    return json.dumps({})
+            return json.dumps({})
+        except Exception as e:
+            logger.warning(f'读取股票名称映射失败: {e}')
+            return json.dumps({})
+
+    def persist_watchlist_groups(self, groups_json):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, 'watchlist_groups.json')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(groups_json)
+            logger.info(f'自选股分组已保存到 {config_path}')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.warning(f'保存自选股分组失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_watchlist_groups(self):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            config_path = os.path.join(config_dir, 'watchlist_groups.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if content.strip():
+                        return content
+                    return json.dumps([])
+            return json.dumps([])
+        except Exception as e:
+            logger.warning(f'读取自选股分组失败: {e}')
+            return json.dumps([])
+
+    def get_window_size(self):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            config_path = os.path.join(config_dir, 'window_size.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if content.strip():
+                        return content
+                    return json.dumps({'width': 1200, 'height': 800})
+            return json.dumps({'width': 1200, 'height': 800})
+        except Exception as e:
+            logger.warning(f'读取窗口尺寸失败: {e}')
+            return json.dumps({'width': 1200, 'height': 800})
+
+    def set_window_size(self, width, height):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, 'window_size.json')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps({'width': width, 'height': height}))
+            logger.info(f'窗口尺寸已保存: {width}x{height}')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.warning(f'保存窗口尺寸失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def resize_window(self, width, height):
+        try:
+            if self._window:
+                self._window.resize(width, height)
+                return json.dumps({'status': 'ok'})
+            return json.dumps({'status': 'no_window'})
+        except Exception as e:
+            logger.warning(f'调整窗口大小失败: {e}')
             return json.dumps({'status': 'error', 'message': str(e)})
 
     def fetch_initial(self):
@@ -582,6 +719,20 @@ def main():
     _init_seen_db()
     _cleanup_old_seen_aids(days=7)
 
+    # 读取保存的窗口尺寸
+    default_width, default_height = 500, 800
+    try:
+        config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+        config_path = os.path.join(config_dir, 'window_size.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                size_data = json.loads(f.read())
+                default_width = size_data.get('width', 500)
+                default_height = size_data.get('height', 800)
+                logger.info(f'读取到窗口尺寸: {default_width}x{default_height}')
+    except Exception as e:
+        logger.warning(f'读取窗口尺寸失败，使用默认值: {e}')
+
     window_ref = None
 
     api = Api(lambda: window_ref)
@@ -589,8 +740,8 @@ def main():
     window = webview.create_window(
         '涨停财经聚合播报 v3.8.0版',
         url=get_html_path(),
-        width=500,
-        height=800,
+        width=default_width,
+        height=default_height,
         min_size=(320, 400),
         resizable=True,
         on_top=False,
