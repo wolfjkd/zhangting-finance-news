@@ -251,11 +251,13 @@ class Api:
 
     def persist_settings(self, settings_json):
         try:
+            settings = json.loads(settings_json) if isinstance(settings_json, str) else settings_json
+            settings['config_version'] = '3.8.0'
             config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
             os.makedirs(config_dir, exist_ok=True)
             config_path = os.path.join(config_dir, 'settings.json')
             with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(settings_json)
+                f.write(json.dumps(settings))
             logger.info(f'设置已保存到 {config_path}')
             return json.dumps({'status': 'ok'})
         except Exception as e:
@@ -276,6 +278,39 @@ class Api:
         except Exception as e:
             logger.warning(f'读取设置失败: {e}')
             return json.dumps({})
+
+    def migrate_config_if_needed(self):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            config_path = os.path.join(config_dir, 'settings.json')
+            current_version = '3.8.0'
+
+            if not os.path.exists(config_path):
+                logger.info('配置文件不存在，无需迁移')
+                return
+
+            with open(config_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if not content.strip():
+                    return
+                settings = json.loads(content)
+
+            saved_version = settings.get('config_version', '0.0.0')
+
+            if saved_version == current_version:
+                logger.info(f'配置版本已是最新: {current_version}')
+                return
+
+            logger.info(f'检测到配置版本升级: {saved_version} → {current_version}')
+
+            settings['config_version'] = current_version
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(settings))
+
+            logger.info('配置迁移完成')
+        except Exception as e:
+            logger.error(f'配置迁移失败: {e}')
 
     def get_seen_aids(self):
         aids = _get_all_seen_aids()
@@ -736,6 +771,7 @@ def main():
     window_ref = None
 
     api = Api(lambda: window_ref)
+    api.migrate_config_if_needed()
 
     window = webview.create_window(
         '涨停财经聚合播报 v3.8.0版',
