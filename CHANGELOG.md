@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
-## [v3.8.0] - 2026-06-29
+## [v3.8.1] - 2026-06-29
 
 ### Added
 - 隐私政策强制弹窗：首次启动必须阅读并同意才能使用

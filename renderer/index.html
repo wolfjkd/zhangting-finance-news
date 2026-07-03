@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>涨停财经聚合播报 v3.8.0版（开源版）</title>
+  <title>涨停财经聚合播报 v3.9.7版（开源版）</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -38,6 +38,7 @@
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
         </svg>
+        <span class="btn-badge" id="watchlistBadge" style="display:none;">0</span>
       </button>
       <button class="btn btn-icon" id="btnDonate" title="赞赏支持">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -141,6 +142,13 @@
             <option value="2">快</option>
           </select>
         </div>
+        <div class="setting-row" id="voiceInterruptModeRow" style="display:none;">
+          <span class="setting-label">播报模式</span>
+          <select class="voice-select" id="voiceInterruptMode" style="width:140px;">
+            <option value="complete">完整播报</option>
+            <option value="immediate">即时中断</option>
+          </select>
+        </div>
       </div>
 
       <!-- 消息去重 -->
@@ -231,12 +239,64 @@
         </div>
       </div>
 
+      <!-- 字体大小 -->
+      <div class="settings-section">
+        <div class="settings-section-title">字体大小</div>
+        <div class="setting-row">
+          <span class="setting-label">界面字体</span>
+          <select class="voice-select" id="fontSize" style="width:100px;">
+            <option value="small">小（4条）</option>
+            <option value="medium">中（3条半）</option>
+            <option value="large">大（3条）</option>
+          </select>
+        </div>
+        <div class="setting-hint">调整整个界面的字体大小，括号内为默认窗口高度可显示的新闻条数</div>
+      </div>
+
+      <!-- AI深度分析 -->
+      <div class="settings-section">
+        <div class="settings-section-title">AI深度分析</div>
+        <div class="setting-row">
+          <span class="setting-label">启用AI分析</span>
+          <label class="toggle">
+            <input type="checkbox" id="aiEnabled">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-hint">开启后，重要新闻将调用AI进行语义分析，提升分类和优先级准确性（需配置兼容OpenAI协议的API）</div>
+        
+        <div class="setting-row" id="aiApiKeyRow" style="margin-top:10px; display:none;">
+          <span class="setting-label">API密钥</span>
+          <input type="password" id="aiApiKey" style="flex:1; padding:4px 8px; border:1px solid var(--border); border-radius:4px;" placeholder="sk-xxx 或 tp-xxx">
+        </div>
+        
+        <div class="setting-row" id="aiApiUrlRow" style="margin-top:10px; display:none;">
+          <span class="setting-label">专属Base URL</span>
+          <input type="text" id="aiApiUrl" style="flex:1; padding:4px 8px; border:1px solid var(--border); border-radius:4px;" placeholder="https://api.example.com/v1">
+        </div>
+        
+        <div class="setting-row" id="aiModelNameRow" style="margin-top:10px; display:none;">
+          <span class="setting-label">模型名称</span>
+          <input type="text" id="aiModelName" style="flex:1; padding:4px 8px; border:1px solid var(--border); border-radius:4px;" placeholder="如：gpt-4o-mini, mimo-v2.5">
+        </div>
+        
+        <div class="setting-row" id="aiTestRow" style="margin-top:15px; display:none;">
+          <button id="btnAiTest" class="auth-activate-btn" style="width:100%;">🔍 测试连接</button>
+        </div>
+        
+        <div class="setting-hint" id="aiConfigHint" style="margin-top:10px; font-size:12px; color:#666; display:none;">
+          小米Mimo配置示例：<br>
+          Base URL: https://token-plan-cn.xiaomimimo.com/v1<br>
+          模型名称: mimo-v2.5
+        </div>
+      </div>
+
       <!-- 关于 -->
       <div class="settings-section">
         <div class="settings-section-title">关于</div>
         <div class="setting-row">
           <span class="setting-label">版本</span>
-          <span style="font-size:13px; color:#666;">v3.8.0（开源版）</span>
+          <span style="font-size:13px; color:#666;">v3.9.5（开源版）</span>
         </div>
         <div class="setting-row">
           <span class="setting-label">许可证</span>

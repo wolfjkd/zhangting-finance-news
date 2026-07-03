@@ -6,7 +6,7 @@
 class HistoryStorage {
   constructor() {
     this.dbName = 'ZTFINewsHistory';
-    this.dbVersion = 4; // 升级版本以添加watchlist分组
+    this.dbVersion = 5; // 升级版本以添加自选股预警阈值
     this.db = null;
     this.maxRecords = 10000; // 最大存储记录数
     this.cleanupThreshold = 12000; // 清理阈值
@@ -911,6 +911,7 @@ class HistoryStorage {
         code: stock.code,
         name: stock.name || '',
         groupId: groupId,
+        alertThreshold: stock.alertThreshold || 5,
         addedAt: Date.now()
       };
       
@@ -947,6 +948,36 @@ class HistoryStorage {
           store.put(stock);
           this._syncWatchlistToBackend();
           this._syncWatchlistGroupsToBackend();
+          resolve(true);
+        } else {
+          resolve(false);
+        }
+      };
+      
+      request.onerror = (event) => {
+        reject(event.target.error);
+      };
+    });
+  }
+
+  /**
+   * 更新自选股预警阈值
+   */
+  async updateWatchlistStockAlertThreshold(code, threshold) {
+    if (!this.db) await this.openDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['watchlist'], 'readwrite');
+      const store = transaction.objectStore('watchlist');
+      
+      const request = store.get(code);
+      
+      request.onsuccess = () => {
+        const stock = request.result;
+        if (stock) {
+          stock.alertThreshold = threshold;
+          store.put(stock);
+          this._syncWatchlistToBackend();
           resolve(true);
         } else {
           resolve(false);
@@ -1099,6 +1130,7 @@ class HistoryStorage {
       
       request.onsuccess = () => {
         console.log('已创建分组:', name);
+        this._syncWatchlistGroupsToBackend();
         resolve(group);
       };
       

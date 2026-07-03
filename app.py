@@ -150,7 +150,7 @@ def _apply_initial_theme(window):
             logger.debug(f'获取 renderer_hwnd 失败: {e}')
 
         if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.8.0版')
+            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.9.7版')
 
         if not hwnd:
             logger.warning('初始主题应用失败: 未找到窗口句柄')
@@ -197,6 +197,24 @@ class Api:
             self._window.maximize()
         return json.dumps({'status': 'ok'})
 
+    def toggle_pin(self, pinned):
+        logger.info(f'=== toggle_pin 调用, pinned={pinned} ===')
+        try:
+            window = self._window()
+            if window:
+                logger.info(f'获取到 window 对象: {window}')
+                logger.info(f'当前 on_top 值: {window.on_top}')
+                window.on_top = pinned
+                logger.info(f'设置后 on_top 值: {window.on_top}')
+                logger.info(f'窗口置顶状态设置成功: {pinned}')
+                return json.dumps({'status': 'ok'})
+            else:
+                logger.error('获取 window 对象失败')
+                return json.dumps({'status': 'no_window'})
+        except Exception as e:
+            logger.error(f'窗口置顶异常: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
     def resize_window(self, width, height):
         self._window.resize(int(width), int(height))
         return json.dumps({'status': 'ok'})
@@ -223,7 +241,7 @@ class Api:
         except Exception as e:
             logger.debug(f'从 renderer 获取 HWND 失败: {e}')
 
-        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.8.0版')
+        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.9.7版')
         if hwnd:
             self._main_hwnd = hwnd
             return hwnd
@@ -739,6 +757,23 @@ class Api:
         result = self._data_source_manager.test_source_connection(source_id)
         return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)
 
+    def ai_analyze(self, title, content, model_name, api_key, api_url, model_name_param):
+        try:
+            from ai_analyzer import AIAnalyzer
+            analyzer = AIAnalyzer.create(
+                model_name=model_name,
+                api_key=api_key,
+                api_url=api_url,
+                model_name_param=model_name_param
+            )
+            result = analyzer.analyze(title, content)
+            if result:
+                return json.dumps(result, ensure_ascii=False)
+            return json.dumps({'error': '分析结果为空'})
+        except Exception as e:
+            logger.error(f'AI分析失败: {e}')
+            return json.dumps({'error': str(e)})
+
 
 def get_html_path():
     if getattr(sys, 'frozen', False):
@@ -749,7 +784,7 @@ def get_html_path():
 
 
 def main():
-    logger.info('=== 涨停财经聚合播报 v3.8.0版（开源版）启动 ===')
+    logger.info('=== 涨停财经聚合播报 v3.9.7版（开源版）启动 ===')
 
     _init_seen_db()
     _cleanup_old_seen_aids(days=7)
@@ -774,7 +809,7 @@ def main():
     api.migrate_config_if_needed()
 
     window = webview.create_window(
-        '涨停财经聚合播报 v3.8.0版',
+        '涨停财经聚合播报 v3.9.7版',
         url=get_html_path(),
         width=default_width,
         height=default_height,

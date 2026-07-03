@@ -102,12 +102,12 @@ class DataSourceManager:
     def _init_default_sources(self):
         default_sources = [
             DataSourceConfig(
-                id="ztfi", name="涨停财经", type=DataSourceType.WEBSOCKET,
+                id="ztfi", name="实时聚合", type=DataSourceType.WEBSOCKET,
                 enabled=True, priority=1, description="实时聚合消息"
             ),
             DataSourceConfig(
                 id="eastmoney", name="东方财富公告", type=DataSourceType.API,
-                enabled=False, priority=2, description="东财重要公告",
+                enabled=True, priority=2, description="东财重要公告",
                 endpoints={"announcements": "https://np-anotice-stock.eastmoney.com/api/security/ann"},
                 poll_interval=300
             ),
@@ -119,7 +119,7 @@ class DataSourceManager:
             ),
             DataSourceConfig(
                 id="northbound", name="北向资金", type=DataSourceType.API,
-                enabled=False, priority=6, description="实时北向资金流向",
+                enabled=True, priority=6, description="实时北向资金流向",
                 endpoints={"realtime": "https://push2delay.eastmoney.com/api/qt/kamt.rtmin/get"},
                 poll_interval=60
             ),
@@ -141,7 +141,7 @@ class DataSourceManager:
     def _load_source_enabled_states(self):
         try:
             config_path = self._get_source_config_path()
-            current_version = '3.8.0'
+            current_version = '3.8.3'
 
             if not os.path.exists(config_path):
                 return
@@ -174,7 +174,7 @@ class DataSourceManager:
             config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
             os.makedirs(config_dir, exist_ok=True)
             config_path = self._get_source_config_path()
-            saved = {'version': '3.8.0'}
+            saved = {'version': '3.8.3'}
             saved.update({sid: {'enabled': s.enabled} for sid, s in self.sources.items()})
             with open(config_path, 'w', encoding='utf-8') as f:
                 f.write(json.dumps(saved))

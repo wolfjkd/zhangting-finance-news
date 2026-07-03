@@ -39,6 +39,9 @@
   let voiceList = [];
   let speaking = false;
   let voiceQueue = [];
+  const VOICE_TIME_THRESHOLD = 60;
+  const VOICE_INTERRUPT_MODE_COMPLETE = 'complete';
+  const VOICE_INTERRUPT_MODE_IMMEDIATE = 'immediate';
 
   // ===== DOM =====
   const $container = document.getElementById('newsContainer');
@@ -55,6 +58,7 @@
   const $btnFavorites = null; // 已移除
   const $btnReview = null; // 已移除
   const $btnWatchlist = document.getElementById('btnWatchlist');
+  const $watchlistBadge = document.getElementById('watchlistBadge');
   const $btnThemeToggle = document.getElementById('btnThemeToggle');
   const $settingsOverlay = document.getElementById('settingsOverlay');
   const $settingsClose = document.getElementById('settingsClose');
@@ -65,6 +69,18 @@
   const $voiceTest = document.getElementById('voiceTest');
   const $voiceRate = document.getElementById('voiceRate');
   const $voiceSpeedRow = document.getElementById('voiceSpeedRow');
+  const $voiceInterruptMode = document.getElementById('voiceInterruptMode');
+  const $voiceInterruptModeRow = document.getElementById('voiceInterruptModeRow');
+  const $aiEnabled = document.getElementById('aiEnabled');
+  const $aiApiKey = document.getElementById('aiApiKey');
+  const $aiApiUrl = document.getElementById('aiApiUrl');
+  const $aiModelName = document.getElementById('aiModelName');
+  const $aiApiKeyRow = document.getElementById('aiApiKeyRow');
+  const $aiApiUrlRow = document.getElementById('aiApiUrlRow');
+  const $aiModelNameRow = document.getElementById('aiModelNameRow');
+  const $aiTestRow = document.getElementById('aiTestRow');
+  const $aiConfigHint = document.getElementById('aiConfigHint');
+  const $btnAiTest = document.getElementById('btnAiTest');
   const $showStocks = document.getElementById('showStocks');
   const $showRelated = document.getElementById('showRelated');
   const $hideDuplicates = document.getElementById('hideDuplicates');
@@ -74,6 +90,164 @@
   const $keywordAddBtn = document.getElementById('keywordAddBtn');
   const $keywordTags = document.getElementById('keywordTags');
   const $keywordAlert = document.getElementById('keywordAlert');
+  const $fontSize = document.getElementById('fontSize');
+
+  // ===== 字体大小配置 =====
+  const FONT_SCALE = {
+    'small': 1.0,
+    'medium': 1.125,
+    'large': 1.25
+  };
+
+  function applyFontSize(size) {
+    const scale = FONT_SCALE[size] || 1.0;
+    document.documentElement.style.setProperty('--font-scale', scale);
+  }
+
+  // ===== AI分析相关变量 =====
+  const AI_RATE_LIMIT = 3; // 每分钟最多3条
+  const AI_CACHE_PREFIX = 'ai_result_';
+  let aiAnalysisQueue = []; // 待分析队列
+  let aiAnalysisCount = 0; // 本分钟分析数量
+  let aiAnalysisLastReset = Date.now(); // 上次重置时间
+
+  // ===== AI分析器 =====
+  window.aiAnalyzer = {
+    async analyze(title, content) {
+      if (!settings.aiEnabled || !settings.aiApiKey) {
+        return null;
+      }
+      try {
+        const result = await pywebview.api.ai_analyze(
+          title,
+          content,
+          'custom',
+          settings.aiApiKey,
+          settings.aiApiUrl || '',
+          settings.aiModelName || ''
+        );
+        const parsed = JSON.parse(result);
+        if (parsed.error) {
+          console.error('AI分析失败:', parsed.error);
+          return null;
+        }
+        return parsed;
+      } catch (e) {
+        console.error('AI分析异常:', e);
+        return null;
+      }
+    }
+  };
+
+  // ===== AI分析结果缓存 =====
+  function getAiCache(aid) {
+    try {
+      const key = AI_CACHE_PREFIX + aid;
+      return localStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function setAiCache(aid, result) {
+    try {
+      const key = AI_CACHE_PREFIX + aid;
+      localStorage.setItem(key, JSON.stringify(result));
+    } catch (e) {}
+  }
+
+  // ===== 触发AI分析 =====
+  async function triggerAiAnalysis(item, div, isAuto = false) {
+    const aid = item.aid;
+
+    // 检查缓存
+    if (item.aiResult) {
+      updateAiArea(div, item.aiResult);
+      return;
+    }
+
+    // 检查本地缓存
+    const cached = getAiCache(aid);
+    if (cached) {
+      try {
+        item.aiResult = JSON.parse(cached);
+        updateAiArea(div, item.aiResult);
+        return;
+      } catch (e) {}
+    }
+
+    // 频率限制（仅自动触发）
+    if (isAuto) {
+      const now = Date.now();
+      if (now - aiAnalysisLastReset > 60000) {
+        aiAnalysisCount = 0;
+        aiAnalysisLastReset = now;
+      }
+      if (aiAnalysisCount >= AI_RATE_LIMIT) {
+        return; // 超过频率限制
+      }
+      aiAnalysisCount++;
+    }
+
+    // 更新按钮状态
+    const aiBtn = div.querySelector('.btn-ai-interpret');
+    if (aiBtn) {
+      aiBtn.textContent = '分析中...';
+      aiBtn.disabled = true;
+    }
+
+    // 执行分析
+    const result = await window.aiAnalyzer.analyze(item.title, item.content);
+
+    if (result) {
+      item.aiResult = result;
+      setAiCache(aid, result);
+      updateAiArea(div, result);
+    } else {
+      // 分析失败，恢复按钮
+      if (aiBtn) {
+        aiBtn.textContent = 'AI解读';
+        aiBtn.disabled = false;
+      }
+    }
+  }
+
+  // ===== 更新AI区域UI =====
+  function updateAiArea(div, result) {
+    const aiArea = div.querySelector('.ai-area');
+    if (!aiArea || !result) return;
+
+    // A股市场：红涨绿跌
+    const sentimentConfig = {
+      'positive': { icon: '↑', text: '利好', color: '#E53935' },
+      'negative': { icon: '↓', text: '利空', color: '#43A047' },
+      'neutral': { icon: '—', text: '中性', color: '#FFA726' }
+    };
+    const sentiment = sentimentConfig[result.sentiment] || sentimentConfig.neutral;
+    const confidence = result.confidence ? Math.round(result.confidence * 100) : '--';
+
+    aiArea.innerHTML = `
+      <span class="ai-badge" title="AI分析">AI</span>
+      <span class="ai-sentiment" style="color: ${sentiment.color}; font-weight: bold;">
+        ${sentiment.icon}${sentiment.text}
+      </span>
+      <span class="ai-confidence" title="置信度">${confidence}%</span>
+    `;
+
+    // 添加AI摘要（在标题下方）
+    if (result.summary) {
+      let summaryEl = div.querySelector('.ai-summary');
+      if (!summaryEl) {
+        summaryEl = document.createElement('div');
+        summaryEl.className = 'ai-summary';
+        const titleEl = div.querySelector('.news-title');
+        if (titleEl) {
+          titleEl.insertAdjacentElement('afterend', summaryEl);
+        }
+      }
+      summaryEl.innerHTML = `📋 <span class="ai-summary-label">AI摘要：</span>${esc(result.summary)}`;
+    }
+  }
 
   // ===== 初始化 =====
   async function init() {
@@ -108,6 +282,9 @@
         await window.historyStorage.initFromBackend();
       }
     } catch (e) {}
+    
+    // 更新自选股数量徽章
+    updateWatchlistBadge();
 
     setStatus('connecting', '正在获取数据...');
     try {
@@ -288,7 +465,7 @@
 
     // 语音播报
     if (settings.voiceEnabled && item.title) {
-      enqueueVoice(item.title);
+      enqueueVoice(item.title, item.ctime);
     }
   }
 
@@ -361,12 +538,20 @@
     const isDetailSource = source === '东方财富' || source === '券商研报';
     const titleClickable = isDetailSource ? 'clickable' : '';
 
+    // AI区域HTML
+    let aiAreaHTML = `<div class="ai-area">
+      <button class="btn-ai-interpret" data-aid="${item.aid}">AI解读</button>
+    </div>`;
+
     let html = `
       <div class="news-header">
         <span class="news-time">${esc(timeStr)}</span>
-        <button class="btn-favorite" data-aid="${item.aid}" title="收藏消息">
-          <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-        </button>
+        <div class="news-header-right">
+          ${aiAreaHTML}
+          <button class="btn-favorite" data-aid="${item.aid}" title="收藏消息">
+            <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+          </button>
+        </div>
       </div>
       ${tagsHTML ? `<div class="news-tags">${tagsHTML}</div>` : ''}
       <div class="news-title ${titleClickable}">${esc(item.title || '')}${isDetailSource ? '<span class="news-detail-hint">▸详情</span>' : ''}</div>
@@ -431,8 +616,103 @@
       });
     }
 
+    // AI分析功能
+    const aiBtn = div.querySelector('.btn-ai-interpret');
+    if (aiBtn) {
+      // 检查是否已有AI分析结果
+      if (item.aiResult) {
+        updateAiArea(div, item.aiResult);
+      }
+      aiBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        triggerAiAnalysis(item, div);
+      });
+    }
+
+    // 检查是否应该自动触发AI分析
+    if (window.newsClassifier && window.aiAnalyzer) {
+      const text = (item.title || '') + ' ' + (item.content || '');
+      if (item.classification && window.newsClassifier.shouldAutoTriggerAI(item.classification, text)) {
+        // 检查是否已有分析结果
+        if (!item.aiResult) {
+          triggerAiAnalysis(item, div, true);
+        }
+      }
+    }
+
     // 自选股匹配标记
     markWatchlistMatch(div, item);
+
+    // 右键复制功能
+    div.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      document.querySelectorAll('.context-menu').forEach(m => m.remove());
+      
+      const menu = document.createElement('div');
+      menu.className = 'context-menu';
+      
+      let left = e.clientX;
+      let top = e.clientY;
+      const menuWidth = 120;
+      const menuHeight = 60;
+      if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth;
+      if (top + menuHeight > window.innerHeight) top = window.innerHeight - menuHeight;
+      menu.style.left = left + 'px';
+      menu.style.top = top + 'px';
+      
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = '复制内容';
+      
+      const removeMenu = () => {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+        document.removeEventListener('contextmenu', closeMenu);
+      };
+      
+      copyBtn.onclick = () => {
+        let text = '';
+        if (timeStr) text += `【${timeStr}】\n`;
+        if (item.title) text += `${item.title}\n`;
+        if (item.content) text += `${item.content}\n`;
+        if (item.stocks && item.stocks.length > 0) {
+          const stockText = item.stocks.map(s => `${s.name}${s.rise ? ` ${s.rise}%` : ''}`).join(' ');
+          text += `[${stockText}]\n`;
+        }
+        if (source) text += `来源: ${source}`;
+        
+        navigator.clipboard.writeText(text.trim()).then(() => {
+          removeMenu();
+          showToast('已复制到剪贴板');
+        }).catch(() => {
+          const textarea = document.createElement('textarea');
+          textarea.value = text.trim();
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          removeMenu();
+          showToast('已复制到剪贴板');
+        });
+      };
+      
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = '取消';
+      cancelBtn.onclick = removeMenu;
+      
+      menu.appendChild(copyBtn);
+      menu.appendChild(cancelBtn);
+      document.body.appendChild(menu);
+      
+      const closeMenu = (ev) => {
+        if (!menu.contains(ev.target)) {
+          removeMenu();
+        }
+      };
+      document.addEventListener('click', closeMenu);
+      document.addEventListener('contextmenu', closeMenu);
+    });
 
     return div;
   }
@@ -525,8 +805,8 @@
       // 生成分组列表HTML
       let listHTML = '';
       
-      // 未分组的股票
-      const ungroupedStocks = watchlist.filter(s => s.groupId === 'ungrouped' || !s.groupId);
+      const allGroupIds = groups.map(g => g.id);
+      const ungroupedStocks = watchlist.filter(s => !s.groupId || s.groupId === '' || s.groupId === 'ungrouped' || !allGroupIds.includes(s.groupId));
       if (ungroupedStocks.length > 0) {
         listHTML += `
           <div class="watchlist-group" data-group="ungrouped">
@@ -541,7 +821,6 @@
         `;
       }
       
-      // 其他分组
       for (const group of groups) {
         const groupStocks = watchlist.filter(s => s.groupId === group.id);
         if (groupStocks.length > 0) {
@@ -633,7 +912,8 @@
               name: resp.quote.name
             }, groupId);
             
-            // 刷新对话框
+            updateWatchlistBadge();
+            
             dialog.remove();
             showWatchlistDialog();
           } else {
@@ -710,13 +990,32 @@
     }
   }
   
+  async function updateWatchlistBadge() {
+    if (!$watchlistBadge || !window.historyStorage) return;
+    try {
+      const count = await window.historyStorage.getWatchlistCount();
+      if (count > 0) {
+        $watchlistBadge.textContent = count;
+        $watchlistBadge.style.display = 'inline';
+      } else {
+        $watchlistBadge.style.display = 'none';
+      }
+    } catch (e) {}
+  }
+
   function createStockItemHTML(stock) {
+    const threshold = stock.alertThreshold || 5;
     return `
       <div class="watchlist-item" data-code="${stock.code}">
         <button class="watchlist-remove-btn" title="移除自选股">×</button>
         <div class="watchlist-stock-info">
           <span class="watchlist-stock-name">${esc(stock.name || '未知')}</span>
           <span class="watchlist-stock-code">${esc(stock.code)}</span>
+        </div>
+        <div class="watchlist-threshold-control">
+          <span class="watchlist-threshold-label">阈值</span>
+          <input type="number" class="watchlist-threshold-input" value="${threshold}" min="0.1" max="50" step="0.1" title="设置预警阈值">
+          <span class="watchlist-threshold-unit">%</span>
         </div>
         <button class="watchlist-move-btn" title="移动到分组">→</button>
         <button class="watchlist-quote-btn" title="查看行情">📊</button>
@@ -740,6 +1039,7 @@
           
           const newCount = await window.historyStorage.getWatchlistCount();
           dialog.querySelector('.watchlist-count').textContent = newCount + ' 只';
+          updateWatchlistBadge();
           
           // 检查是否需要显示空状态
           const listEl = dialog.querySelector('.watchlist-list');
@@ -821,6 +1121,34 @@
           });
         }, 0);
       };
+    });
+    
+    // 阈值输入框事件
+    dialog.querySelectorAll('.watchlist-threshold-input').forEach(input => {
+      input.addEventListener('change', async (e) => {
+        const item = input.closest('.watchlist-item');
+        const code = item.dataset.code;
+        const threshold = parseFloat(input.value);
+        
+        if (isNaN(threshold) || threshold <= 0) {
+          input.value = 5;
+          return;
+        }
+        
+        try {
+          await window.historyStorage.updateWatchlistStockAlertThreshold(code, threshold);
+          if (DEBUG_MODE) console.log(`[自选股] 已更新 ${code} 的预警阈值为 ${threshold}%`);
+        } catch (err) {
+          console.error('更新预警阈值失败:', err);
+          input.value = 5;
+        }
+      });
+      
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          input.blur();
+        }
+      });
     });
   }
   
@@ -913,7 +1241,7 @@
 
   // ===== 自选股异动提醒 =====
   let watchlistAlertTimer = null;
-  let watchlistAlertLastTime = {}; // {code: timestamp} 记录每只股票上次提醒时间
+  let watchlistAlertState = {}; // {code: {lastTime, lastHigh, lastLow}} 记录每只股票上次提醒状态
 
   function startWatchlistAlertMonitor() {
     if (watchlistAlertTimer) return;
@@ -948,12 +1276,18 @@
       // 获取所有自选股代码
       const codes = watchlist.map(s => s.code);
       
+      // 创建代码到阈值的映射
+      const thresholdMap = {};
+      watchlist.forEach(s => {
+        thresholdMap[s.code] = s.alertThreshold || settings.watchlistAlertThreshold || 5;
+      });
+      
       // 批量查询行情
       const batchResult = await batchGetQuotes(codes);
       if (!batchResult || batchResult.length === 0) return;
       
       const now = Date.now();
-      const threshold = settings.watchlistAlertThreshold || 5;
+      const defaultThreshold = settings.watchlistAlertThreshold || 5;
       const intervalMs = (settings.watchlistAlertInterval || 5) * 60 * 1000;
       
       // 检查每只股票
@@ -961,21 +1295,45 @@
         if (!q || !q.quote) continue;
         
         const changePercent = Math.abs(q.quote.changePercent || 0);
+        const code = q.quote.code;
+        const price = q.quote.price || 0;
+        const isUp = (q.quote.changePercent || 0) > 0;
+        
+        // 使用该股票的独立阈值，若无则使用全局阈值
+        const stockThreshold = thresholdMap[code] || defaultThreshold;
         
         // 检查是否超过阈值
-        if (changePercent >= threshold) {
-          const code = q.quote.code;
-          const lastTime = watchlistAlertLastTime[code] || 0;
+        if (changePercent >= stockThreshold) {
+          const state = watchlistAlertState[code];
           
-          // 检查是否在冷却期内
-          if (now - lastTime < intervalMs) {
-            if (DEBUG_MODE) console.log(`[自选股提醒] ${code} 在冷却期内，跳过`);
-            continue;
+          if (!state) {
+            // 第一次触发，立即提醒
+            watchlistAlertState[code] = {
+              lastTime: now,
+              lastHigh: price,
+              lastLow: price
+            };
+            showWatchlistAlertPopup(q.quote, stockThreshold);
+          } else {
+            // 检查是否创新高或新低
+            const hitNewHigh = isUp && price > state.lastHigh;
+            const hitNewLow = !isUp && price < state.lastLow;
+            
+            if (hitNewHigh || hitNewLow) {
+              // 创新高或新低，再次提醒
+              watchlistAlertState[code] = {
+                lastTime: now,
+                lastHigh: hitNewHigh ? price : state.lastHigh,
+                lastLow: hitNewLow ? price : state.lastLow
+              };
+              showWatchlistAlertPopup(q.quote, stockThreshold);
+            } else {
+              if (DEBUG_MODE) console.log(`[自选股提醒] ${code} 未创新高/新低，跳过`);
+            }
           }
-          
-          // 触发提醒
-          watchlistAlertLastTime[code] = now;
-          showWatchlistAlertPopup(q.quote);
+        } else {
+          // 未超过阈值，重置状态（允许下次重新触发）
+          watchlistAlertState[code] = null;
         }
       }
     } catch (err) {
@@ -986,7 +1344,6 @@
   async function batchGetQuotes(codes) {
     if (!codes || codes.length === 0) return [];
     
-    // 腾讯行情支持批量查询
     const tdxCodes = codes.map(code => {
       if (code.startsWith('6')) return `sh${code}`;
       if (code.startsWith(('0', '3'))) return `sz${code}`;
@@ -995,14 +1352,15 @@
     });
     
     const quotes = [];
-    
-    // 分批查询，每批最多20个
     const batchSize = 20;
+    
     for (let i = 0; i < tdxCodes.length; i += batchSize) {
       const batch = tdxCodes.slice(i, i + batchSize);
       try {
         const resp = await fetch(`https://qt.gtimg.cn/q=${batch.join(',')}`);
-        const text = await resp.text();
+        const buffer = await resp.arrayBuffer();
+        const decoder = new TextDecoder('gbk');
+        const text = decoder.decode(buffer);
         
         const lines = text.trim().split('\n');
         for (const line of lines) {
@@ -1043,11 +1401,12 @@
     return quotes;
   }
 
-  function showWatchlistAlertPopup(quote) {
+  function showWatchlistAlertPopup(quote, threshold) {
     const changePercent = quote.changePercent || 0;
     const change = quote.change || 0;
     const isUp = changePercent > 0;
     const direction = isUp ? '上涨' : '下跌';
+    const alertThreshold = threshold || settings.watchlistAlertThreshold || 5;
     
     // 播放提醒声音
     if (settings.watchlistAlertSound) {
@@ -1073,7 +1432,7 @@
         <div class="alert-stock-code">${esc(quote.code)}</div>
         <div class="alert-price ${isUp ? 'up' : 'down'}">${quote.price.toFixed(2)}</div>
         <div class="alert-change ${isUp ? 'up' : 'down'}">${changeStr}</div>
-        <div class="alert-message">${direction}幅度超过 ${settings.watchlistAlertThreshold}%</div>
+        <div class="alert-message">${direction}幅度超过 ${alertThreshold}%</div>
         <div class="alert-actions">
           <button class="alert-view-btn" data-code="${quote.code}">查看详情</button>
         </div>
@@ -1191,13 +1550,35 @@
     synth.onvoiceschanged = populateVoices;
   }
 
-  function enqueueVoice(text) {
+  function stopVoice() {
+    if (synth) {
+      synth.cancel();
+    }
+    voiceQueue = [];
+    speaking = false;
+  }
+
+  function enqueueVoice(text, ctime) {
     if (!synth || !text) return;
-    // 只播报标题，截断过长文本
+
+    if (ctime) {
+      const now = Math.floor(Date.now() / 1000);
+      if (now - ctime > VOICE_TIME_THRESHOLD) {
+        return;
+      }
+    }
+
     const speakText = text.length > 80 ? text.substring(0, 80) + '...' : text;
-    voiceQueue.push(speakText);
-    if (!speaking) {
+
+    if (settings.voiceInterruptMode === VOICE_INTERRUPT_MODE_IMMEDIATE) {
+      stopVoice();
+      voiceQueue.push(speakText);
       processVoiceQueue();
+    } else {
+      voiceQueue = [speakText];
+      if (!speaking) {
+        processVoiceQueue();
+      }
     }
   }
 
@@ -1229,10 +1610,12 @@
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
-      sources: [], // 空=全部显示
-      voiceEnabled: false,
+      sources: ['实时聚合', '东方财富公告', '北向资金'], // 默认开启的数据源
+      fontSize: 'medium', // 字体大小：small/medium/large
+      voiceEnabled: true,
       voiceIndex: 0,
       voiceRate: 1.5,
+      voiceInterruptMode: 'complete', // complete: 完整播报模式, immediate: 即时中断模式
       showStocks: true,
       showRelated: true,
       hideDuplicates: true,
@@ -1249,7 +1632,13 @@
       watchlistAlertSound: true,
       darkMode: false,
       privacyAccepted: false,
+      privacyAcceptedVersion: '',
     };
+  }
+
+  function getCurrentVersion() {
+    const match = document.title.match(/v(\d+\.\d+\.\d+)/);
+    return match ? match[1] : '3.9.2';
   }
 
   function saveSettings() {
@@ -1281,17 +1670,25 @@
     $voiceEnabled.checked = settings.voiceEnabled;
     $voiceSpeedRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
     $voiceSettings.style.display = settings.voiceEnabled ? 'flex' : 'none';
+    $voiceInterruptModeRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
 
     $voiceEnabled.addEventListener('change', () => {
       settings.voiceEnabled = $voiceEnabled.checked;
       $voiceSettings.style.display = settings.voiceEnabled ? 'flex' : 'none';
       $voiceSpeedRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
+      $voiceInterruptModeRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
       saveSettings();
     });
 
     $voiceRate.value = settings.voiceRate;
     $voiceRate.addEventListener('change', () => {
       settings.voiceRate = parseFloat($voiceRate.value);
+      saveSettings();
+    });
+
+    $voiceInterruptMode.value = settings.voiceInterruptMode;
+    $voiceInterruptMode.addEventListener('change', () => {
+      settings.voiceInterruptMode = $voiceInterruptMode.value;
       saveSettings();
     });
 
@@ -1406,6 +1803,90 @@
       startWatchlistAlertMonitor();
     }
 
+    // 字体大小设置
+    $fontSize.value = settings.fontSize || 'small';
+    applyFontSize(settings.fontSize || 'small');
+
+    $fontSize.addEventListener('change', () => {
+      settings.fontSize = $fontSize.value;
+      applyFontSize(settings.fontSize);
+      saveSettings();
+    });
+
+    // AI深度分析设置
+    $aiEnabled.checked = settings.aiEnabled || false;
+    $aiApiKey.value = settings.aiApiKey || '';
+    $aiApiUrl.value = settings.aiApiUrl || '';
+    $aiModelName.value = settings.aiModelName || '';
+
+    const updateAiVisibility = () => {
+      const enabled = $aiEnabled.checked;
+      $aiApiKeyRow.style.display = enabled ? 'flex' : 'none';
+      $aiApiUrlRow.style.display = enabled ? 'flex' : 'none';
+      $aiModelNameRow.style.display = enabled ? 'flex' : 'none';
+      $aiTestRow.style.display = enabled ? 'flex' : 'none';
+      $aiConfigHint.style.display = enabled ? 'block' : 'none';
+    };
+    updateAiVisibility();
+
+    $aiEnabled.addEventListener('change', () => {
+      settings.aiEnabled = $aiEnabled.checked;
+      updateAiVisibility();
+      saveSettings();
+    });
+
+    $aiApiKey.addEventListener('change', () => {
+      settings.aiApiKey = $aiApiKey.value;
+      saveSettings();
+    });
+
+    $aiApiUrl.addEventListener('change', () => {
+      settings.aiApiUrl = $aiApiUrl.value;
+      saveSettings();
+    });
+
+    $aiModelName.addEventListener('change', () => {
+      settings.aiModelName = $aiModelName.value;
+      saveSettings();
+    });
+
+    $btnAiTest.addEventListener('click', async () => {
+      if (!settings.aiEnabled || !settings.aiApiKey) {
+        alert('请先启用AI分析并配置API密钥');
+        return;
+      }
+
+      const originalText = $btnAiTest.textContent;
+      $btnAiTest.textContent = '测试中...';
+      $btnAiTest.disabled = true;
+
+      try {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.ai_analyze) {
+          const result = await pywebview.api.ai_analyze(
+            '央行宣布下调存款准备金率', 
+            '央行决定下调金融机构存款准备金率0.25个百分点',
+            'custom',
+            settings.aiApiKey,
+            settings.aiApiUrl || '',
+            settings.aiModelName || ''
+          );
+          const parsed = JSON.parse(result);
+          if (parsed.error) {
+            alert(`测试失败: ${parsed.error}`);
+          } else {
+            alert(`测试成功！\n分类: ${parsed.category}\n优先级: ${parsed.priority}\n情感: ${parsed.sentiment}\n摘要: ${parsed.summary}`);
+          }
+        } else {
+          alert('AI分析API不可用');
+        }
+      } catch (e) {
+        alert(`测试失败: ${e.message}`);
+      } finally {
+        $btnAiTest.textContent = originalText;
+        $btnAiTest.disabled = false;
+      }
+    });
+
     // 打开/关闭
     $btnSettings.addEventListener('click', () => {
       $settingsOverlay.classList.add('show');
@@ -1436,6 +1917,9 @@
     // pywebview API 就绪后重新应用主题（解决初始化时序问题）
     window.addEventListener('pywebviewready', () => {
       setWindowTitlebarTheme(settings.darkMode);
+      if (settings.isPinned && window.pywebview && window.pywebview.api && window.pywebview.api.toggle_pin) {
+        pywebview.api.toggle_pin(true).catch(() => {});
+      }
       // 监听窗口大小变化，保存到后端
       window.addEventListener('resize', () => {
         if (windowResizeTimer) clearTimeout(windowResizeTimer);
@@ -1899,6 +2383,17 @@
   }
 
   // ===== 工具函数 =====
+  function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => toast.remove(), 300);
+    }, 2000);
+  }
+
   function formatTime(ctime) {
     if (!ctime) return '';
     const d = new Date(ctime * 1000);
@@ -1991,6 +2486,17 @@
     settings.isPinned = isPinned;
     saveSettings();
     $btnPin.classList.toggle('active', isPinned);
+    console.log('[置顶调试] pywebview:', typeof window.pywebview);
+    console.log('[置顶调试] pywebview.api:', typeof window.pywebview?.api);
+    console.log('[置顶调试] toggle_pin:', typeof window.pywebview?.api?.toggle_pin);
+    console.log('[置顶调试] isPinned:', isPinned);
+    if (window.pywebview && window.pywebview.api) {
+      pywebview.api.toggle_pin(isPinned).then(result => {
+        console.log('[置顶调试] toggle_pin 返回:', result);
+      }).catch(err => {
+        console.error('[置顶调试] toggle_pin 失败:', err);
+      });
+    }
   });
 
   $btnLoadMore.addEventListener('click', loadMore);
@@ -2010,13 +2516,13 @@
           </button>
         </div>
         <div class="settings-section" style="text-align: center;">
-          <p class="donate-desc">本工具完全免费开放，若对你有帮助，可自愿小额赞助支持后续更新</p>
+          <p class="donate-desc">本工具完全免费开放，若对你有帮助，可自愿小额赞助<br>支持后续更新</p>
           <div class="donate-qrcode" style="margin: 16px auto; max-width: 250px;">
             <img src="赞赏码.png" alt="赞赏码" style="width: 100%; border-radius: 8px;" />
           </div>
           <div class="donate-tips" style="text-align: left; font-size: 13px; color: var(--text-secondary);">
             <p>💡 提示：扫码后可自定义打赏金额</p>
-            <p>🔓 所有功能完全免费开放，打赏不会解锁任何额外功能</p>
+            <p style="color: #E53935;">🔓 所有功能完全免费开放，打赏不会解锁任何额外功能</p>
           </div>
           <div class="donate-thanks" style="margin-top: 16px; color: var(--text-secondary);">
             <p>🙏 感谢您的支持！</p>
@@ -2082,6 +2588,7 @@
     document.body.appendChild(overlay);
     overlay.querySelector('#btnAcceptPrivacy').addEventListener('click', () => {
       settings.privacyAccepted = true;
+      settings.privacyAcceptedVersion = getCurrentVersion();
       saveSettings();
       overlay.remove();
       init();
@@ -2277,7 +2784,7 @@
         }
       } catch (e) {}
 
-      if (settings.privacyAccepted) {
+      if (settings.privacyAccepted && settings.privacyAcceptedVersion === getCurrentVersion()) {
         init();
       } else {
         showPrivacyDialog();
