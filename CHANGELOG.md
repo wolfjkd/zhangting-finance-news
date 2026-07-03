@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v3.9.7] - 2026-07-03
+
+### Added
+- 消息卡片右键复制功能：右键菜单一键复制完整消息内容
+- AI深度分析功能：后端ai_analyze方法，连接AI分析器模块
+- 配置版本管理机制：版本升级自动兼容配置文件
+- UI设计规范文档：字体、颜色、间距等完整规范
+
+### Fixed
+- 窗口置顶功能：改用pywebview原生on_top属性，可靠生效
+- AI分析功能：修复后端ai_analyze方法缺失导致功能失效
+- 自选股弹窗：修复弹窗高度不足、分组不持久化等问题
+- 数据源管理：开关状态持久化到本地文件
+- 设置页面排版：统一字体层级（标题/功能项/开关项/描述）
+
 ## [v3.8.1] - 2026-06-29
 
 ### Added

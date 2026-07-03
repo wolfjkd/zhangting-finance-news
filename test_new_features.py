@@ -1,5 +1,5 @@
 """
-涨停财经聚合播报 v3.8.1 — 集成测试
+涨停财经聚合播报 v3.9.7 — 集成测试
 测试后端数据源、去重DB、行情API
 所有国内API直连，不走代理
 """
@@ -278,6 +278,6 @@ class TestSeenAidDB(unittest.TestCase):
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("涨停财经聚合播报 v3.6.0 — 集成测试")
+    print("涨停财经聚合播报 v3.9.7 — 集成测试")
     print("=" * 60)
     unittest.main(verbosity=2)
