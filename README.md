@@ -169,7 +169,7 @@ pip install pywebview requests websocket-client
 ## 启动
 
 **方式一：直接运行 exe（推荐，无需 Python 环境）**
-双击 `dist/涨停财经聚合播报_v3.9.7.exe`
+双击 `dist/涨停财经聚合播报_v3.9.9.exe`
 
 **方式二：Python 脚本启动**
 ```bash
@@ -193,7 +193,7 @@ ZTFI-News/
 ├── 启动.bat                # 双击启动脚本
 ├── 涨停财经聚合播报.spec   # PyInstaller 打包配置
 ├── dist/
-│   └── 涨停财经聚合播报_v3.9.7.exe   # 最新版本
+│   └── 涨停财经聚合播报_v3.9.9.exe   # 最新版本
 ├── renderer/
 │   ├── index.html          # 前端页面
 │   ├── style.css           # 样式（暗色主题）
