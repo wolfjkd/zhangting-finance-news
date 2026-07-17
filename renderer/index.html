@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>涨停财经聚合播报 v3.9.7版（开源版）</title>
+  <title>涨停财经聚合播报 v3.9.9版（开源版）</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -33,6 +33,17 @@
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
           <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
         </svg>
+      </button>
+      <button class="btn btn-icon" id="btnSearch" title="搜索消息">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+        </svg>
+      </button>
+      <button class="btn btn-icon" id="btnFavorites" title="我的收藏">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+        <span class="btn-badge" id="favoritesBadge" style="display:none;">0</span>
       </button>
       <button class="btn btn-icon" id="btnWatchlist" title="自选股">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -296,7 +307,7 @@
         <div class="settings-section-title">关于</div>
         <div class="setting-row">
           <span class="setting-label">版本</span>
-          <span style="font-size:13px; color:#666;">v3.9.7（开源版）</span>
+          <span style="font-size:13px; color:#666;">v3.9.8（开源版）</span>
         </div>
         <div class="setting-row">
           <span class="setting-label">许可证</span>
@@ -313,6 +324,58 @@
           <div style="font-size:14px; font-weight:bold; color:#e65100; margin-bottom:6px;">⚠️ 投资风险提示</div>
           <div style="font-size:12px; color:#5d4037; line-height:1.5;">本软件仅提供财经资讯聚合服务，不构成任何投资建议。投资有风险，入市需谨慎。</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 搜索对话框 -->
+  <div class="search-dialog" id="searchDialog" style="display:none;">
+    <div class="search-header">
+      <h3>搜索消息</h3>
+      <button class="dialog-close-btn" title="关闭">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="search-content">
+      <div class="search-input-wrapper">
+        <input type="text" id="searchInput" placeholder="输入关键词搜索..." class="search-input">
+        <button class="search-btn" id="searchBtn">搜索</button>
+      </div>
+      <div class="search-filters">
+        <select id="searchCategory" class="search-filter">
+          <option value="">全部分类</option>
+          <option value="政策">政策</option>
+          <option value="资金">资金</option>
+          <option value="公司">公司</option>
+          <option value="宏观">宏观</option>
+          <option value="行业">行业</option>
+          <option value="技术指标">技术指标</option>
+        </select>
+        <select id="searchPriority" class="search-filter">
+          <option value="">全部优先级</option>
+          <option value="critical">重磅</option>
+          <option value="high">重要</option>
+          <option value="medium">关注</option>
+          <option value="low">一般</option>
+        </select>
+      </div>
+      <div class="search-results" id="searchResults">
+        <div class="search-empty">请输入关键词进行搜索</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 收藏对话框 -->
+  <div class="favorites-dialog" id="favoritesDialog" style="display:none;">
+    <div class="favorites-header">
+      <h3>我的收藏</h3>
+      <button class="dialog-close-btn" title="关闭">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="favorites-content">
+      <div class="favorites-list" id="favoritesList">
+        <div class="favorites-empty">暂无收藏消息</div>
       </div>
     </div>
   </div>

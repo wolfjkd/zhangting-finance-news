@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v3.9.9] - 2026-07-17
+
+### Added
+- 外网资讯数据源：集成 Reddit、Google News、TechCrunch 三大外网资讯源
+- 多翻译源自动降级：MyMemory + LibreTranslate + Yandex + DeepL Free，防止限流失效
+- 代理检测升级：支持 Clash/Mihomo/v2rayN/Surge 等主流代理工具，自动检测环境变量、系统代理、常见端口
+- 外网资讯测试按钮：数据源管理中支持测试连接
+- 消息推送间隔控制：外网资讯逐条推送，间隔1.5秒
+
+### Changed
+- 语音播报规则：关键词高亮和自选股相关消息强制播报，东方财富公告/公告解读/券商研报不播报
+- 警报弹窗位置：关键词警报和自选股异动弹窗统一居中显示，避免遮挡最新消息
+- 关键词高亮修复：解决 flex 布局导致的换行问题
+- 外网资讯筛选优化：修复排除关键词逻辑bug，调整热度和质量门槛
+
+### Fixed
+- 外网资讯不播报问题：修复 ctime 使用原始发布时间导致时间阈值过滤的bug
+- 翻译限流问题：增加多个备用翻译源
+- 消息批量弹窗问题：修复语音队列被覆盖导致只播报最后一条的bug
+
 ## [v3.9.7] - 2026-07-03
 
 ### Added

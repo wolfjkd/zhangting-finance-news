@@ -21,8 +21,9 @@
   const newAidBuffer = []; // 本次启动新增的 aid，待持久化
   // 相似消息去重：记录最近显示的消息 { aid, title, el, sources, dupCount }
   const recentItems = [];
-  const MAX_RECENT = 80; // 只与最近80条比较，避免性能问题
-  const MAX_DOM_ITEMS = 500; // 虚拟滚动：最多保留 DOM 节点数
+  const MAX_RECENT = 50; // 只与最近50条比较，避免性能问题
+  const MAX_DOM_ITEMS = 200; // 虚拟滚动：最多保留 DOM 节点数（减少内存占用）
+  const MAX_HISTORY_DAYS = 7; // 历史消息最多保留7天
   let windowResizeTimer = null; // 窗口大小保存防抖定时器
 
   // ===== 设置 =====
@@ -39,7 +40,7 @@
   let voiceList = [];
   let speaking = false;
   let voiceQueue = [];
-  const VOICE_TIME_THRESHOLD = 60;
+  const VOICE_TIME_THRESHOLD = 180;
   const VOICE_INTERRUPT_MODE_COMPLETE = 'complete';
   const VOICE_INTERRUPT_MODE_IMMEDIATE = 'immediate';
 
@@ -55,10 +56,20 @@
   const $btnPin = document.getElementById('btnPin');
   const $btnLoadMore = document.getElementById('btnLoadMore');
   const $btnSettings = document.getElementById('btnSettings');
-  const $btnFavorites = null; // 已移除
+  const $btnSearch = document.getElementById('btnSearch');
+  const $btnFavorites = document.getElementById('btnFavorites');
+  const $favoritesBadge = document.getElementById('favoritesBadge');
   const $btnReview = null; // 已移除
   const $btnWatchlist = document.getElementById('btnWatchlist');
   const $watchlistBadge = document.getElementById('watchlistBadge');
+  const $searchDialog = document.getElementById('searchDialog');
+  const $searchInput = document.getElementById('searchInput');
+  const $searchBtn = document.getElementById('searchBtn');
+  const $searchCategory = document.getElementById('searchCategory');
+  const $searchPriority = document.getElementById('searchPriority');
+  const $searchResults = document.getElementById('searchResults');
+  const $favoritesDialog = document.getElementById('favoritesDialog');
+  const $favoritesList = document.getElementById('favoritesList');
   const $btnThemeToggle = document.getElementById('btnThemeToggle');
   const $settingsOverlay = document.getElementById('settingsOverlay');
   const $settingsClose = document.getElementById('settingsClose');
@@ -318,10 +329,11 @@
 
     initVoice();
     initSettings();
+    scheduleCleanup();
   }
 
   // ===== 后端事件回调 =====
-  window._onBackendEvent = function (event, data) {
+  window._onBackendEvent = async function (event, data) {
     switch (event) {
       case 'ws_open':
         setStatus('connected', '已连接 · 实时推送中');
@@ -330,9 +342,11 @@
         try {
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
-            parsed.forEach(item => handleNewsItem(item));
+            for (const item of parsed) {
+              await handleNewsItem(item);
+            }
           } else if (parsed && typeof parsed === 'object' && parsed.ctime) {
-            handleNewsItem(parsed);
+            await handleNewsItem(parsed);
           }
         } catch (e) {
           // ignore non-JSON
@@ -411,7 +425,7 @@
   }
 
   // ===== 处理实时推送 =====
-  function handleNewsItem(item) {
+  async function handleNewsItem(item) {
     if (!item || !item.aid || seenAids.has(item.aid)) return;
 
     // 来源过滤
@@ -463,9 +477,11 @@
       });
     }
 
-    // 语音播报
+    // 语音播报（按来源过滤 + 关键词/自选股强制播报）
     if (settings.voiceEnabled && item.title) {
-      enqueueVoice(item.title, item.ctime);
+      if (shouldAnnounce(item)) {
+        enqueueVoice(item.title, item.ctime);
+      }
     }
   }
 
@@ -548,13 +564,15 @@
         <span class="news-time">${esc(timeStr)}</span>
         <div class="news-header-right">
           ${aiAreaHTML}
-          <button class="btn-favorite" data-aid="${item.aid}" title="收藏消息">
-            <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-          </button>
         </div>
       </div>
       ${tagsHTML ? `<div class="news-tags">${tagsHTML}</div>` : ''}
-      <div class="news-title ${titleClickable}">${esc(item.title || '')}${isDetailSource ? '<span class="news-detail-hint">▸详情</span>' : ''}</div>
+      <div class="news-title ${titleClickable}">
+        <span class="news-title-text">${esc(item.title || '')}${isDetailSource ? '<span class="news-detail-hint">▸详情</span>' : ''}</span>
+        <button class="btn-favorite" data-aid="${item.aid}" title="收藏消息">
+          <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        </button>
+      </div>
     `;
 
     if (item.content) {
@@ -780,12 +798,121 @@
         btn.classList.add('favorited');
         if (DEBUG_MODE) console.log('已收藏:', item.title);
       }
+      updateFavoritesBadge();
     } catch (err) {
       console.error('收藏操作失败:', err);
     }
   }
 
+  async function updateFavoritesBadge() {
+    if (!window.historyStorage) return;
+    try {
+      const count = await window.historyStorage.getFavoritesCount();
+      if ($favoritesBadge) {
+        if (count > 0) {
+          $favoritesBadge.textContent = count;
+          $favoritesBadge.style.display = 'inline-block';
+        } else {
+          $favoritesBadge.style.display = 'none';
+        }
+      }
+    } catch (err) {
+      if (DEBUG_MODE) console.warn('更新收藏徽章失败:', err);
+    }
+  }
 
+  async function loadFavorites() {
+    if (!window.historyStorage) return;
+    try {
+      const favorites = await window.historyStorage.getAllFavorites();
+      
+      if (!favorites || favorites.length === 0) {
+        $favoritesList.innerHTML = '<div class="favorites-empty">暂无收藏消息</div>';
+        return;
+      }
+      
+      $favoritesList.innerHTML = favorites.map(fav => `
+        <div class="favorite-item" data-id="${fav.id}">
+          <div class="fav-title">${esc(fav.title)}</div>
+          <div class="fav-meta">${fav.source || ''} · ${formatTime(fav.timestamp)}</div>
+          <div class="fav-actions">
+            <button class="btn-fav-copy">复制</button>
+            <button class="btn-fav-remove">取消收藏</button>
+          </div>
+        </div>
+      `).join('');
+      
+      $favoritesList.querySelectorAll('.btn-fav-copy').forEach((btn, idx) => {
+        btn.addEventListener('click', () => {
+          const fav = favorites[idx];
+          const text = `${fav.title}\n${fav.content || ''}\n来源: ${fav.source || ''}`;
+          navigator.clipboard.writeText(text.trim()).then(() => {
+            showToast('已复制到剪贴板');
+          }).catch(() => {
+            const textarea = document.createElement('textarea');
+            textarea.value = text.trim();
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showToast('已复制到剪贴板');
+          });
+        });
+      });
+      
+      $favoritesList.querySelectorAll('.btn-fav-remove').forEach((btn, idx) => {
+        btn.addEventListener('click', async () => {
+          const fav = favorites[idx];
+          await window.historyStorage.removeFavorite(fav.id);
+          updateFavoritesBadge();
+          loadFavorites();
+          showToast('已取消收藏');
+        });
+      });
+    } catch (err) {
+      console.error('加载收藏失败:', err);
+      $favoritesList.innerHTML = '<div class="favorites-empty">加载失败</div>';
+    }
+  }
+
+  async function performSearch() {
+    if (!window.historyStorage) return;
+    
+    const query = $searchInput.value.trim();
+    const category = $searchCategory.value || null;
+    const priority = $searchPriority.value || null;
+    
+    try {
+      $searchResults.innerHTML = '<div class="search-empty">搜索中...</div>';
+      
+      const results = await window.historyStorage.searchMessages(query, {
+        limit: 50,
+        category,
+        priority
+      });
+      
+      if (!results || results.length === 0) {
+        $searchResults.innerHTML = '<div class="search-empty">未找到匹配的消息</div>';
+        return;
+      }
+      
+      $searchResults.innerHTML = results.map(msg => `
+        <div class="search-result-item" data-id="${msg.id}">
+          <div class="result-title">${esc(msg.title)}</div>
+          <div class="result-meta">${msg.source || ''} · ${formatTime(msg.timestamp)} · ${msg.category || ''}</div>
+        </div>
+      `).join('');
+      
+      $searchResults.querySelectorAll('.search-result-item').forEach(item => {
+        item.addEventListener('click', () => {
+          $searchDialog.style.display = 'none';
+        });
+      });
+    } catch (err) {
+      console.error('搜索失败:', err);
+      $searchResults.innerHTML = '<div class="search-empty">搜索出错</div>';
+    }
+  }
 
   // ===== 自选股功能 =====
   async function showWatchlistDialog() {
@@ -1501,11 +1628,11 @@
 
   // ===== 加载更多 =====
   async function loadMore() {
-    if (!oldestCtime) return;
     $loading.classList.add('show');
 
     try {
-      const result = await pywebview.api.load_more(oldestCtime);
+      const beforeTime = Math.floor(Date.now() / 1000) - 3600;
+      const result = await pywebview.api.load_more(beforeTime);
       const data = typeof result === 'string' ? JSON.parse(result) : result;
 
       if (data.status === 'ok' && Array.isArray(data.data) && data.data.length > 0) {
@@ -1572,10 +1699,12 @@
 
     if (settings.voiceInterruptMode === VOICE_INTERRUPT_MODE_IMMEDIATE) {
       stopVoice();
-      voiceQueue.push(speakText);
+      voiceQueue = [speakText];
       processVoiceQueue();
     } else {
-      voiceQueue = [speakText];
+      if (voiceQueue.length < 20) {
+        voiceQueue.push(speakText);
+      }
       if (!speaking) {
         processVoiceQueue();
       }
@@ -1601,6 +1730,43 @@
     utter.onend = () => processVoiceQueue();
     utter.onerror = () => processVoiceQueue();
     synth.speak(utter);
+  }
+
+  // ===== 语音播报过滤规则 =====
+  const ANNOUNCE_SOURCES = [
+    '实时聚合', '龙虎榜', '外网资讯', '北向资金',
+    'Reddit', 'Google News', '谷歌新闻', 'TechCrunch'
+  ];
+  
+  const SKIP_SOURCES = ['东方财富', '券商研报', '公告解读'];
+
+  function shouldAnnounce(item) {
+    const source = item.comefrom || '';
+    
+    // 检查是否命中关键词高亮（标题或内容包含关键词）
+    if (settings.keywordHighlight && settings.keywords.length > 0) {
+      const text = (item.title || '') + ' ' + (item.content || '');
+      const escaped = settings.keywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const regex = new RegExp(escaped.join('|'), 'gi');
+      if (regex.test(text)) {
+        return true;
+      }
+    }
+    
+    // 检查是否涉及自选股（同步检查，通过item.stocks字段）
+    if (item.stocks && item.stocks.length > 0) {
+      return true;
+    }
+    
+    // 来源黑名单：这些数据源的消息不播报
+    for (const skip of SKIP_SOURCES) {
+      if (source.includes(skip)) {
+        return false;
+      }
+    }
+    
+    // 默认：播报所有其他消息
+    return true;
   }
 
   // ===== 设置 =====
@@ -1895,6 +2061,45 @@
     $btnWatchlist.addEventListener('click', () => {
       showWatchlistDialog();
     });
+
+    $btnSearch.addEventListener('click', () => {
+      $searchDialog.style.display = 'flex';
+      $searchInput.focus();
+    });
+
+    $btnFavorites.addEventListener('click', () => {
+      loadFavorites();
+      $favoritesDialog.style.display = 'flex';
+    });
+
+    $searchDialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
+      $searchDialog.style.display = 'none';
+    });
+
+    $favoritesDialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
+      $favoritesDialog.style.display = 'none';
+    });
+
+    $searchBtn.addEventListener('click', () => {
+      performSearch();
+    });
+
+    $searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!$searchDialog.contains(e.target) && !$btnSearch.contains(e.target)) {
+        $searchDialog.style.display = 'none';
+      }
+      if (!$favoritesDialog.contains(e.target) && !$btnFavorites.contains(e.target)) {
+        $favoritesDialog.style.display = 'none';
+      }
+    });
+
+    updateFavoritesBadge();
 
     // 主题切换
     function applyTheme() {
@@ -2203,6 +2408,24 @@
     } catch (e) {
       // ignore
     }
+  }
+
+  async function cleanupOldHistory() {
+    if (!window.historyStorage) return;
+    try {
+      const cutoffTime = Date.now() - MAX_HISTORY_DAYS * 24 * 60 * 60 * 1000;
+      const deletedCount = await window.historyStorage.deleteOldMessages(cutoffTime);
+      if (DEBUG_MODE && deletedCount > 0) {
+        console.log(`清理过期消息: 删除 ${deletedCount} 条`);
+      }
+    } catch (e) {
+      if (DEBUG_MODE) console.warn('清理历史消息失败:', e);
+    }
+  }
+
+  function scheduleCleanup() {
+    cleanupOldHistory();
+    setInterval(cleanupOldHistory, 24 * 60 * 60 * 1000);
   }
 
   // ===== 新闻详情弹窗 =====

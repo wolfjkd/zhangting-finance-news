@@ -718,6 +718,61 @@ class HistoryStorage {
     });
   }
 
+  /**
+   * 删除过期消息（清理内存占用）
+   */
+  async deleteOldMessages(cutoffTime) {
+    if (!this.db) await this.openDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['messages', 'searchIndex'], 'readwrite');
+      const messagesStore = transaction.objectStore('messages');
+      const indexStore = transaction.objectStore('searchIndex');
+      
+      let deletedCount = 0;
+      const deletedIds = [];
+      
+      const index = messagesStore.index('timestamp');
+      const request = index.openCursor(null, 'next');
+      
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          if (cursor.value.timestamp < cutoffTime) {
+            deletedIds.push(cursor.value.id);
+            cursor.delete();
+            deletedCount++;
+            cursor.continue();
+          } else {
+            cursor.continue();
+          }
+        } else {
+          if (deletedIds.length > 0) {
+            const indexRequest = indexStore.openCursor();
+            indexRequest.onsuccess = (e) => {
+              const c = e.target.result;
+              if (c) {
+                if (deletedIds.includes(c.value.messageId)) {
+                  c.delete();
+                }
+                c.continue();
+              } else {
+                resolve(deletedCount);
+              }
+            };
+            indexRequest.onerror = () => resolve(deletedCount);
+          } else {
+            resolve(deletedCount);
+          }
+        }
+      };
+      
+      request.onerror = (event) => {
+        reject(event.target.error);
+      };
+    });
+  }
+
   // ===== 复盘报告功能 =====
 
   /**

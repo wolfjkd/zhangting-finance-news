@@ -430,7 +430,49 @@ body.dark-mode .toolbar-right {
   font-weight: 600;
   color: var(--text);
   line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.news-title-text {
+  flex: 1;
   word-break: break-all;
+}
+
+.btn-favorite {
+  background: none;
+  border: none;
+  padding: 1px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.btn-favorite:hover {
+  opacity: 0.8;
+}
+
+.btn-favorite svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 2;
+  transition: fill 0.2s, stroke 0.2s;
+}
+
+.btn-favorite.favorited svg {
+  fill: #ffc107;
+  stroke: #ffc107;
+}
+
+.btn-favorite.favorited {
+  opacity: 1;
 }
 
 .news-content {
@@ -865,6 +907,7 @@ body.dark-mode .toolbar-right {
   padding: 0 2px;
   border-radius: 2px;
   font-weight: 700;
+  display: inline;
 }
 
 /* ===== 通用对话框样式 ===== */
@@ -927,6 +970,157 @@ body.dark-mode .toolbar-right {
 
 .dialog-content {
   padding: 20px;
+}
+
+/* ===== 搜索对话框 ===== */
+.search-dialog, .favorites-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 420px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 10000;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-header, .favorites-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.search-header h3, .favorites-header h3 {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.search-content, .favorites-content {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.search-input-wrapper {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg-card);
+  color: var(--text);
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+}
+
+.search-btn {
+  padding: 10px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.search-btn:hover {
+  opacity: 0.9;
+}
+
+.search-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.search-filter {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--bg-card);
+  color: var(--text);
+  outline: none;
+}
+
+.search-results, .favorites-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.search-empty, .favorites-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 30px 0;
+}
+
+.search-result-item, .favorite-item {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.search-result-item:last-child, .favorite-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-item:hover, .favorite-item:hover {
+  background: var(--bg-card-hover);
+}
+
+.search-result-item .result-title, .favorite-item .fav-title {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-item .result-meta, .favorite-item .fav-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.favorite-item .fav-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fav-actions button {
+  padding: 4px 10px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.fav-actions button:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 
@@ -994,15 +1188,17 @@ body.dark-mode .toolbar-right {
 /* ===== 关键词警报通知 ===== */
 .kw-alert-notification {
   position: fixed;
-  top: 48px;
-  right: 10px;
-  width: 280px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 360px;
   background: var(--toggle-knob);
   border: 2px solid var(--red);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-  z-index: 300;
-  animation: kwAlertSlideIn 0.3s ease-out;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  z-index: 2001;
+  animation: alertPulse 0.5s ease-out;
   overflow: hidden;
 }
 
