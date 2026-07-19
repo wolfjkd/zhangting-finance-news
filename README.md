@@ -1,4 +1,4 @@
-# 涨停财经聚合播报 v3.10.0（开源版）
+# 涨停财经聚合播报 v3.10.1（开源版）
 
 轻量级桌面财经新闻推送客户端，基于 pywebview（WebView2 内核），无需浏览器即可实时接收聚合消息推送，并集成了东财公告、券商研报、北向资金、外网资讯等多数据源。
 
@@ -169,7 +169,7 @@ pip install pywebview requests websocket-client
 ## 启动
 
 **方式一：直接运行 exe（推荐，无需 Python 环境）**
-双击 `dist/涨停财经聚合播报_v3.10.0.exe`
+双击 `dist/涨停财经聚合播报_v3.10.1.exe`
 
 **方式二：Python 脚本启动**
 ```bash
@@ -193,7 +193,7 @@ ZTFI-News/
 ├── 启动.bat                # 双击启动脚本
 ├── 涨停财经聚合播报.spec   # PyInstaller 打包配置
 ├── dist/
-│   └── 涨停财经聚合播报_v3.10.0.exe   # 最新版本
+│   └── 涨停财经聚合播报_v3.10.1.exe   # 最新版本
 ├── renderer/
 │   ├── index.html          # 前端页面
 │   ├── style.css           # 样式（暗色主题）

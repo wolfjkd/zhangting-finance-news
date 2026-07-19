@@ -177,8 +177,12 @@ def _create_proxy_session(proxy_info=None):
     s = requests.Session()
     s.trust_env = True
     s.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZTFINews/3.9.8',
-    })
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+        })
     if proxy_info and proxy_info.get('url'):
         # 显式绑定检测到的代理，避免仅依赖环境变量漏配
         proxy_url = proxy_info['url']
@@ -1011,9 +1015,15 @@ class DataSourceManager:
         seen = self._seen_ids.get("foreign_news", set())
         
         try:
-            messages.extend(self._fetch_reddit_news(seen))
-            messages.extend(self._fetch_google_news(seen))
-            messages.extend(self._fetch_techcrunch_via_proxy(seen))
+            reddit_msgs = self._fetch_reddit_news(seen)
+            google_msgs = self._fetch_google_news(seen)
+            tc_msgs = self._fetch_techcrunch_via_proxy(seen)
+            
+            messages.extend(reddit_msgs)
+            messages.extend(google_msgs)
+            messages.extend(tc_msgs)
+            
+            logger.info(f"外网资讯抓取结果 - Reddit: {len(reddit_msgs)}, Google News: {len(google_msgs)}, TechCrunch: {len(tc_msgs)}, 总计: {len(messages)}")
             
             self._seen_ids["foreign_news"] = seen
             if len(seen) > 300:
@@ -1023,6 +1033,8 @@ class DataSourceManager:
             if messages:
                 self._process_source_messages("foreign_news", messages)
                 self.source_status["foreign_news"]["error"] = None
+            else:
+                logger.info("外网资讯本次抓取无新消息")
         except Exception as e:
             logger.error(f"获取外网资讯失败: {e}")
             self.source_status["foreign_news"]["error"] = str(e)
@@ -1153,7 +1165,7 @@ class DataSourceManager:
             "celebrity", "entertainment", "food", "travel", "healthcare", "COVID", "pandemic"
         ]
         
-        twenty_four_hours_ago = time.time() - 24 * 3600
+        forty_eight_hours_ago = time.time() - 48 * 3600
 
         for keyword in search_keywords[:5]:
             try:
@@ -1194,7 +1206,7 @@ class DataSourceManager:
                             parsed_date = email.utils.parsedate(pub_date)
                             if parsed_date:
                                 pub_timestamp = time.mktime(parsed_date)
-                                if pub_timestamp < twenty_four_hours_ago:
+                                if pub_timestamp < forty_eight_hours_ago:
                                     continue
                         except:
                             pass
@@ -1226,7 +1238,7 @@ class DataSourceManager:
         """通过代理获取TechCrunch高质量科技新闻（多层筛选）"""
         messages = []
         
-        twenty_four_hours_ago = time.time() - 24 * 3600
+        forty_eight_hours_ago = time.time() - 48 * 3600
         
         include_keywords = [
             "AI", "artificial intelligence", "machine learning", "deep learning",
@@ -1234,10 +1246,14 @@ class DataSourceManager:
             "China", "Chinese", "Huawei", "Alibaba", "Tencent", "BYD",
             "supply chain", "manufacturing", "factory",
             "innovation", "breakthrough", "advance", "cutting-edge",
-            "startup", "IPO", "funding", "investment",
+            "startup", "IPO", "funding", "investment", "valuation",
             "technology", "tech", "software", "hardware",
             "cloud", "computing", "data center",
-            "robotics", "automation", "future", "next generation"
+            "robotics", "automation", "future", "next generation",
+            "self-driving", "autonomous", "EV", "electric vehicle", "charging",
+            "service", "platform", "product", "launch", "release",
+            "company", "business", "market", "economy",
+            "security", "privacy", "hack", "cybersecurity"
         ]
         
         exclude_keywords = [
@@ -1291,7 +1307,7 @@ class DataSourceManager:
                         parsed_date = email.utils.parsedate(pub_date)
                         if parsed_date:
                             pub_timestamp = time.mktime(parsed_date)
-                            if pub_timestamp < twenty_four_hours_ago:
+                            if pub_timestamp < forty_eight_hours_ago:
                                 continue
                     except:
                         pass

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v3.10.1] - 2026-07-19
+
+### Fixed
+- 外网资讯推送问题：修复Reddit 403被拒绝、TechCrunch brotli解压失败、时间过滤太严格导致无消息推送的问题
+- 添加broti依赖以支持TechCrunch压缩数据解析
+
+### Changed
+- 时间过滤窗口从24小时调整为48小时，平衡时效性和资讯量
+- 扩展TechCrunch关键词匹配规则，增加更多通用科技关键词
+- 增强代理Session头部，添加完整浏览器模拟信息
+- 增加详细日志输出，便于调试外网资讯抓取过程
+
 ## [v3.10.0] - 2026-07-19
 
 ### Added
