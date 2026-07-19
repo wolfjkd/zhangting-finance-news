@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v3.10.0] - 2026-07-19
+
+### Added
+- 外网资讯24小时时间过滤：Reddit、Google News、TechCrunch 只推送最近24小时内发布的消息
+- Google News时间限定：添加 `&tbs=qdr:d` 参数，强制搜索最近24小时新闻
+
+### Changed
+- 外网资讯推送逻辑：从"实时性优先"改为"热门优先+时效性过滤"，既保留热门价值又避免日期错乱
+
 ## [v3.9.9] - 2026-07-17
 
 ### Added
@@ -12,13 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
 - 多翻译源自动降级：MyMemory + LibreTranslate + Yandex + DeepL Free，防止限流失效
 - 代理检测升级：支持 Clash/Mihomo/v2rayN/Surge 等主流代理工具，自动检测环境变量、系统代理、常见端口
 - 外网资讯测试按钮：数据源管理中支持测试连接
-- 消息推送间隔控制：外网资讯逐条推送，间隔1.5秒
 
 ### Changed
 - 语音播报规则：关键词高亮和自选股相关消息强制播报，东方财富公告/公告解读/券商研报不播报
 - 警报弹窗位置：关键词警报和自选股异动弹窗统一居中显示，避免遮挡最新消息
 - 关键词高亮修复：解决 flex 布局导致的换行问题
-- 外网资讯筛选优化：修复排除关键词逻辑bug，调整热度和质量门槛
+- 消息推送间隔控制：外网资讯逐条推送，间隔1.5秒
 
 ### Fixed
 - 外网资讯不播报问题：修复 ctime 使用原始发布时间导致时间阈值过滤的bug

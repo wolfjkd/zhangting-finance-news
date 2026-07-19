@@ -1031,6 +1031,8 @@ class DataSourceManager:
         """获取Reddit高质量财经科技新闻（多层筛选）"""
         messages = []
         
+        twenty_four_hours_ago = time.time() - 24 * 3600
+        
         include_keywords = [
             "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
             "supply chain", "semiconductor", "chip", "AI", "artificial intelligence",
@@ -1072,6 +1074,7 @@ class DataSourceManager:
                     link = p.get('url', '')
                     score = p.get('score', 0)
                     num_comments = p.get('num_comments', 0)
+                    created_utc = p.get('created_utc', 0)
                     
                     if not title:
                         continue
@@ -1079,6 +1082,9 @@ class DataSourceManager:
                     title_lower = title.lower()
                     
                     if score < 50:
+                        continue
+                    
+                    if created_utc and created_utc < twenty_four_hours_ago:
                         continue
                     
                     unique_key = f"reddit_{link}" if link else f"reddit_{title[:50]}"
@@ -1147,9 +1153,11 @@ class DataSourceManager:
             "celebrity", "entertainment", "food", "travel", "healthcare", "COVID", "pandemic"
         ]
         
+        twenty_four_hours_ago = time.time() - 24 * 3600
+
         for keyword in search_keywords[:5]:
             try:
-                url = f"https://news.google.com/rss/search?q={requests.utils.quote(keyword)}"
+                url = f"https://news.google.com/rss/search?q={requests.utils.quote(keyword)}&tbm=nws&tbs=qdr:d"
                 params = {'hl': 'en-US'}
                 resp = _proxy_session.get(url, params=params, timeout=15)
                 if resp.status_code != 200:
@@ -1180,6 +1188,17 @@ class DataSourceManager:
                     if not has_include:
                         continue
                     
+                    if pub_date:
+                        try:
+                            import email.utils
+                            parsed_date = email.utils.parsedate(pub_date)
+                            if parsed_date:
+                                pub_timestamp = time.mktime(parsed_date)
+                                if pub_timestamp < twenty_four_hours_ago:
+                                    continue
+                        except:
+                            pass
+                    
                     unique_key = f"google_{link}" if link else f"google_{title[:50]}"
                     if unique_key in seen:
                         continue
@@ -1206,6 +1225,8 @@ class DataSourceManager:
     def _fetch_techcrunch_via_proxy(self, seen):
         """通过代理获取TechCrunch高质量科技新闻（多层筛选）"""
         messages = []
+        
+        twenty_four_hours_ago = time.time() - 24 * 3600
         
         include_keywords = [
             "AI", "artificial intelligence", "machine learning", "deep learning",
@@ -1263,6 +1284,17 @@ class DataSourceManager:
                 has_include = any(ik.lower() in title_lower for ik in include_keywords)
                 if not has_include:
                     continue
+                
+                if pub_date:
+                    try:
+                        import email.utils
+                        parsed_date = email.utils.parsedate(pub_date)
+                        if parsed_date:
+                            pub_timestamp = time.mktime(parsed_date)
+                            if pub_timestamp < twenty_four_hours_ago:
+                                continue
+                    except:
+                        pass
                 
                 unique_key = f"techcrunch_{link}" if link else f"techcrunch_{title[:50]}"
                 if unique_key in seen:
