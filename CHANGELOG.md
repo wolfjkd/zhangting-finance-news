@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v3.11.0] - 2026-07-22
+
+### Added
+- X平台独立优先轮询线程：30秒间隔轮询，提升实时性
+- 前端优先级队列：X平台消息置顶展示（`.x-priority` 类标记）
+- 翻译限流保护：令牌桶限流+异步翻译队列，防止翻译服务被限流
+- 评估指标收集：各源消息数、平均延迟、点击率统计，Ctrl+S查看报告
+
+### Changed
+- 推送频率优化：并行抓取+即时推送，消除"长时间无消息后突发推送"现象
+- 外网资讯抓取架构重构：6个源线程池并行 + 2个源独立线程
+
 ## [v3.10.1] - 2026-07-19
 
 ### Fixed

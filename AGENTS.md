@@ -58,6 +58,17 @@ pyinstaller 涨停财经聚合.spec --noconfirm
   git commit -m "chore: 打包 v{版本号}"
   ```
 
+### 版本发布同步（强制）
+发布新版本时必须同步以下内容：
+1. **README.md**：更新标题版本号、更新日志、启动方式中的 exe 文件名
+2. **CHANGELOG.md**：按 Keep a Changelog 格式添加新版本条目（Added/Changed/Fixed）
+3. **Git Tag**：创建轻量级标签并推送
+   ```bash
+   git tag v{版本号}
+   git push origin v{版本号}
+   ```
+4. **GitHub Releases**：创建新 Release，上传 exe 文件和更新说明
+
 ---
 
 ## 开发流程
