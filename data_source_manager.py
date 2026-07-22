@@ -176,6 +176,7 @@ def _create_proxy_session(proxy_info=None):
     """创建走代理的 Session，用于访问外网数据源。"""
     s = requests.Session()
     s.trust_env = True
+    s.timeout = 10
     s.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -209,10 +210,14 @@ def _refresh_proxy_session():
 
 def _is_proxy_available():
     """检测代理是否可用（Clash/Mihomo/v2ray/系统代理/环境变量等）。"""
+    logger.info("代理检测：开始检测...")
     info = _refresh_proxy_session()
+    logger.info(f"代理检测：检测结果: {info}")
     if not info:
         return False
-    return _port_open(info['host'], info['port'])
+    result = _port_open(info['host'], info['port'])
+    logger.info(f"代理检测：端口测试结果: {result}")
+    return result
 
 
 def _proxy_status_message():
@@ -277,17 +282,71 @@ class DataSourceManager:
         self.running = False
         self.poll_threads: Dict[str, threading.Thread] = {}
 
-        # 消息回调 — 由 app.py 的 Api 类设置
         self._message_callback: Optional[Callable[[Dict], None]] = None
 
-        # 各数据源的已推送 ID 集合（去重）
         self._seen_ids: Dict[str, set] = {}
 
-        # 北向资金上次推送值（变化超阈值才推）
         self._northbound_last_net: Optional[float] = None
+
+        self._translation_cache = {}
+        self._translator_status = {
+            'google': {'last_call': 0, 'failures': 0, 'cooldown_until': 0},
+            'mymemory': {'last_call': 0, 'failures': 0, 'cooldown_until': 0},
+            'libretranslate': {'last_call': 0, 'failures': 0, 'cooldown_until': 0},
+        }
+        self._MIN_CALL_INTERVAL = 2.5
+        self._MAX_FAILURES_BEFORE_COOLDOWN = 3
+        self._COOLDOWN_DURATION = 300
+
+        self._translate_queue = []
+        self._translate_queue_lock = threading.Lock()
+        self._translate_rate_limit = 1.0
+        self._translate_last_batch = 0
 
         self._init_default_sources()
 
+    # ===== 翻译限流保护 =====
+    def _enqueue_translate(self, aid, text, field_name):
+        """加入翻译队列（非阻塞）"""
+        with self._translate_queue_lock:
+            self._translate_queue.append({'aid': aid, 'text': text, 'field': field_name})
+    
+    def _process_translate_queue(self):
+        """处理翻译队列（限流）"""
+        now = time.time()
+        if now - self._translate_last_batch < self._translate_rate_limit:
+            return
+        
+        batch = []
+        with self._translate_queue_lock:
+            batch = self._translate_queue[:3]
+            self._translate_queue = self._translate_queue[3:]
+        
+        if batch:
+            self._translate_last_batch = now
+            for item in batch:
+                try:
+                    translated = self._translate_to_chinese(item['text'])
+                    if translated and translated != item['text']:
+                        self._update_message_translation(item['aid'], item['field'], translated)
+                except Exception as e:
+                    logger.warning(f"翻译队列处理失败: {e}")
+    
+    def _update_message_translation(self, aid, field_name, translated):
+        """更新消息翻译（异步推送更新）"""
+        pass
+    
+    def _translate_with_rate_limit(self, text, allow_fallback=True):
+        """带限流的翻译调用，超过阈值时返回原文本"""
+        now = time.time()
+        if now - self._translate_last_batch < self._translate_rate_limit:
+            if allow_fallback:
+                return text
+            time.sleep(self._translate_rate_limit - (now - self._translate_last_batch))
+        
+        self._translate_last_batch = now
+        return self._translate_to_chinese(text)
+    
     # ===== 回调 =====
     def set_message_callback(self, callback: Callable[[Dict], None]):
         """设置消息推送回调（app.py 调用，把消息推到前端）"""
@@ -308,7 +367,7 @@ class DataSourceManager:
         default_sources = [
             DataSourceConfig(
                 id="ztfi", name="实时聚合", type=DataSourceType.WEBSOCKET,
-                enabled=True, priority=1, description="实时聚合消息"
+                enabled=True, priority=1, description="聚合15家主流财经资讯源实时推送：财联社、新浪财经、东方财富、同花顺、华尔街见闻、格隆汇、选股宝、科创板日报、时报快讯、e公司、北京商报、人民财讯、央视新闻、新华社、科创版日报"
             ),
             DataSourceConfig(
                 id="eastmoney", name="东方财富公告", type=DataSourceType.API,
@@ -342,14 +401,20 @@ class DataSourceManager:
             ),
             DataSourceConfig(
                 id="foreign_news", name="外网资讯", type=DataSourceType.API,
-                enabled=False, priority=7, 
-                description="汇集外网平台X(Twitter)、Reddit、Google News等一手财经、政策、科技、中国供应链信息源（需自备代理）",
+                enabled=True, priority=7, 
+                description="汇集9大外网资讯源：Bloomberg（彭博社）、CNBC（财经新闻）、BBC News（国际新闻）、X(Twitter)重要账号（@elonmusk/@OpenAI/@ChineseWSJ等）、Reddit（热门话题）、Google News（新闻聚合）、TechCrunch（科技创业）、Hacker News（科技前沿）、Wired（深度科技），覆盖财经、科技、政策、全球市场等领域（需自备代理）",
                 endpoints={
+                    "bloomberg": "https://feeds.bloomberg.com",
+                    "cnbc": "https://www.cnbc.com",
+                    "bbc": "http://feeds.bbci.co.uk",
+                    "twitter_x": "https://nitter.net",
                     "reddit": "https://www.reddit.com",
                     "google_news": "https://news.google.com",
-                    "techcrunch": "https://techcrunch.com/feed/"
+                    "techcrunch": "https://techcrunch.com/feed/",
+                    "hacker_news": "https://hnrss.org",
+                    "wired": "https://www.wired.com/feed/rss"
                 },
-                poll_interval=300
+                poll_interval=120
             ),
         ]
         for source in default_sources:
@@ -458,7 +523,27 @@ class DataSourceManager:
         elif source_id == "ann_interpret":
             self._start_poll_thread("ann_interpret", self._fetch_announcement_interpretation, source.poll_interval)
         elif source_id == "foreign_news":
+            logger.info("启动外网资讯轮询线程，间隔 %d 秒", source.poll_interval)
             self._start_poll_thread("foreign_news", self._fetch_foreign_news, source.poll_interval)
+            self._start_x_priority_thread()
+
+    def _start_x_priority_thread(self):
+        """启动X平台独立优先轮询线程（30秒间隔）"""
+        def poll():
+            logger.info("X平台优先轮询线程已启动，间隔30秒")
+            while self.running and self.sources.get("foreign_news") and self.sources["foreign_news"].enabled:
+                try:
+                    self._fetch_x_priority_news()
+                except Exception as e:
+                    logger.error("X平台优先轮询失败: %s", e)
+                for _ in range(30):
+                    if not self.running or not self.sources.get("foreign_news") or not self.sources["foreign_news"].enabled:
+                        return
+                    time.sleep(1)
+        
+        thread = threading.Thread(target=poll, daemon=True, name="poll-foreign_news_x")
+        thread.start()
+        self.poll_threads["foreign_news_x"] = thread
 
     def _start_poll_thread(self, source_id: str, fetch_fn, interval: int):
         """启动轮询线程"""
@@ -552,7 +637,7 @@ class DataSourceManager:
                 "art_code": art_code,  # 留给前端请求详情用
                 "title": f"[公告] {title}",
                 "content": " | ".join(content_parts) if content_parts else "",
-                "comefrom": "东方财富",
+                "comefrom": "东方财富公告",
                 "ctime": ctime,
                 "ptime": display_time[11:19] if len(display_time) > 19 else "",
                 "categoryId": 0,
@@ -917,29 +1002,83 @@ class DataSourceManager:
         return f"公告类型: {ann_type}\n建议关注公告核心内容，评估对公司基本面的影响"
 
     # ===== 翻译功能 =====
+    def _wait_translator_cooldown(self, translator_name):
+        status = self._translator_status[translator_name]
+        now = time.time()
+        if now < status['cooldown_until']:
+            return False
+        if now - status['last_call'] < self._MIN_CALL_INTERVAL:
+            sleep_time = self._MIN_CALL_INTERVAL - (now - status['last_call'])
+            time.sleep(sleep_time)
+        status['last_call'] = time.time()
+        return True
+
+    def _record_translator_failure(self, translator_name):
+        status = self._translator_status[translator_name]
+        status['failures'] += 1
+        if status['failures'] >= self._MAX_FAILURES_BEFORE_COOLDOWN:
+            status['cooldown_until'] = time.time() + self._COOLDOWN_DURATION
+            logger.warning(f"翻译源 {translator_name} 连续失败{status['failures']}次，进入{self._COOLDOWN_DURATION}秒冷却")
+
+    def _record_translator_success(self, translator_name):
+        status = self._translator_status[translator_name]
+        status['failures'] = 0
+        status['cooldown_until'] = 0
+
     def _translate_to_chinese(self, text: str) -> str:
-        """使用多翻译源将英文翻译成中文（自动降级）"""
         if not text or not isinstance(text, str):
             return text
         
+        text_key = hashlib.md5(text.encode()).hexdigest()
+        if text_key in self._translation_cache:
+            cached = self._translation_cache[text_key]
+            if cached != text:
+                return cached
+        
         translators = [
-            self._translate_mymemory,
-            self._translate_libretranslate,
-            self._translate_yandex,
-            self._translate_deepl_free,
+            ('google', self._translate_google_unofficial),
+            ('mymemory', self._translate_mymemory),
+            ('libretranslate', self._translate_libretranslate),
         ]
         
-        for i, translator in enumerate(translators):
+        for name, translator in translators:
             try:
+                if not self._wait_translator_cooldown(name):
+                    continue
                 result = translator(text)
-                if result and result != text:
+                if result and result.strip() and result != text:
+                    self._translation_cache[text_key] = result
+                    self._record_translator_success(name)
                     return result
+                self._record_translator_failure(name)
             except Exception as e:
-                logger.debug(f"翻译源{i+1}失败: {e}")
+                logger.debug(f"翻译源 {name} 失败: {e}")
+                self._record_translator_failure(name)
         
-        logger.warning(f"所有翻译源均失败，返回原文")
+        if len(self._translation_cache) > 1000:
+            self._translation_cache = dict(list(self._translation_cache.items())[-500:])
+        
         return text
-    
+
+    def _translate_google_unofficial(self, text: str) -> str:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": "en",
+            "tl": "zh-CN",
+            "dt": "t",
+            "q": text[:2000]
+        }
+        resp = _proxy_session.get(url, params=params, timeout=15)
+        if resp.status_code == 200:
+            result = resp.json()
+            if isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
+                parts = [item[0] for item in result[0] if item[0]]
+                translated = ''.join(parts)
+                if translated and translated.strip():
+                    return translated
+        return text
+
     def _translate_mymemory(self, text: str) -> str:
         url = "https://api.mymemory.translated.net/get"
         params = {"q": text[:2000], "langpair": "en|zh-CN"}
@@ -951,11 +1090,12 @@ class DataSourceManager:
                 if translated and translated.strip():
                     return translated
         return text
-    
+
     def _translate_libretranslate(self, text: str) -> str:
         endpoints = [
             "https://libretranslate.de",
             "https://translate.argosopentech.com",
+            "https://api.libretranslate.com",
         ]
         for base_url in endpoints:
             try:
@@ -970,91 +1110,161 @@ class DataSourceManager:
             except Exception:
                 continue
         return text
-    
-    def _translate_yandex(self, text: str) -> str:
-        url = "https://translate.yandex.net/api/v1.5/tr.json/translate"
-        params = {
-            "key": "trnsl.1.1.20240101T000000Z.abcdef1234567890.abcdef1234567890abcdef1234567890",
-            "text": text[:2000],
-            "lang": "en-zh"
-        }
-        resp = _proxy_session.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            result = resp.json()
-            if 'text' in result and result['text']:
-                translated = result['text'][0]
-                if translated and translated.strip():
-                    return translated
-        return text
-    
-    def _translate_deepl_free(self, text: str) -> str:
-        url = "https://api-free.deepl.com/v2/translate"
-        params = {
-            "auth_key": "bf4c5109-2892-c46b-1234-567890abcdef:fx",
-            "text": text[:2000],
-            "target_lang": "ZH"
-        }
-        resp = _proxy_session.post(url, data=params, timeout=10)
-        if resp.status_code == 200:
-            result = resp.json()
-            translations = result.get('translations', [])
-            if translations:
-                translated = translations[0].get('text', '')
-                if translated and translated.strip():
-                    return translated
-        return text
 
     # ===== 外网资讯综合函数 =====
     def _fetch_foreign_news(self):
-        """获取外网资讯（Reddit、Google News、TechCrunch）并翻译为中文"""
+        """获取外网资讯（并行抓取+即时推送）"""
+        logger.info("外网资讯：开始抓取...")
         if not _is_proxy_available():
             self.source_status["foreign_news"]["error"] = _proxy_status_message()
+            logger.info(f"外网资讯：代理不可用，跳过获取。状态：{_proxy_status_message()}")
             return
         
-        messages = []
         seen = self._seen_ids.get("foreign_news", set())
+        all_messages = []
         
         try:
-            reddit_msgs = self._fetch_reddit_news(seen)
-            google_msgs = self._fetch_google_news(seen)
-            tc_msgs = self._fetch_techcrunch_via_proxy(seen)
+            import concurrent.futures
             
-            messages.extend(reddit_msgs)
-            messages.extend(google_msgs)
-            messages.extend(tc_msgs)
+            def _fetch_and_push(source_name, fetch_func):
+                try:
+                    logger.info(f"外网资讯：开始抓取 {source_name}...")
+                    msgs = fetch_func(seen)
+                    logger.info(f"外网资讯：{source_name} 抓取完成，获取 {len(msgs)} 条")
+                    if msgs:
+                        self._process_source_messages("foreign_news", msgs)
+                        time.sleep(0.5)
+                    return msgs
+                except Exception as e:
+                    logger.warning(f"外网资讯：{source_name} 抓取失败: {e}")
+                    return []
             
-            logger.info(f"外网资讯抓取结果 - Reddit: {len(reddit_msgs)}, Google News: {len(google_msgs)}, TechCrunch: {len(tc_msgs)}, 总计: {len(messages)}")
+            sources_to_fetch = [
+                ("Reddit", self._fetch_reddit_news),
+                ("TechCrunch", self._fetch_techcrunch_via_proxy),
+                ("Hacker News", self._fetch_hacker_news),
+                ("BBC News", self._fetch_bbc_news),
+                ("CNBC", self._fetch_cnbc_news),
+                ("Wired", self._fetch_wired_news),
+            ]
+            
+            google_result = []
+            bloomberg_result = []
+            
+            def _fetch_google():
+                nonlocal google_result
+                google_result = _fetch_and_push("Google News", self._fetch_google_news)
+            
+            def _fetch_bloomberg():
+                nonlocal bloomberg_result
+                bloomberg_result = _fetch_and_push("Bloomberg", self._fetch_bloomberg_news)
+            
+            google_thread = threading.Thread(target=_fetch_google)
+            bloomberg_thread = threading.Thread(target=_fetch_bloomberg)
+            google_thread.start()
+            bloomberg_thread.start()
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                future_to_source = {
+                    executor.submit(_fetch_and_push, name, func): (name, func)
+                    for name, func in sources_to_fetch
+                }
+                for future in concurrent.futures.as_completed(future_to_source):
+                    name, _ = future_to_source[future]
+                    try:
+                        msgs = future.result()
+                        all_messages.extend(msgs)
+                    except Exception as e:
+                        logger.error(f"外网资讯：{name} 处理失败: {e}")
+            
+            google_thread.join(timeout=120)
+            bloomberg_thread.join(timeout=120)
+            all_messages.extend(google_result)
+            all_messages.extend(bloomberg_result)
+            
+            logger.info("外网资讯：开始抓取 Twitter/X（超时限制30秒）...")
+            nitter_result = []
+            def _fetch_nitter_thread():
+                try:
+                    nitter_result.extend(self._fetch_nitter_twitter_news(seen))
+                except Exception as e:
+                    logger.warning(f"Twitter/X 抓取线程异常: {e}")
+            
+            thread = threading.Thread(target=_fetch_nitter_thread)
+            thread.start()
+            thread.join(timeout=30)
+            if thread.is_alive():
+                logger.warning("Twitter/X 抓取超时，跳过")
+            else:
+                logger.info(f"外网资讯：Twitter/X 抓取完成，获取 {len(nitter_result)} 条")
+                if nitter_result:
+                    self._process_source_messages("foreign_news", nitter_result)
+                    all_messages.extend(nitter_result)
+            
+            total_count = len(all_messages)
+            logger.info(f"外网资讯抓取结果 - 总计: {total_count} 条")
             
             self._seen_ids["foreign_news"] = seen
             if len(seen) > 300:
                 seen = set(list(seen)[-300:])
                 self._seen_ids["foreign_news"] = seen
             
-            if messages:
-                self._process_source_messages("foreign_news", messages)
-                self.source_status["foreign_news"]["error"] = None
-            else:
-                logger.info("外网资讯本次抓取无新消息")
+            self.source_status["foreign_news"]["error"] = None
         except Exception as e:
             logger.error(f"获取外网资讯失败: {e}")
             self.source_status["foreign_news"]["error"] = str(e)
 
+    def _fetch_x_priority_news(self):
+        """X平台独立轮询（30秒间隔，高优先级）"""
+        if not _is_proxy_available():
+            return
+        
+        seen = self._seen_ids.get("foreign_news", set())
+        
+        try:
+            logger.info("X平台优先轮询：开始抓取...")
+            nitter_msgs = self._fetch_nitter_twitter_news(seen, limit=5)
+            
+            if nitter_msgs:
+                for msg in nitter_msgs:
+                    msg['priority'] = 1
+                    msg['is_x_priority'] = True
+                
+                logger.info(f"X平台优先轮询：获取 {len(nitter_msgs)} 条高优先级消息")
+                self._process_source_messages("foreign_news", nitter_msgs)
+        except Exception as e:
+            logger.warning(f"X平台优先轮询失败: {e}")
+
     def _fetch_reddit_news(self, seen):
-        """获取Reddit高质量财经科技新闻（多层筛选）"""
+        """获取Reddit高质量财经科技新闻（使用RSS feed，无需OAuth）"""
         messages = []
         
-        twenty_four_hours_ago = time.time() - 24 * 3600
+        seventy_two_hours_ago = time.time() - 72 * 3600
         
         include_keywords = [
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
             "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "supply chain", "semiconductor", "chip", "AI", "artificial intelligence",
-            "tech", "technology", "Biden", "Trump", "trade war", "tariff",
-            "IPO", "stock", "market", "economy", "government", "regulation",
-            "NVIDIA", "TSMC", "Apple", "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "manufacturing", "factory", "production", "export", "import",
-            "policy", "law", "bill", "congress", "senate", "white house",
-            "innovation", "breakthrough", "advance", "cutting-edge",
-            "global", "world", "international", "diplomacy"
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "stock", "market", "economy",
+            "trade war", "tariff", "export", "import",
+            "supply chain", "manufacturing", "factory",
+            "regulation", "policy", "law", "bill", "government",
+            "Biden", "Trump", "congress", "senate", "white house",
+            "inflation", "interest rate", "Federal Reserve", "Fed",
+            "central bank", "monetary policy",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "funding", "investment", "valuation",
+            "electric vehicle", "EV", "battery",
+            "breakthrough", "innovation",
+            "self-driving", "autonomous", "robotics", "automation",
+            "quantum computing", "quantum AI"
         ]
         
         exclude_keywords = [
@@ -1063,40 +1273,66 @@ class DataSourceManager:
             "game", "gaming", "stream", "twitch", "youtube", "tiktok", "social media",
             "celebrity", "entertainment", "movie", "music", "TV",
             "food", "cooking", "restaurant", "travel", "vacation",
-            "healthcare", "medicine", "vaccine", "COVID", "pandemic"
+            "healthcare", "medicine", "vaccine", "COVID", "pandemic",
+            "I joined", "I learned", "I built", "I made", "my blog", "my website",
+            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb"
         ]
         
-        subreddits = ["technology", "worldnews", "business", "stocks"]
+        import re
         
-        for sub in subreddits[:4]:
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        subreddits = ["technology", "worldnews", "business", "stocks", "science"]
+        
+        for sub in subreddits[:5]:
             try:
-                url = f"https://www.reddit.com/r/{sub}/hot.json"
-                params = {'limit': 10}
-                resp = _proxy_session.get(url, params=params, timeout=15)
+                url = f"https://www.reddit.com/r/{sub}/hot.rss"
+                resp = _proxy_session.get(url, timeout=15)
                 if resp.status_code != 200:
                     continue
                 
-                data = resp.json()
-                if not data.get('data', {}).get('children'):
-                    continue
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(resp.text)
+                entries = root.findall('.//{http://www.w3.org/2005/Atom}entry')
                 
-                for post in data['data']['children']:
-                    p = post['data']
-                    title = p.get('title', '')
-                    link = p.get('url', '')
-                    score = p.get('score', 0)
-                    num_comments = p.get('num_comments', 0)
-                    created_utc = p.get('created_utc', 0)
+                for entry in entries[:15]:
+                    title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
+                    link_elem = entry.find('{http://www.w3.org/2005/Atom}link')
+                    updated_elem = entry.find('{http://www.w3.org/2005/Atom}updated')
+                    author_elem = entry.find('{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name')
+                    
+                    title = title_elem.text.strip() if title_elem is not None else ""
+                    link = link_elem.get('href', '') if link_elem is not None else ""
+                    updated = updated_elem.text.strip() if updated_elem is not None else ""
+                    author = author_elem.text.strip() if author_elem is not None else ""
                     
                     if not title:
                         continue
                     
                     title_lower = title.lower()
                     
-                    if score < 50:
+                    if updated:
+                        try:
+                            import email.utils
+                            parsed_date = email.utils.parsedate(updated)
+                            if parsed_date:
+                                pub_timestamp = time.mktime(parsed_date)
+                                if pub_timestamp < seventy_two_hours_ago:
+                                    continue
+                        except:
+                            pass
+                    
+                    if any(ek.lower() in title_lower for ek in exclude_keywords):
                         continue
                     
-                    if created_utc and created_utc < twenty_four_hours_ago:
+                    has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
+                    if not has_include:
                         continue
                     
                     unique_key = f"reddit_{link}" if link else f"reddit_{title[:50]}"
@@ -1104,26 +1340,15 @@ class DataSourceManager:
                         continue
                     seen.add(unique_key)
                     
-                    if any(ek in title_lower for ek in exclude_keywords):
-                        continue
-                    
-                    has_include = any(ik.lower() in title_lower for ik in include_keywords)
-                    if not has_include:
-                        continue
-                    
-                    quality_score = score // 100 + num_comments // 10
-                    if quality_score < 3:
-                        continue
-                    
                     translated_title = self._translate_to_chinese(title)
                     
                     messages.append({
                         "aid": _make_aid("foreign_news", unique_key),
                         "title": f"[Reddit] {translated_title}",
-                        "content": f"热度: {score} | 评论: {num_comments}",
+                        "content": f"作者: {author}",
                         "comefrom": f"Reddit r/{sub}",
                         "ctime": int(time.time()),
-                        "ptime": "",
+                        "ptime": updated[:16] if updated else "",
                         "categoryId": 0,
                         "stocks": [],
                         "child": [],
@@ -1140,34 +1365,72 @@ class DataSourceManager:
         search_keywords = [
             "China supply chain",
             "Chinese economy",
-            "China tech news",
             "AI breakthrough",
             "semiconductor chip",
             "US China trade war",
             "Chinese stocks market",
             "China government policy",
-            "technology innovation",
-            "global economy news"
+            "AI artificial intelligence",
+            "NVIDIA GPU AI",
+            "Huawei technology",
+            "global market news",
+            "cybersecurity news",
+            "quantum computing",
+            "electric vehicle battery",
+            "IPO stock market",
+            "inflation interest rate",
+            "central bank monetary policy",
+            "tech company earnings",
+            "acquisition merger M&A",
+            "supply chain manufacturing"
         ]
         
         include_keywords = [
-            "China", "Chinese", "supply chain", "semiconductor", "chip", "AI",
-            "technology", "economy", "trade", "policy", "government",
-            "innovation", "breakthrough", "market", "stock", "IPO",
-            "Biden", "Trump", "congress", "tariff", "export", "import",
-            "global", "world", "international", "diplomacy",
-            "Huawei", "Alibaba", "Tencent", "BYD", "NVIDIA", "TSMC", "Apple"
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "stock", "market", "economy",
+            "trade war", "tariff", "export", "import",
+            "supply chain", "manufacturing", "factory",
+            "regulation", "policy", "law", "bill", "government",
+            "Biden", "Trump", "congress", "senate", "white house",
+            "inflation", "interest rate", "Federal Reserve", "Fed",
+            "central bank", "monetary policy",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "funding", "investment", "valuation",
+            "electric vehicle", "EV", "battery",
+            "breakthrough", "innovation",
+            "quantum computing", "quantum AI"
         ]
         
         exclude_keywords = [
             "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
             "sports", "football", "basketball", "game", "gaming", "movie", "music",
-            "celebrity", "entertainment", "food", "travel", "healthcare", "COVID", "pandemic"
+            "celebrity", "entertainment", "food", "travel", "healthcare", "COVID", "pandemic",
+            "I joined", "I learned", "I built", "I made", "my blog", "my website",
+            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb"
         ]
         
-        forty_eight_hours_ago = time.time() - 48 * 3600
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        seventy_two_hours_ago = time.time() - 72 * 3600
 
-        for keyword in search_keywords[:5]:
+        for keyword in search_keywords[:10]:
             try:
                 url = f"https://news.google.com/rss/search?q={requests.utils.quote(keyword)}&tbm=nws&tbs=qdr:d"
                 params = {'hl': 'en-US'}
@@ -1179,7 +1442,7 @@ class DataSourceManager:
                 root = ET.fromstring(resp.text)
                 
                 items = root.findall('.//item')
-                for item in items[:6]:
+                for item in items[:10]:
                     title_elem = item.find('title')
                     link_elem = item.find('link')
                     pub_date_elem = item.find('pubDate')
@@ -1193,10 +1456,10 @@ class DataSourceManager:
                     
                     title_lower = title.lower()
                     
-                    if any(ek in title_lower for ek in exclude_keywords):
+                    if any(ek.lower() in title_lower for ek in exclude_keywords):
                         continue
                     
-                    has_include = any(ik.lower() in title_lower for ik in include_keywords)
+                    has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
                     if not has_include:
                         continue
                     
@@ -1206,7 +1469,7 @@ class DataSourceManager:
                             parsed_date = email.utils.parsedate(pub_date)
                             if parsed_date:
                                 pub_timestamp = time.mktime(parsed_date)
-                                if pub_timestamp < forty_eight_hours_ago:
+                                if pub_timestamp < seventy_two_hours_ago:
                                     continue
                         except:
                             pass
@@ -1238,22 +1501,26 @@ class DataSourceManager:
         """通过代理获取TechCrunch高质量科技新闻（多层筛选）"""
         messages = []
         
-        forty_eight_hours_ago = time.time() - 48 * 3600
+        seventy_two_hours_ago = time.time() - 72 * 3600
         
         include_keywords = [
             "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "CPU", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Huawei", "Alibaba", "Tencent", "BYD",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "funding", "investment", "valuation",
             "supply chain", "manufacturing", "factory",
-            "innovation", "breakthrough", "advance", "cutting-edge",
-            "startup", "IPO", "funding", "investment", "valuation",
-            "technology", "tech", "software", "hardware",
-            "cloud", "computing", "data center",
-            "robotics", "automation", "future", "next generation",
-            "self-driving", "autonomous", "EV", "electric vehicle", "charging",
-            "service", "platform", "product", "launch", "release",
-            "company", "business", "market", "economy",
-            "security", "privacy", "hack", "cybersecurity"
+            "breakthrough", "innovation",
+            "robotics", "automation",
+            "self-driving", "autonomous", "EV", "electric vehicle", "battery",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "quantum computing", "quantum AI"
         ]
         
         exclude_keywords = [
@@ -1264,8 +1531,20 @@ class DataSourceManager:
             "food", "cooking", "travel", "vacation",
             "health", "healthcare", "medicine", "COVID", "pandemic",
             "sports", "football", "basketball",
-            "podcast", "video", "youtube", "twitch", "stream"
+            "podcast", "video", "youtube", "twitch", "stream",
+            "I joined", "I learned", "I built", "I made", "my blog", "my website",
+            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb"
         ]
+        
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
         
         try:
             url = "https://techcrunch.com/feed/"
@@ -1294,23 +1573,23 @@ class DataSourceManager:
                 
                 title_lower = title.lower()
                 
-                if any(ek in title_lower for ek in exclude_keywords):
+                if any(ek.lower() in title_lower for ek in exclude_keywords):
                     continue
                 
-                has_include = any(ik.lower() in title_lower for ik in include_keywords)
+                has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
                 if not has_include:
                     continue
                 
                 if pub_date:
-                    try:
-                        import email.utils
-                        parsed_date = email.utils.parsedate(pub_date)
-                        if parsed_date:
-                            pub_timestamp = time.mktime(parsed_date)
-                            if pub_timestamp < forty_eight_hours_ago:
-                                continue
-                    except:
-                        pass
+                        try:
+                            import email.utils
+                            parsed_date = email.utils.parsedate(pub_date)
+                            if parsed_date:
+                                pub_timestamp = time.mktime(parsed_date)
+                                if pub_timestamp < seventy_two_hours_ago:
+                                    continue
+                        except:
+                            pass
                 
                 unique_key = f"techcrunch_{link}" if link else f"techcrunch_{title[:50]}"
                 if unique_key in seen:
@@ -1333,6 +1612,775 @@ class DataSourceManager:
                 })
         except Exception as e:
             logger.warning(f"获取TechCrunch失败: {e}")
+        
+        return messages
+
+    def _fetch_hacker_news(self, seen):
+        """获取Hacker News热门科技新闻（使用frontpage源，过滤低质量内容）"""
+        messages = []
+        
+        seventy_two_hours_ago = time.time() - 72 * 3600
+        
+        include_keywords = [
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac", "iOS",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "funding", "investment", "valuation",
+            "cybersecurity", "security breach", "data leak",
+            "quantum computing", "quantum AI",
+            "regulation", "policy", "law", "bill", "government",
+            "trade war", "tariff", "export", "import",
+            "supply chain", "manufacturing", "factory",
+            "electric vehicle", "EV", "battery",
+            "inflation", "interest rate", "Federal Reserve", "Fed",
+            "central bank", "monetary policy",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "breakthrough", "innovation", "advance", "cutting-edge",
+            "self-driving", "autonomous", "robotics", "automation"
+        ]
+        
+        exclude_keywords = [
+            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
+            "game", "gaming", "movie", "music", "TV",
+            "celebrity", "entertainment", "food", "travel",
+            "Show HN", "Ask HN", "I joined", "I learned", "I built", "I made",
+            "my blog", "my website", "my portfolio", "my project", "my startup",
+            "blog post", "tutorial", "guide", "how to", "getting started",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb",
+            "podcast", "video", "youtube", "twitch", "stream",
+            "health", "medicine", "COVID", "pandemic",
+            "sports", "football", "basketball", "baseball"
+        ]
+        
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        try:
+            url = "https://hnrss.org/frontpage"
+            resp = _proxy_session.get(url, timeout=15)
+            if resp.status_code != 200:
+                return messages
+            
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(resp.text)
+            items = root.findall('.//item')
+            
+            for item in items[:20]:
+                title_elem = item.find('title')
+                link_elem = item.find('link')
+                pub_date_elem = item.find('pubDate')
+                
+                title = title_elem.text.strip() if title_elem is not None else ""
+                link = link_elem.text.strip() if link_elem is not None else ""
+                pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
+                
+                if not title:
+                    continue
+                
+                title_lower = title.lower()
+                
+                if pub_date:
+                    try:
+                        import email.utils
+                        parsed_date = email.utils.parsedate(pub_date)
+                        if parsed_date:
+                            pub_timestamp = time.mktime(parsed_date)
+                            if pub_timestamp < seventy_two_hours_ago:
+                                continue
+                    except:
+                        pass
+                
+                if any(ek.lower() in title_lower for ek in exclude_keywords):
+                    continue
+                
+                has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
+                if not has_include:
+                    continue
+                
+                unique_key = f"hn_{link}" if link else f"hn_{title[:50]}"
+                if unique_key in seen:
+                    continue
+                seen.add(unique_key)
+                
+                translated_title = self._translate_to_chinese(title)
+                
+                messages.append({
+                    "aid": _make_aid("foreign_news", unique_key),
+                    "title": f"[Hacker News] {translated_title}",
+                    "content": "",
+                    "comefrom": "Hacker News",
+                    "ctime": int(time.time()),
+                    "ptime": pub_date[:16] if pub_date else "",
+                    "categoryId": 0,
+                    "stocks": [],
+                    "child": [],
+                })
+        except Exception as e:
+            logger.warning(f"获取Hacker News失败: {e}")
+        
+        return messages
+
+    def _fetch_bbc_news(self, seen):
+        """获取BBC News科技财经新闻"""
+        messages = []
+        
+        seventy_two_hours_ago = time.time() - 72 * 3600
+        
+        include_keywords = [
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "stock", "market", "economy",
+            "trade war", "tariff", "export", "import",
+            "supply chain", "manufacturing", "factory",
+            "regulation", "policy", "law", "bill", "government",
+            "inflation", "interest rate", "Federal Reserve", "Fed",
+            "central bank", "monetary policy",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "funding", "investment", "valuation",
+            "electric vehicle", "EV", "battery",
+            "breakthrough", "innovation",
+            "quantum computing", "quantum AI"
+        ]
+        
+        exclude_keywords = [
+            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
+            "sports", "football", "basketball",
+            "game", "gaming", "movie", "music",
+            "celebrity", "entertainment", "food", "travel",
+            "healthcare", "medicine", "COVID", "pandemic",
+            "I joined", "I learned", "I built", "I made", "my blog", "my website",
+            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb"
+        ]
+        
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        feeds = [
+            "http://feeds.bbci.co.uk/news/technology/rss.xml",
+            "http://feeds.bbci.co.uk/news/business/rss.xml"
+        ]
+        
+        for url in feeds:
+            try:
+                resp = _proxy_session.get(url, timeout=15)
+                if resp.status_code != 200:
+                    continue
+                
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(resp.text)
+                items = root.findall('.//item')
+                
+                for item in items[:limit]:
+                    title_elem = item.find('title')
+                    link_elem = item.find('link')
+                    pub_date_elem = item.find('pubDate')
+                    
+                    title = title_elem.text.strip() if title_elem is not None else ""
+                    link = link_elem.text.strip() if link_elem is not None else ""
+                    pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
+                    
+                    if not title:
+                        continue
+                    
+                    title_lower = title.lower()
+                    
+                    if pub_date:
+                        try:
+                            import email.utils
+                            parsed_date = email.utils.parsedate(pub_date)
+                            if parsed_date:
+                                pub_timestamp = time.mktime(parsed_date)
+                                if pub_timestamp < seventy_two_hours_ago:
+                                    continue
+                        except:
+                            pass
+                    
+                    if any(ek.lower() in title_lower for ek in exclude_keywords):
+                        continue
+                    
+                    has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
+                    if not has_include:
+                        continue
+                    
+                    unique_key = f"bbc_{link}" if link else f"bbc_{title[:50]}"
+                    if unique_key in seen:
+                        continue
+                    seen.add(unique_key)
+                    
+                    translated_title = self._translate_to_chinese(title)
+                    
+                    messages.append({
+                        "aid": _make_aid("foreign_news", unique_key),
+                        "title": f"[BBC News] {translated_title}",
+                        "content": "",
+                        "comefrom": "BBC News",
+                        "ctime": int(time.time()),
+                        "ptime": pub_date[:16] if pub_date else "",
+                        "categoryId": 0,
+                        "stocks": [],
+                        "child": [],
+                    })
+            except Exception as e:
+                logger.warning(f"获取BBC News失败: {e}")
+        
+        return messages
+
+    def _fetch_cnbc_news(self, seen):
+        """获取CNBC财经科技新闻"""
+        messages = []
+        
+        seventy_two_hours_ago = time.time() - 72 * 3600
+        
+        include_keywords = [
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "stock", "market", "economy",
+            "trade war", "tariff", "export", "import",
+            "supply chain", "manufacturing", "factory",
+            "regulation", "policy", "law", "bill", "government",
+            "inflation", "interest rate", "Federal Reserve", "Fed",
+            "central bank", "monetary policy",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "funding", "investment", "valuation",
+            "electric vehicle", "EV", "battery",
+            "breakthrough", "innovation",
+            "quantum computing", "quantum AI"
+        ]
+        
+        exclude_keywords = [
+            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
+            "sports", "football", "basketball",
+            "game", "gaming", "movie", "music",
+            "celebrity", "entertainment", "food", "travel",
+            "healthcare", "medicine", "COVID", "pandemic",
+            "I joined", "I learned", "I built", "I made", "my blog", "my website",
+            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb"
+        ]
+        
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        feeds = [
+            "https://www.cnbc.com/id/19832390/device/rss/rss.html",
+            "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+        ]
+        
+        for url in feeds:
+            try:
+                resp = _proxy_session.get(url, timeout=15)
+                if resp.status_code != 200:
+                    continue
+                
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(resp.text)
+                items = root.findall('.//item')
+                
+                for item in items[:limit]:
+                    title_elem = item.find('title')
+                    link_elem = item.find('link')
+                    pub_date_elem = item.find('pubDate')
+                    
+                    title = title_elem.text.strip() if title_elem is not None else ""
+                    link = link_elem.text.strip() if link_elem is not None else ""
+                    pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
+                    
+                    if not title:
+                        continue
+                    
+                    title_lower = title.lower()
+                    
+                    if pub_date:
+                        try:
+                            import email.utils
+                            parsed_date = email.utils.parsedate(pub_date)
+                            if parsed_date:
+                                pub_timestamp = time.mktime(parsed_date)
+                                if pub_timestamp < seventy_two_hours_ago:
+                                    continue
+                        except:
+                            pass
+                    
+                    if any(ek.lower() in title_lower for ek in exclude_keywords):
+                        continue
+                    
+                    has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
+                    if not has_include:
+                        continue
+                    
+                    unique_key = f"cnbc_{link}" if link else f"cnbc_{title[:50]}"
+                    if unique_key in seen:
+                        continue
+                    seen.add(unique_key)
+                    
+                    translated_title = self._translate_to_chinese(title)
+                    
+                    messages.append({
+                        "aid": _make_aid("foreign_news", unique_key),
+                        "title": f"[CNBC] {translated_title}",
+                        "content": "",
+                        "comefrom": "CNBC",
+                        "ctime": int(time.time()),
+                        "ptime": pub_date[:16] if pub_date else "",
+                        "categoryId": 0,
+                        "stocks": [],
+                        "child": [],
+                    })
+            except Exception as e:
+                logger.warning(f"获取CNBC失败: {e}")
+        
+        return messages
+
+    def _fetch_wired_news(self, seen):
+        """获取Wired科技新闻"""
+        messages = []
+        
+        seventy_two_hours_ago = time.time() - 72 * 3600
+        
+        include_keywords = [
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "funding", "investment", "valuation",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "electric vehicle", "EV", "battery",
+            "breakthrough", "innovation",
+            "quantum computing", "quantum AI"
+        ]
+        
+        exclude_keywords = [
+            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
+            "sports", "football", "basketball",
+            "game", "gaming", "movie", "music",
+            "celebrity", "entertainment", "food", "travel",
+            "healthcare", "medicine", "COVID", "pandemic",
+            "I joined", "I learned", "I built", "I made", "my blog", "my website",
+            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb"
+        ]
+        
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        try:
+            url = "https://www.wired.com/feed/rss"
+            resp = _proxy_session.get(url, timeout=15)
+            if resp.status_code != 200:
+                return messages
+            
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(resp.text)
+            items = root.findall('.//item')
+            
+            for item in items[:20]:
+                title_elem = item.find('title')
+                link_elem = item.find('link')
+                pub_date_elem = item.find('pubDate')
+                
+                title = title_elem.text.strip() if title_elem is not None else ""
+                link = link_elem.text.strip() if link_elem is not None else ""
+                pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
+                
+                if not title:
+                    continue
+                
+                title_lower = title.lower()
+                
+                if pub_date:
+                    try:
+                        import email.utils
+                        parsed_date = email.utils.parsedate(pub_date)
+                        if parsed_date:
+                            pub_timestamp = time.mktime(parsed_date)
+                            if pub_timestamp < seventy_two_hours_ago:
+                                continue
+                    except:
+                        pass
+                
+                if any(ek.lower() in title_lower for ek in exclude_keywords):
+                    continue
+                
+                has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
+                if not has_include:
+                    continue
+                
+                unique_key = f"wired_{link}" if link else f"wired_{title[:50]}"
+                if unique_key in seen:
+                    continue
+                seen.add(unique_key)
+                
+                translated_title = self._translate_to_chinese(title)
+                
+                messages.append({
+                    "aid": _make_aid("foreign_news", unique_key),
+                    "title": f"[Wired] {translated_title}",
+                    "content": "",
+                    "comefrom": "Wired",
+                    "ctime": int(time.time()),
+                    "ptime": pub_date[:16] if pub_date else "",
+                    "categoryId": 0,
+                    "stocks": [],
+                    "child": [],
+                })
+        except Exception as e:
+            logger.warning(f"获取Wired失败: {e}")
+        
+        return messages
+
+    def _fetch_bloomberg_news(self, seen):
+        """获取Bloomberg彭博社财经科技新闻（金融行业标杆资讯平台）"""
+        messages = []
+        
+        seventy_two_hours_ago = time.time() - 72 * 3600
+        
+        include_keywords = [
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "stock", "market", "economy",
+            "trade war", "tariff", "export", "import",
+            "supply chain", "manufacturing", "factory",
+            "regulation", "policy", "law", "bill", "government",
+            "inflation", "interest rate", "Federal Reserve", "Fed",
+            "central bank", "monetary policy",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "funding", "investment", "valuation",
+            "electric vehicle", "EV", "battery",
+            "breakthrough", "innovation",
+            "quantum computing", "quantum AI",
+            "bond", "currency", "exchange rate", "dollar", "yuan", "renminbi",
+            "commodity", "oil", "gold", "copper",
+            "bank", "finance", "financial", "wealth", "asset", "capital"
+        ]
+        
+        exclude_keywords = [
+            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
+            "sports", "football", "basketball",
+            "game", "gaming", "movie", "music",
+            "celebrity", "entertainment", "food", "travel",
+            "healthcare", "medicine", "COVID", "pandemic",
+            "politics", "election", "vote", "campaign", "poll",
+            "I joined", "I learned", "I built", "I made", "my blog", "my website",
+            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+            "essay", "opinion", "personal", "indieweb", "IndieWeb"
+        ]
+        
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        feeds = [
+            "https://feeds.bloomberg.com/markets/news.rss",
+            "https://feeds.bloomberg.com/technology/news.rss",
+            "https://feeds.bloomberg.com/business/news.rss"
+        ]
+        
+        for url in feeds:
+            try:
+                resp = _proxy_session.get(url, timeout=15)
+                if resp.status_code != 200:
+                    continue
+                
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(resp.text)
+                items = root.findall('.//item')
+                
+                for item in items[:limit]:
+                    title_elem = item.find('title')
+                    link_elem = item.find('link')
+                    pub_date_elem = item.find('pubDate')
+                    description_elem = item.find('description')
+                    
+                    title = title_elem.text.strip() if title_elem is not None else ""
+                    link = link_elem.text.strip() if link_elem is not None else ""
+                    pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
+                    description = description_elem.text.strip() if description_elem is not None else ""
+                    
+                    if not title:
+                        continue
+                    
+                    title_lower = title.lower()
+                    
+                    if pub_date:
+                        try:
+                            import email.utils
+                            parsed_date = email.utils.parsedate(pub_date)
+                            if parsed_date:
+                                pub_timestamp = time.mktime(parsed_date)
+                                if pub_timestamp < seventy_two_hours_ago:
+                                    continue
+                        except:
+                            pass
+                    
+                    if any(ek.lower() in title_lower for ek in exclude_keywords):
+                        continue
+                    
+                    has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
+                    if not has_include:
+                        continue
+                    
+                    unique_key = f"bloomberg_{link}" if link else f"bloomberg_{title[:50]}"
+                    if unique_key in seen:
+                        continue
+                    seen.add(unique_key)
+                    
+                    translated_title = self._translate_to_chinese(title)
+                    translated_desc = self._translate_to_chinese(description) if description else ""
+                    
+                    messages.append({
+                        "aid": _make_aid("foreign_news", unique_key),
+                        "title": f"[Bloomberg] {translated_title}",
+                        "content": translated_desc[:500] if translated_desc else "",
+                        "comefrom": "Bloomberg",
+                        "ctime": int(time.time()),
+                        "ptime": pub_date[:16] if pub_date else "",
+                        "categoryId": 0,
+                        "stocks": [],
+                        "child": [],
+                    })
+            except Exception as e:
+                logger.warning(f"获取Bloomberg失败: {e}")
+        
+        return messages
+
+    def _fetch_nitter_twitter_news(self, seen, limit=15):
+        """通过Nitter获取X(Twitter)平台重要账号的最新推文（多实例轮换+智能选择，降低延迟）"""
+        messages = []
+        
+        twenty_four_hours_ago = time.time() - 24 * 3600
+        
+        include_keywords = [
+            "AI", "artificial intelligence", "machine learning", "deep learning",
+            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
+            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
+            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
+            "Apple", "iPhone", "Mac",
+            "Microsoft", "Windows", "Azure",
+            "Google", "Android",
+            "TSMC", "ARM", "Qualcomm", "Samsung",
+            "IPO", "stock", "market", "economy",
+            "trade war", "tariff", "export", "import",
+            "supply chain", "manufacturing", "factory",
+            "regulation", "policy", "law", "bill", "government",
+            "inflation", "interest rate", "Federal Reserve", "Fed",
+            "central bank", "monetary policy",
+            "cybersecurity", "security breach", "data leak",
+            "acquisition", "merger", "M&A",
+            "earnings", "profit", "revenue",
+            "funding", "investment", "valuation",
+            "electric vehicle", "EV", "battery",
+            "breakthrough", "innovation",
+            "quantum computing", "quantum AI",
+            "Tesla", "SpaceX", "Starlink",
+            "launch", "announcement", "release", "news", "update", "report"
+        ]
+        
+        exclude_keywords = [
+            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
+            "sports", "football", "basketball",
+            "game", "gaming", "movie", "music",
+            "food", "cooking", "restaurant", "travel", "vacation",
+            "my blog", "my website", "my portfolio", "my project",
+            "blog post", "tutorial", "guide", "how to", "getting started"
+        ]
+        
+        import re
+        
+        def _match_keyword(title_lower, keyword):
+            kw_lower = keyword.lower()
+            if len(kw_lower) <= 4:
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                return re.search(pattern, title_lower) is not None
+            return kw_lower in title_lower
+        
+        nitter_instances = [
+            "https://nitter.net",
+            "https://xcancel.com",
+            "https://nitter.privacyredirect.com",
+            "https://nitter.kareem.one",
+            "https://nitter.catsarch.com"
+        ]
+        
+        if not hasattr(self, '_nitter_instance_stats'):
+            self._nitter_instance_stats = {inst: {"success": 0, "fail": 0, "last_success": 0} for inst in nitter_instances}
+        
+        def _get_best_instance():
+            now = time.time()
+            candidates = []
+            for inst, stats in self._nitter_instance_stats.items():
+                total = stats["success"] + stats["fail"]
+                if total == 0:
+                    score = 1.0
+                else:
+                    score = stats["success"] / total
+                if stats["fail"] > 0 and now - stats["last_success"] < 300:
+                    score *= 0.5
+                candidates.append((score, inst))
+            candidates.sort(reverse=True, key=lambda x: x[0])
+            return [c[1] for c in candidates]
+        
+        twitter_accounts = {
+            "elonmusk": "Elon Musk",
+            "OpenAI": "OpenAI",
+            "ChineseWSJ": "华尔街日报中文网",
+            "bbcchinese": "BBC News 中文",
+            "realDonaldTrump": "Donald Trump",
+            "aleabitoreddit": "AleaBito",
+            "Tesla": "Tesla",
+            "SpaceX": "SpaceX",
+            "sama": "Sam Altman",
+            "claudeai": "Claude AI",
+            "fxtrader": "FX Trader",
+            "caolei1": "Cao Lei"
+        }
+        
+        best_instances = _get_best_instance()
+        
+        for instance in best_instances:
+            for account, nickname in twitter_accounts.items():
+                try:
+                    url = f"{instance}/{account}/rss"
+                    resp = _proxy_session.get(url, timeout=15)
+                    if resp.status_code != 200:
+                        self._nitter_instance_stats[instance]["fail"] += 1
+                        continue
+                    self._nitter_instance_stats[instance]["success"] += 1
+                    self._nitter_instance_stats[instance]["last_success"] = time.time()
+                    
+                    import xml.etree.ElementTree as ET
+                    root = ET.fromstring(resp.text)
+                    items = root.findall('.//item')
+                    
+                    for item in items[:10]:
+                        title_elem = item.find('title')
+                        link_elem = item.find('link')
+                        pub_date_elem = item.find('pubDate')
+                        description_elem = item.find('description')
+                        
+                        title = title_elem.text.strip() if title_elem is not None else ""
+                        link = link_elem.text.strip() if link_elem is not None else ""
+                        pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
+                        description = description_elem.text.strip() if description_elem is not None else ""
+                        
+                        if not title:
+                            continue
+                        
+                        img_pattern = r'<img[^>]+src="([^"]+)"'
+                        images = re.findall(img_pattern, description)
+                        
+                        title_lower = title.lower()
+                        
+                        if pub_date:
+                            try:
+                                import email.utils
+                                parsed_date = email.utils.parsedate(pub_date)
+                                if parsed_date:
+                                    pub_timestamp = time.mktime(parsed_date)
+                                    if pub_timestamp < twenty_four_hours_ago:
+                                        continue
+                            except:
+                                pass
+                        
+                        if any(ek.lower() in title_lower for ek in exclude_keywords):
+                            continue
+                        
+                        has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
+                        if not has_include:
+                            continue
+                        
+                        unique_key = f"nitter_{account}_{link}" if link else f"nitter_{account}_{title[:50]}"
+                        if unique_key in seen:
+                            continue
+                        seen.add(unique_key)
+                        
+                        translated_title = self._translate_to_chinese(title)
+                        translated_desc = self._translate_to_chinese(description) if description else ""
+                        
+                        message_data = {
+                            "aid": _make_aid("foreign_news", unique_key),
+                            "title": f"[X {nickname}] {translated_title}",
+                            "content": f"【推文内容】\n{translated_desc[:500]}" if translated_desc else "",
+                            "comefrom": f"X/Twitter {nickname}",
+                            "ctime": int(time.time()),
+                            "ptime": pub_date[:16] if pub_date else "",
+                            "categoryId": 0,
+                            "stocks": [],
+                            "child": [],
+                        }
+                        
+                        if images:
+                            message_data["images"] = images[:3]
+                        
+                        messages.append(message_data)
+                except Exception as e:
+                    self._nitter_instance_stats[instance]["fail"] += 1
+                    logger.warning(f"获取X@{account}失败: {e}")
         
         return messages
 

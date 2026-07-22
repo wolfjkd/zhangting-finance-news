@@ -150,7 +150,7 @@ def _apply_initial_theme(window):
             logger.debug(f'获取 renderer_hwnd 失败: {e}')
 
         if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.10.1版')
+            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.11.0版')
 
         if not hwnd:
             logger.warning('初始主题应用失败: 未找到窗口句柄')
@@ -296,6 +296,104 @@ class Api:
         except Exception as e:
             logger.warning(f'读取设置失败: {e}')
             return json.dumps({})
+
+    _CURRENT_VERSION = 'v3.10.1'
+    _VERSION_JSON_URL = 'https://raw.githubusercontent.com/wolfjkd/ZTFI-News/main/version.json'
+    _RELEASES_API_URL = 'https://api.github.com/repos/wolfjkd/ZTFI-News/releases/latest'
+
+    def _compare_versions(self, v1, v2):
+        def parse(v):
+            parts = v.lstrip('v').split('.')
+            return tuple(int(p) if p.isdigit() else 0 for p in parts)
+        p1, p2 = parse(v1), parse(v2)
+        if p1 < p2:
+            return -1
+        elif p1 > p2:
+            return 1
+        return 0
+
+    def _check_update(self):
+        try:
+            resp = requests.get(self._VERSION_JSON_URL, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                latest = data.get('latest_version', '')
+                if latest:
+                    comparison = self._compare_versions(self._CURRENT_VERSION, latest)
+                    if comparison < 0:
+                        return {
+                            'status': 'update_available',
+                            'current_version': self._CURRENT_VERSION,
+                            'latest_version': latest,
+                            'release_date': data.get('release_date', ''),
+                            'changelog': data.get('changelog', []),
+                            'urgent': data.get('urgent', False),
+                            'urgent_message': data.get('urgent_message', ''),
+                            'download_url': data.get('download_url', '')
+                        }
+                    else:
+                        return {'status': 'latest', 'current_version': self._CURRENT_VERSION}
+            return {'status': 'error', 'message': '无法获取版本信息'}
+        except Exception as e:
+            logger.warning(f'检查更新失败: {e}')
+            return {'status': 'error', 'message': str(e)}
+
+    def check_update(self):
+        result = self._check_update()
+        return json.dumps(result)
+
+    def download_update(self):
+        try:
+            resp = requests.get(self._RELEASES_API_URL, timeout=10)
+            if resp.status_code != 200:
+                return json.dumps({'status': 'error', 'message': '无法获取下载链接'})
+
+            data = resp.json()
+            download_url = None
+            for asset in data.get('assets', []):
+                if asset.get('name', '').endswith('.exe'):
+                    download_url = asset.get('browser_download_url')
+                    break
+
+            if not download_url:
+                return json.dumps({'status': 'error', 'message': '未找到可下载的exe文件'})
+
+            exe_dir = os.path.dirname(sys.executable)
+            new_exe_name = f'涨停财经聚合播报_{data["tag_name"]}.exe'
+            new_exe_path = os.path.join(exe_dir, new_exe_name)
+
+            logger.info(f'开始下载更新: {download_url}')
+            logger.info(f'保存路径: {new_exe_path}')
+
+            resp = requests.get(download_url, stream=True, timeout=300)
+            total_size = int(resp.headers.get('content-length', 0))
+            downloaded_size = 0
+
+            with open(new_exe_path, 'wb') as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        progress = int(downloaded_size / total_size * 100) if total_size > 0 else 0
+                        self._notify_js('update_progress', str(progress))
+
+            logger.info(f'下载完成: {new_exe_name}')
+
+            old_exe_path = sys.executable
+            update_bat_path = os.path.join(exe_dir, 'update.bat')
+            with open(update_bat_path, 'w', encoding='utf-8') as f:
+                f.write(f'@echo off\n')
+                f.write(f'timeout /t 3 /nobreak >nul\n')
+                f.write(f'del "{old_exe_path}"\n')
+                f.write(f'start "" "{new_exe_path}"\n')
+                f.write(f'del "%~f0"\n')
+
+            os.startfile(update_bat_path)
+            return json.dumps({'status': 'ok', 'message': '更新已下载，即将自动重启'})
+
+        except Exception as e:
+            logger.error(f'下载更新失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
 
     def migrate_config_if_needed(self):
         try:
@@ -576,6 +674,7 @@ class Api:
             except:
                 pass
             return
+        logger.info(f'WebSocket 收到消息: {raw[:300]}...')
         self._notify_js('ws_message', raw)
 
     def _on_ws_error(self, err):
@@ -587,14 +686,20 @@ class Api:
         self._notify_js('ws_close', '')
 
     def _notify_js(self, event, data):
-        w = self._window()
-        if w:
-            escaped = data.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n').replace('\r', '')
-            js = f"window._onBackendEvent('{event}', '{escaped}')"
-            try:
+        try:
+            w = self._window()
+            if w:
+                if data:
+                    escaped = data.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n').replace('\r', '')
+                    js = f"window._onBackendEvent('{event}', '{escaped}')"
+                else:
+                    js = f"window._onBackendEvent('{event}', '')"
                 w.evaluate_js(js)
-            except:
-                pass
+                logger.info(f'JS通知已发送: {event}')
+            else:
+                logger.warning('_notify_js: 窗口未就绪')
+        except Exception as e:
+            logger.error(f'JS通知发送失败: {e}')
 
     def init_data_source_manager(self):
         try:
@@ -610,6 +715,7 @@ class Api:
 
     def _on_data_source_message(self, message):
         try:
+            logger.info(f'数据源消息准备推送: source_id={message.get("source_id")}, title={message.get("title", "")[:50]}')
             self._notify_js('ws_message', json.dumps(message, ensure_ascii=False))
         except Exception as e:
             logger.error('推送数据源消息失败: %s', e)
@@ -784,7 +890,7 @@ def get_html_path():
 
 
 def main():
-    logger.info('=== 涨停财经聚合播报 v3.10.1版（开源版）启动 ===')
+    logger.info('=== 涨停财经聚合播报 v3.11.0版（开源版）启动 ===')
 
     _init_seen_db()
     _cleanup_old_seen_aids(days=7)
@@ -809,7 +915,7 @@ def main():
     api.migrate_config_if_needed()
 
     window = webview.create_window(
-        '涨停财经聚合播报 v3.10.1版',
+        '涨停财经聚合播报 v3.11.0版',
         url=get_html_path(),
         width=default_width,
         height=default_height,
@@ -824,6 +930,17 @@ def main():
         nonlocal window_ref
         window_ref = window
         threading.Thread(target=_apply_initial_theme, args=(window,), daemon=True).start()
+        threading.Thread(target=_auto_check_update, args=(api,), daemon=True).start()
+
+    def _auto_check_update(api):
+        try:
+            time.sleep(5)
+            result = api._check_update()
+            if result['status'] == 'update_available':
+                escaped = json.dumps(result, ensure_ascii=False).replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n').replace('\r', '')
+                api._window().evaluate_js(f"window._onUpdateAvailable('{escaped}')")
+        except Exception as e:
+            logger.debug(f'自动检查更新失败: {e}')
 
     window.events.loaded += on_loaded
 

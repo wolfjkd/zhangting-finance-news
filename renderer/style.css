@@ -491,6 +491,26 @@ body.dark-mode .toolbar-right {
   display: block;
 }
 
+.news-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.news-image {
+  max-width: 120px;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.news-image:hover {
+  transform: scale(1.05);
+}
+
 .news-stocks {
   display: flex;
   flex-wrap: wrap;
@@ -2471,4 +2491,250 @@ body.dark-mode .toolbar-right {
 
 .watchlist-add-btn-header:hover {
   opacity: 0.85;
+}
+
+/* ===== 更新弹窗样式 ===== */
+.update-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 420px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 10000;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.update-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.update-header h3 {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.update-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.update-info {
+  margin-bottom: 20px;
+}
+
+.update-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.update-current {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.update-arrow {
+  font-size: 16px;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.update-latest {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.update-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.update-changelog-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.update-changelog ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.update-changelog li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+  padding-left: 16px;
+  position: relative;
+}
+
+.update-changelog li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--green);
+}
+
+.update-progress {
+  margin-bottom: 20px;
+}
+
+.update-progress-bar {
+  height: 8px;
+  background: var(--bg-card);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.update-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.update-progress-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.update-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.btn-primary {
+  padding: 10px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  padding: 10px 20px;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--hover);
+}
+
+.btn-danger {
+  padding: 10px 20px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+/* ===== 紧急更新全屏遮罩层 ===== */
+.urgent-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+.urgent-content {
+  text-align: center;
+  color: white;
+  padding: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  max-width: 90%;
+  width: 420px;
+}
+
+.urgent-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  animation: urgentPulse 1s infinite;
+}
+
+@keyframes urgentPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.urgent-content h2 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+
+.urgent-desc {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.urgent-message {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-bottom: 24px;
+  font-style: italic;
+}
+
+.urgent-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.urgent-actions .btn-primary {
+  flex: 1;
+  max-width: 160px;
+}
+
+.urgent-actions .btn-danger {
+  flex: 1;
+  max-width: 160px;
 }

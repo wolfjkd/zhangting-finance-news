@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>涨停财经聚合播报 v3.10.1版（开源版）</title>
+  <title>涨停财经聚合播报 v3.11.0版（开源版）</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -307,7 +307,7 @@
         <div class="settings-section-title">关于</div>
         <div class="setting-row">
           <span class="setting-label">版本</span>
-          <span style="font-size:13px; color:#666;">v3.10.1（开源版）</span>
+          <span style="font-size:13px; color:#666;">v3.11.0（开源版）</span>
         </div>
         <div class="setting-row">
           <span class="setting-label">许可证</span>
@@ -317,6 +317,7 @@
           <span class="setting-label">项目主页</span>
           <a href="https://github.com/wolfjkd/ZTFI-News" target="_blank" style="font-size:13px; color:#0366d6; text-decoration:none;">GitHub</a>
         </div>
+        <button id="btnCheckUpdate" class="auth-activate-btn" style="width:100%; margin-top:10px;">🔄 检查更新</button>
         <div class="setting-hint">本工具完全免费开放，若对你有帮助，可自愿小额赞助支持后续更新</div>
         <button id="btnDonate" class="auth-activate-btn" style="width:100%; margin-top:10px;">💝 赞赏支持</button>
         <!-- 投资风险提示 -->
@@ -324,6 +325,54 @@
           <div style="font-size:14px; font-weight:bold; color:#e65100; margin-bottom:6px;">⚠️ 投资风险提示</div>
           <div style="font-size:12px; color:#5d4037; line-height:1.5;">本软件仅提供财经资讯聚合服务，不构成任何投资建议。投资有风险，入市需谨慎。</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 更新弹窗 -->
+  <div id="updateDialog" class="update-dialog" style="display:none;">
+    <div class="update-header">
+      <h3>发现新版本</h3>
+      <button class="dialog-close-btn" title="关闭">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="update-content">
+      <div class="update-info">
+        <div class="update-version">
+          <span class="update-current">当前版本: v3.11.0</span>
+          <span class="update-arrow">→</span>
+          <span class="update-latest">最新版本: <span id="updateLatestVersion"></span></span>
+        </div>
+        <div class="update-date" id="updateReleaseDate"></div>
+        <div class="update-changelog">
+          <div class="update-changelog-title">更新内容:</div>
+          <ul id="updateChangelog"></ul>
+        </div>
+      </div>
+      <div class="update-progress" id="updateProgress" style="display:none;">
+        <div class="update-progress-bar">
+          <div class="update-progress-fill" id="updateProgressFill"></div>
+        </div>
+        <div class="update-progress-text" id="updateProgressText">0%</div>
+      </div>
+      <div class="update-actions">
+        <button id="btnUpdateLater" class="btn-secondary">稍后再说</button>
+        <button id="btnUpdateNow" class="btn-primary">立即更新</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 紧急更新全屏遮罩层 -->
+  <div id="urgentOverlay" class="urgent-overlay" style="display:none;">
+    <div class="urgent-content">
+      <div class="urgent-icon">🚨</div>
+      <h2>紧急安全更新</h2>
+      <p class="urgent-desc">发现严重安全漏洞，当前版本已禁止使用</p>
+      <p class="urgent-message" id="urgentMessage"></p>
+      <div class="urgent-actions">
+        <button id="btnUrgentUpdate" class="btn-primary">立即更新</button>
+        <button id="btnUrgentExit" class="btn-danger">退出程序</button>
       </div>
     </div>
   </div>

@@ -9,7 +9,7 @@
   'use strict';
 
   // ===== 调试开关 =====
-  const DEBUG_MODE = false; // 生产环境设为 false
+  const DEBUG_MODE = true; // 生产环境设为 false
 
   // ===== 状态 =====
   let autoScroll = true;
@@ -28,9 +28,7 @@
 
   // ===== 设置 =====
   const ALL_SOURCES = [
-    '财联社', '新浪财经', '东方财富', '同花顺', '华尔街见闻',
-    '格隆汇', '选股宝', '科创板日报', '时报快讯', 'e公司',
-    '北京商报', '人民财讯', '央视新闻', '新华社', '科创版日报'
+    '实时聚合', '东方财富公告', '龙虎榜', '券商研报', '公告解读', '北向资金', '外网资讯'
   ];
 
   let settings = loadSettings();
@@ -43,6 +41,64 @@
   const VOICE_TIME_THRESHOLD = 180;
   const VOICE_INTERRUPT_MODE_COMPLETE = 'complete';
   const VOICE_INTERRUPT_MODE_IMMEDIATE = 'immediate';
+
+  // ===== 评估指标统计 =====
+  const stats = {
+    sourceCounts: {},
+    sourceClicks: {},
+    sourceDelays: {},
+    totalMessages: 0,
+    totalClicks: 0,
+    startTime: Date.now(),
+  };
+  
+  function recordSourceStats(item) {
+    const source = item.comefrom || item.source_id || 'unknown';
+    if (!stats.sourceCounts[source]) {
+      stats.sourceCounts[source] = 0;
+      stats.sourceClicks[source] = 0;
+      stats.sourceDelays[source] = [];
+    }
+    stats.sourceCounts[source]++;
+    stats.totalMessages++;
+    
+    const delay = Date.now() - (item.ctime || Date.now()) * 1000;
+    if (delay >= 0) {
+      stats.sourceDelays[source].push(delay);
+    }
+  }
+  
+  function recordSourceClick(item) {
+    const source = item.comefrom || item.source_id || 'unknown';
+    if (!stats.sourceClicks[source]) {
+      stats.sourceClicks[source] = 0;
+    }
+    stats.sourceClicks[source]++;
+    stats.totalClicks++;
+  }
+  
+  function getStatsReport() {
+    const report = {
+      totalMessages: stats.totalMessages,
+      totalClicks: stats.totalClicks,
+      uptime: Math.floor((Date.now() - stats.startTime) / 1000),
+      sources: {},
+    };
+    for (const source in stats.sourceCounts) {
+      const delays = stats.sourceDelays[source];
+      const avgDelay = delays.length > 0 ? Math.floor(delays.reduce((a, b) => a + b, 0) / delays.length) : 0;
+      const maxDelay = delays.length > 0 ? Math.max(...delays) : 0;
+      report.sources[source] = {
+        count: stats.sourceCounts[source],
+        clicks: stats.sourceClicks[source],
+        clickRate: stats.sourceCounts[source] > 0 ? 
+          ((stats.sourceClicks[source] / stats.sourceCounts[source]) * 100).toFixed(1) : 0,
+        avgDelay: avgDelay,
+        maxDelay: maxDelay,
+      };
+    }
+    return report;
+  }
 
   // ===== DOM =====
   const $container = document.getElementById('newsContainer');
@@ -266,15 +322,19 @@
     try {
       if (window.pywebview && window.pywebview.api && window.pywebview.api.get_settings) {
         const backendSettings = await pywebview.api.get_settings();
+        console.log('[DEBUG] backendSettings:', backendSettings ? backendSettings.substring(0, 200) : 'null');
         if (backendSettings) {
           const parsed = typeof backendSettings === 'string' ? JSON.parse(backendSettings) : backendSettings;
+          console.log('[DEBUG] parsed settings sources:', parsed.sources);
           if (Object.keys(parsed).length > 0) {
             localStorage.setItem('ztfi-settings', JSON.stringify(parsed));
             settings = loadSettings();
           }
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('[DEBUG] get_settings error:', e);
+    }
 
     // 1. 从 SQLite 加载已读 aid（持久化去重）
     try {
@@ -300,7 +360,9 @@
     setStatus('connecting', '正在获取数据...');
     try {
       const result = await pywebview.api.fetch_initial();
+      console.log('[DEBUG] fetch_initial result:', result ? result.substring(0, 200) : 'null');
       const resp = typeof result === 'string' ? JSON.parse(result) : result;
+      console.log('[DEBUG] fetch_initial parsed:', JSON.stringify(resp.status));
 
       if (resp.status !== 'ok') {
         setStatus('error', '获取失败: ' + (resp.message || '未知错误'));
@@ -310,6 +372,7 @@
       }
 
       // 解析初始 HTML
+      console.log('[DEBUG] Calling parseAndRenderHTML...');
       parseAndRenderHTML(resp.html);
       $loading.classList.remove('show');
 
@@ -336,27 +399,44 @@
   window._onBackendEvent = async function (event, data) {
     switch (event) {
       case 'ws_open':
-        setStatus('connected', '已连接 · 实时推送中');
+        if (typeof setStatus === 'function') {
+          setStatus('connected', '已连接 · 实时推送中');
+        }
         break;
       case 'ws_message':
         try {
           const parsed = JSON.parse(data);
           if (Array.isArray(parsed)) {
             for (const item of parsed) {
-              await handleNewsItem(item);
+              if (typeof handleNewsItem === 'function') {
+                await handleNewsItem(item);
+              }
             }
-          } else if (parsed && typeof parsed === 'object' && parsed.ctime) {
-            await handleNewsItem(parsed);
+          } else if (parsed && typeof parsed === 'object' && parsed.aid) {
+            // WebSocket 消息可能没有 ctime，用当前时间补充
+            if (!parsed.ctime) parsed.ctime = Math.floor(Date.now() / 1000);
+            if (typeof handleNewsItem === 'function') {
+              await handleNewsItem(parsed);
+            }
           }
         } catch (e) {
-          // ignore non-JSON
+          console.error('ws_message parse error:', e);
         }
         break;
       case 'ws_close':
-        setStatus('error', '连接断开，重连中...');
+        if (typeof setStatus === 'function') {
+          setStatus('error', '连接断开，重连中...');
+        }
         break;
       case 'ws_error':
-        setStatus('error', '连接错误: ' + data);
+        if (typeof setStatus === 'function') {
+          setStatus('error', '连接错误: ' + data);
+        }
+        break;
+      case 'update_progress':
+        if (typeof updateDownloadProgress === 'function') {
+          updateDownloadProgress(parseInt(data) || 0);
+        }
         break;
     }
   };
@@ -429,7 +509,17 @@
     if (!item || !item.aid || seenAids.has(item.aid)) return;
 
     // 来源过滤
-    const source = item.comefrom || '';
+    // WebSocket 实时聚合消息（无 source_id）统一用"实时聚合"作为过滤来源
+    // foreign_news 消息统一用"外网资讯"作为过滤来源
+    // 其他数据源消息用 comefrom 作为过滤来源
+    let source = '';
+    if (!item.source_id) {
+      source = '实时聚合';
+    } else if (item.source_id === 'foreign_news') {
+      source = '外网资讯';
+    } else {
+      source = item.comefrom || '';
+    }
     if (settings.sources.length > 0 && source && !settings.sources.includes(source)) {
       seenAids.add(item.aid);
       newAidBuffer.push(item.aid);
@@ -438,6 +528,8 @@
 
     seenAids.add(item.aid);
     newAidBuffer.push(item.aid);
+
+    recordSourceStats(item);
 
     // 新闻分类
     classifyItem(item);
@@ -453,7 +545,18 @@
     }
 
     const el = renderNewsItem(item);
-    $newsList.prepend(el);
+    
+    if (item.is_x_priority || (item.comefrom && item.comefrom.includes('Twitter'))) {
+      const firstNonX = $newsList.querySelector('.news-item:not(.x-priority)');
+      if (firstNonX) {
+        $newsList.insertBefore(el, firstNonX);
+      } else {
+        $newsList.prepend(el);
+      }
+      el.classList.add('x-priority');
+    } else {
+      $newsList.prepend(el);
+    }
     newsCount++;
 
     // 存储到历史
@@ -577,6 +680,14 @@
 
     if (item.content) {
       html += `<div class="news-content" onclick="this.classList.toggle('expanded')">${esc(item.content)}</div>`;
+    }
+
+    if (item.images && item.images.length > 0) {
+      html += '<div class="news-images">';
+      item.images.forEach(imgUrl => {
+        html += `<img src="${esc(imgUrl)}" class="news-image" alt="图片" />`;
+      });
+      html += '</div>';
     }
 
     if (settings.showStocks && item.stocks && item.stocks.length > 0) {
@@ -1733,12 +1844,7 @@
   }
 
   // ===== 语音播报过滤规则 =====
-  const ANNOUNCE_SOURCES = [
-    '实时聚合', '龙虎榜', '外网资讯', '北向资金',
-    'Reddit', 'Google News', '谷歌新闻', 'TechCrunch'
-  ];
-  
-  const SKIP_SOURCES = ['东方财富', '券商研报', '公告解读'];
+  const SKIP_SOURCES = ['券商研报', '公告解读'];
 
   function shouldAnnounce(item) {
     const source = item.comefrom || '';
@@ -1773,25 +1879,29 @@
   function loadSettings() {
     try {
       const saved = localStorage.getItem('ztfi-settings');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        // 直接返回已保存的设置，不修改 sources 数组
+        // settings.sources = [] 表示不过滤（显示所有来源）
+        // settings.sources = ['实时聚合', ...] 表示只显示指定来源
+        return JSON.parse(saved);
+      }
     } catch (e) {}
     return {
-      sources: ['实时聚合', '东方财富公告', '北向资金'], // 默认开启的数据源
-      fontSize: 'medium', // 字体大小：small/medium/large
+      sources: [], // 默认不过滤，显示所有来源
+      fontSize: 'medium',
       voiceEnabled: true,
       voiceIndex: 0,
       voiceRate: 1.5,
-      voiceInterruptMode: 'complete', // complete: 完整播报模式, immediate: 即时中断模式
+      voiceInterruptMode: 'complete',
       showStocks: true,
       showRelated: true,
       hideDuplicates: true,
       keywordHighlight: false,
       keywords: [],
-      keywordAlert: false, // 关键词触发警报声
-      keywordAlertKeywords: [], // 触发警报的关键词（可独立于高亮关键词）
-      autoScroll: true, // 自动滚动状态
-      isPinned: false, // 窗口置顶状态
-      // 自选股异动提醒
+      keywordAlert: false,
+      keywordAlertKeywords: [],
+      autoScroll: true,
+      isPinned: false,
       watchlistAlertEnabled: false,
       watchlistAlertThreshold: 5,
       watchlistAlertInterval: 5,
@@ -3019,6 +3129,15 @@
     }
   }
 
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      const report = getStatsReport();
+      console.log('[统计报告]', JSON.stringify(report, null, 2));
+      alert('统计报告已输出到控制台\n按 F12 查看');
+    }
+  });
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => waitForApi(30));
   } else {
@@ -3107,5 +3226,154 @@
   document.addEventListener('click', (e) => {
     if (e.target.closest('#btnDataSources')) showDataSourceDialog();
   });
+
+  // ===== 更新检测功能 =====
+  const $updateDialog = document.getElementById('updateDialog');
+  const $urgentOverlay = document.getElementById('urgentOverlay');
+  const $btnCheckUpdate = document.getElementById('btnCheckUpdate');
+  const $btnUpdateLater = document.getElementById('btnUpdateLater');
+  const $btnUpdateNow = document.getElementById('btnUpdateNow');
+  const $btnUrgentUpdate = document.getElementById('btnUrgentUpdate');
+  const $btnUrgentExit = document.getElementById('btnUrgentExit');
+
+  window._onUpdateAvailable = function(dataStr) {
+    try {
+      const data = JSON.parse(dataStr);
+      if (data.urgent) {
+        showUrgentOverlay(data);
+      } else {
+        showUpdateDialog(data);
+      }
+    } catch (e) {
+      console.error('解析更新数据失败:', e);
+    }
+  };
+
+
+
+  function showUpdateDialog(data) {
+    document.getElementById('updateLatestVersion').textContent = data.latest_version || '';
+    document.getElementById('updateReleaseDate').textContent = data.release_date ? '发布日期: ' + data.release_date : '';
+    
+    const changelogUl = document.getElementById('updateChangelog');
+    changelogUl.innerHTML = '';
+    if (data.changelog && Array.isArray(data.changelog)) {
+      data.changelog.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        changelogUl.appendChild(li);
+      });
+    }
+    
+    document.getElementById('updateProgress').style.display = 'none';
+    $updateDialog.style.display = 'flex';
+  }
+
+  function showUrgentOverlay(data) {
+    document.getElementById('urgentMessage').textContent = data.urgent_message || '请立即更新到最新版本以获取安全修复';
+    $urgentOverlay.style.display = 'flex';
+  }
+
+  async function performUpdateCheck() {
+    if (!$btnCheckUpdate) return;
+    const originalText = $btnCheckUpdate.textContent;
+    $btnCheckUpdate.textContent = '检查中...';
+    $btnCheckUpdate.disabled = true;
+
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.check_update) {
+        const result = await pywebview.api.check_update();
+        const data = JSON.parse(result);
+        
+        if (data.status === 'update_available') {
+          if (data.urgent) {
+            showUrgentOverlay(data);
+          } else {
+            showUpdateDialog(data);
+          }
+        } else if (data.status === 'latest') {
+          alert('当前版本已是最新版本');
+        } else {
+          alert(data.message || '检查更新失败，请稍后重试');
+        }
+      } else {
+        alert('更新检查API不可用');
+      }
+    } catch (e) {
+      alert('检查更新失败: ' + e.message);
+    } finally {
+      $btnCheckUpdate.textContent = originalText;
+      $btnCheckUpdate.disabled = false;
+    }
+  }
+
+  async function downloadAndUpdate() {
+    document.getElementById('updateProgress').style.display = 'block';
+    document.getElementById('updateProgressFill').style.width = '0%';
+    document.getElementById('updateProgressText').textContent = '0%';
+    $btnUpdateNow.disabled = true;
+    $btnUpdateLater.disabled = true;
+
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.download_update) {
+        const result = await pywebview.api.download_update();
+        const data = JSON.parse(result);
+        if (data.status === 'ok') {
+          alert(data.message);
+        } else {
+          alert('下载失败: ' + (data.message || '未知错误'));
+        }
+      } else {
+        alert('更新下载API不可用');
+      }
+    } catch (e) {
+      alert('下载更新失败: ' + e.message);
+    } finally {
+      $btnUpdateNow.disabled = false;
+      $btnUpdateLater.disabled = false;
+    }
+  }
+
+  function updateDownloadProgress(percent) {
+    document.getElementById('updateProgressFill').style.width = percent + '%';
+    document.getElementById('updateProgressText').textContent = percent + '%';
+  }
+
+  if ($btnCheckUpdate) {
+    $btnCheckUpdate.addEventListener('click', performUpdateCheck);
+  }
+
+  if ($btnUpdateLater) {
+    $btnUpdateLater.addEventListener('click', () => {
+      $updateDialog.style.display = 'none';
+    });
+  }
+
+  if ($btnUpdateNow) {
+    $btnUpdateNow.addEventListener('click', downloadAndUpdate);
+  }
+
+  if ($btnUrgentUpdate) {
+    $btnUrgentUpdate.addEventListener('click', () => {
+      $urgentOverlay.style.display = 'none';
+      downloadAndUpdate();
+    });
+  }
+
+  if ($btnUrgentExit) {
+    $btnUrgentExit.addEventListener('click', () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.exit_app) {
+        pywebview.api.exit_app();
+      } else {
+        window.close();
+      }
+    });
+  }
+
+  if ($updateDialog) {
+    $updateDialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
+      $updateDialog.style.display = 'none';
+    });
+  }
 
 })();
