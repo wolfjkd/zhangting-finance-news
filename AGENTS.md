@@ -7,6 +7,8 @@
 
 ## 版本管理规则
 
+> **完整版本管理规则参见**：同目录下 [VERSION-CONTROL-RULES.md](VERSION-CONTROL-RULES.md)
+
 ### 版本号格式
 - 格式：`v{主版本}.{次版本}.{补丁版本}`（如 v3.2.0、v3.2.1、v4.0.0）
 - 主版本号：重大功能更新、架构变更
@@ -52,22 +54,11 @@ pyinstaller 涨停财经聚合.spec --noconfirm
   ```
 
 ### Git 提交规范
-- 每次打包后，强制添加 exe 到 git：
-  ```bash
-  git add -f dist/涨停财经聚合播报_v{版本号}.exe
-  git commit -m "chore: 打包 v{版本号}"
-  ```
+> **详细规范参见**：[VERSION-CONTROL-RULES.md](VERSION-CONTROL-RULES.md)
 
-### 版本发布同步（强制）
-发布新版本时必须同步以下内容：
-1. **README.md**：更新标题版本号、更新日志、启动方式中的 exe 文件名
-2. **CHANGELOG.md**：按 Keep a Changelog 格式添加新版本条目（Added/Changed/Fixed）
-3. **Git Tag**：创建轻量级标签并推送
-   ```bash
-   git tag v{版本号}
-   git push origin v{版本号}
-   ```
-4. **GitHub Releases**：创建新 Release，上传 exe 文件和更新说明
+- 代码变更：`feat:` 或 `fix:`
+- 打包发布：`chore: 打包 v{版本号}`
+- 文档更新：`docs:`
 
 ---
 
