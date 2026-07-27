@@ -150,7 +150,7 @@ def _apply_initial_theme(window):
             logger.debug(f'获取 renderer_hwnd 失败: {e}')
 
         if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.11.0版')
+            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.11.1版')
 
         if not hwnd:
             logger.warning('初始主题应用失败: 未找到窗口句柄')
@@ -890,7 +890,7 @@ def get_html_path():
 
 
 def main():
-    logger.info('=== 涨停财经聚合播报 v3.11.0版（开源版）启动 ===')
+    logger.info('=== 涨停财经聚合播报 v3.11.1版（开源版）启动 ===')
 
     _init_seen_db()
     _cleanup_old_seen_aids(days=7)
@@ -915,7 +915,7 @@ def main():
     api.migrate_config_if_needed()
 
     window = webview.create_window(
-        '涨停财经聚合播报 v3.11.0版',
+        '涨停财经聚合播报 v3.11.1版',
         url=get_html_path(),
         width=default_width,
         height=default_height,

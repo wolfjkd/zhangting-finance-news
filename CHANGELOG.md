@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v3.11.1] - 2026-07-27
+
+### Added
+- 外网资讯延时推送模块：谷歌新闻、Reddit、X、TechCrunch集中推送消息先缓存到本地队列，再按10-20秒间隔推送
+- 延时推送线程：独立后台线程处理延时队列，确保消息按间隔推送
+
+### Fixed
+- 集中推送导致语音播报连续跳过多条新闻的问题
+
 ## [v3.11.0] - 2026-07-22
 
 ### Added

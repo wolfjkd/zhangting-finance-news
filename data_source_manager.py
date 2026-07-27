@@ -303,6 +303,13 @@ class DataSourceManager:
         self._translate_rate_limit = 1.0
         self._translate_last_batch = 0
 
+        self._delay_push_queue = []
+        self._delay_push_lock = threading.Lock()
+        self._delay_push_thread = None
+        self._DELAY_PUSH_SOURCES = {"google_news", "reddit", "twitter_x", "techcrunch"}
+        self._MIN_DELAY_INTERVAL = 10
+        self._MAX_DELAY_INTERVAL = 20
+
         self._init_default_sources()
 
     # ===== 翻译限流保护 =====
@@ -2388,13 +2395,29 @@ class DataSourceManager:
     def _process_source_messages(self, source_id: str, messages: List[Dict]):
         if not messages:
             return
-        interval = 1.5 if source_id == "foreign_news" else 0.5
-        for i, message in enumerate(messages):
+        
+        delay_messages = []
+        immediate_messages = []
+        
+        for message in messages:
             message["source_id"] = source_id
             message["source_name"] = self.sources[source_id].name
+            
+            if source_id == "foreign_news" and self._should_delay_push(message):
+                delay_messages.append(message)
+            else:
+                immediate_messages.append(message)
+        
+        interval = 1.5 if source_id == "foreign_news" else 0.5
+        for i, message in enumerate(immediate_messages):
             self._dispatch_message(message)
-            if i < len(messages) - 1:
+            if i < len(immediate_messages) - 1:
                 time.sleep(interval)
+        
+        if delay_messages:
+            for msg in delay_messages:
+                self._enqueue_delay_message(msg)
+            logger.info(f"{source_id} 延时推送 {len(delay_messages)} 条消息加入队列")
 
         count = len(messages)
         self.source_status[source_id]["message_count"] += count
@@ -2404,6 +2427,7 @@ class DataSourceManager:
     # ===== 全局启停 =====
     def start_all_enabled_sources(self):
         self.running = True
+        self._start_delay_push_thread()
         enabled = [(sid, s) for sid, s in self.sources.items() if s.enabled and s.type != DataSourceType.WEBSOCKET]
         enabled.sort(key=lambda x: x[1].priority)
         for source_id, _ in enabled:
@@ -2411,8 +2435,79 @@ class DataSourceManager:
 
     def stop_all_sources(self):
         self.running = False
+        self._stop_delay_push_thread()
         for source_id in self.sources:
             self._stop_source(source_id)
+
+    # ===== 延时推送模块 =====
+    def _start_delay_push_thread(self):
+        """启动延时推送线程"""
+        if self._delay_push_thread and self._delay_push_thread.is_alive():
+            return
+        
+        def run():
+            logger.info("延时推送线程已启动，消息间隔 %d-%d 秒", self._MIN_DELAY_INTERVAL, self._MAX_DELAY_INTERVAL)
+            while self.running:
+                self._process_delay_push_queue()
+                time.sleep(1)
+        
+        self._delay_push_thread = threading.Thread(target=run, daemon=True, name="delay_push")
+        self._delay_push_thread.start()
+
+    def _stop_delay_push_thread(self):
+        """停止延时推送线程"""
+        if self._delay_push_thread and self._delay_push_thread.is_alive():
+            logger.info("延时推送线程正在停止...")
+            self._delay_push_thread.join(timeout=5)
+            if self._delay_push_thread.is_alive():
+                logger.warning("延时推送线程强制终止")
+            else:
+                logger.info("延时推送线程已停止")
+            self._delay_push_thread = None
+
+    def _enqueue_delay_message(self, message: Dict):
+        """将消息加入延时推送队列"""
+        with self._delay_push_lock:
+            self._delay_push_queue.append(message)
+            logger.debug("消息加入延时推送队列，当前队列长度: %d", len(self._delay_push_queue))
+
+    def _process_delay_push_queue(self):
+        """处理延时推送队列，按10-20秒间隔推送消息"""
+        import random
+        
+        with self._delay_push_lock:
+            if not self._delay_push_queue:
+                return
+            message = self._delay_push_queue.pop(0)
+        
+        try:
+            self._dispatch_message(message)
+            count = len(self._delay_push_queue)
+            if count > 0:
+                delay = random.randint(self._MIN_DELAY_INTERVAL, self._MAX_DELAY_INTERVAL)
+                logger.info(f"延时推送: 已推送1条，队列剩余{count}条，下次推送等待{delay}秒")
+                for _ in range(delay):
+                    if not self.running:
+                        return
+                    time.sleep(1)
+        except Exception as e:
+            logger.error(f"延时推送处理失败: {e}")
+
+    def _should_delay_push(self, message: Dict) -> bool:
+        """判断消息是否需要延时推送"""
+        comefrom = message.get("comefrom", "").lower()
+        title = message.get("title", "").lower()
+        
+        if "google" in comefrom or "谷歌新闻" in message.get("title", ""):
+            return "google_news" in self._DELAY_PUSH_SOURCES
+        if "reddit" in comefrom:
+            return "reddit" in self._DELAY_PUSH_SOURCES
+        if "twitter" in comefrom or "x" in comefrom:
+            return "twitter_x" in self._DELAY_PUSH_SOURCES
+        if "techcrunch" in comefrom:
+            return "techcrunch" in self._DELAY_PUSH_SOURCES
+        
+        return False
 
     # ===== 查询接口 =====
     def get_source_status(self, source_id: str) -> Optional[Dict]:

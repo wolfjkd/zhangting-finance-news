@@ -1,0 +1,12 @@
+{
+    "latest_version": "v3.11.1",
+    "release_date": "2026-07-27",
+    "changelog": [
+        "新增外网资讯延时推送模块：谷歌新闻、Reddit、X、TechCrunch集中推送消息先缓存再按10-20秒间隔推送",
+        "修复集中推送导致语音播报连续跳过多条新闻的问题",
+        "版本号升级至v3.11.1"
+    ],
+    "urgent": false,
+    "urgent_message": "",
+    "download_url": "https://github.com/wolfjkd/ZTFI-News/releases/latest"
+}
