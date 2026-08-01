@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v4.0.0] - 2026-07-28
+
+### Added
+- 涨停聚合（Beta）数据源：基于AKShare聚合财联社、华尔街见闻、东方财富、同花顺、央视新闻
+- Tushare备用数据源：支持用户自定义Token，作为AKShare的第一降级源
+- efinance备用数据源：专注东财数据，作为第二降级源
+- 多源降级策略：自动检测数据源可用性，失败自动切换
+- 媒体RSS订阅源：支持财联社、华尔街见闻等RSS直连
+- Wind MCP自定义API Key：用户可填入个人Key使用Wind数据
+- Edge TTS语音引擎：高质量免费TTS，支持7种中文音色
+- 语音关键词屏蔽：命中关键词的消息跳过播报
+- 定时静音：支持自定义静音时段（午休/盘后/自定义）
+- 自选股当日分时图：Canvas绘制价格走势+均价线+成交量
+- 多条件提醒：涨跌幅+成交量+振幅组合触发，支持任一/全部模式
+- 智能阈值：基于ATR动态调整提醒阈值
+- 盘口异动监控：大单压单/托单/封涨跌停/快速拉升
+- 5套预设皮肤：科技蓝/护眼绿/经典黑/活力橙/少女粉
+- 主题编辑器：自定义颜色+背景图+透明度
+- 窗口透明度调节：0-100%可调
+
+### Changed
+- AKShare升级至v1.18.80
+- 版本号升级至v4.0.0（主版本号升级，重大重构）
+- PyInstaller spec文件更新：新增模块和资源文件
+
 ## [v3.11.1] - 2026-07-27
 
 ### Added
