@@ -150,7 +150,7 @@ def _apply_initial_theme(window):
             logger.debug(f'获取 renderer_hwnd 失败: {e}')
 
         if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.11.1版')
+            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.0.0版')
 
         if not hwnd:
             logger.warning('初始主题应用失败: 未找到窗口句柄')
@@ -241,7 +241,7 @@ class Api:
         except Exception as e:
             logger.debug(f'从 renderer 获取 HWND 失败: {e}')
 
-        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v3.10.1版')
+        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.0.0版')
         if hwnd:
             self._main_hwnd = hwnd
             return hwnd
@@ -297,7 +297,7 @@ class Api:
             logger.warning(f'读取设置失败: {e}')
             return json.dumps({})
 
-    _CURRENT_VERSION = 'v3.10.1'
+    _CURRENT_VERSION = 'v4.0.0'
     _VERSION_JSON_URL = 'https://raw.githubusercontent.com/wolfjkd/ZTFI-News/main/version.json'
     _RELEASES_API_URL = 'https://api.github.com/repos/wolfjkd/ZTFI-News/releases/latest'
 
@@ -312,9 +312,26 @@ class Api:
             return 1
         return 0
 
+    def _get_github_session(self):
+        """获取用于访问 GitHub 的 Session（走代理）"""
+        try:
+            from data_source_manager import _proxy_session, _proxy_info, _refresh_proxy_session
+            # 刷新代理检测
+            _refresh_proxy_session()
+            if _proxy_info:
+                logger.info(f'检查更新: 使用代理 {_proxy_info.get("url", "unknown")}')
+                return _proxy_session
+        except Exception as e:
+            logger.debug(f'获取代理 session 失败: {e}')
+        # 回退：创建一个 trust_env=True 的 session（读取系统环境变量代理）
+        s = requests.Session()
+        s.trust_env = True
+        return s
+
     def _check_update(self):
         try:
-            resp = requests.get(self._VERSION_JSON_URL, timeout=10)
+            session = self._get_github_session()
+            resp = session.get(self._VERSION_JSON_URL, timeout=15)
             if resp.status_code == 200:
                 data = resp.json()
                 latest = data.get('latest_version', '')
@@ -333,10 +350,53 @@ class Api:
                         }
                     else:
                         return {'status': 'latest', 'current_version': self._CURRENT_VERSION}
-            return {'status': 'error', 'message': '无法获取版本信息'}
+                else:
+                    return {'status': 'latest', 'current_version': self._CURRENT_VERSION}
+            # 非 200 响应，尝试 Releases API 作为备用
+            logger.warning(f'版本 JSON 响应码: {resp.status_code}')
+            return self._check_update_via_releases()
         except Exception as e:
-            logger.warning(f'检查更新失败: {e}')
-            return {'status': 'error', 'message': str(e)}
+            logger.warning(f'检查更新失败（version.json）: {e}')
+            # 尝试通过 GitHub Releases API 作为备用
+            try:
+                return self._check_update_via_releases()
+            except Exception as e2:
+                logger.warning(f'检查更新失败（Releases API）: {e2}')
+                return {'status': 'error', 'message': f'网络连接失败: {e}'}
+
+    def _check_update_via_releases(self):
+        """通过 GitHub Releases API 检查更新（备用方案）"""
+        try:
+            session = self._get_github_session()
+            resp = session.get(self._RELEASES_API_URL, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                tag_name = data.get('tag_name', '')
+                if tag_name:
+                    comparison = self._compare_versions(self._CURRENT_VERSION, tag_name)
+                    if comparison < 0:
+                        # 获取下载链接
+                        download_url = ''
+                        for asset in data.get('assets', []):
+                            if asset.get('name', '').endswith('.exe'):
+                                download_url = asset.get('browser_download_url', '')
+                                break
+                        return {
+                            'status': 'update_available',
+                            'current_version': self._CURRENT_VERSION,
+                            'latest_version': tag_name,
+                            'release_date': data.get('published_at', ''),
+                            'changelog': [],
+                            'urgent': False,
+                            'urgent_message': '',
+                            'download_url': download_url
+                        }
+                    else:
+                        return {'status': 'latest', 'current_version': self._CURRENT_VERSION}
+            return {'status': 'latest', 'current_version': self._CURRENT_VERSION}
+        except Exception as e:
+            logger.warning(f'Releases API 检查失败: {e}')
+            return {'status': 'error', 'message': f'无法连接 GitHub: {e}'}
 
     def check_update(self):
         result = self._check_update()
@@ -849,12 +909,18 @@ class Api:
         if not self._data_source_manager:
             return json.dumps({'status': 'error', 'message': '数据源管理器未初始化'})
         success = self._data_source_manager.enable_source(source_id)
+        # 传统聚合（ztfi）需要重新启动 WebSocket
+        if success and source_id == "ztfi":
+            self.start_ws()
         return json.dumps({'status': 'ok' if success else 'error'})
 
     def disable_data_source(self, source_id):
         if not self._data_source_manager:
             return json.dumps({'status': 'error', 'message': '数据源管理器未初始化'})
         success = self._data_source_manager.disable_source(source_id)
+        # 传统聚合（ztfi）需要关闭 WebSocket，否则会继续推送
+        if success and source_id == "ztfi":
+            self.stop_ws()
         return json.dumps({'status': 'ok' if success else 'error'})
 
     def test_data_source(self, source_id):
@@ -862,6 +928,161 @@ class Api:
             return json.dumps({'status': 'error', 'message': '数据源管理器未初始化'})
         result = self._data_source_manager.test_source_connection(source_id)
         return json.dumps({'status': 'ok', 'result': result}, ensure_ascii=False)
+
+    # ===== Tushare 数据源配置 =====
+    def get_tushare_config(self):
+        """获取 Tushare 配置（Token 脱敏返回）"""
+        try:
+            from tushare_source import _get_token, is_available
+            token = _get_token()
+            # 脱敏：仅返回前4位+后4位
+            if token and len(token) > 8:
+                masked = token[:4] + '*' * (len(token) - 8) + token[-4:]
+            else:
+                masked = '****' if token else ''
+            return json.dumps({
+                'status': 'ok',
+                'token_masked': masked,
+                'has_token': bool(token),
+                'is_available': is_available(),
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'获取 Tushare 配置失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def save_tushare_token(self, token):
+        """保存 Tushare Token"""
+        try:
+            from tushare_source import save_token
+            success = save_token(token or '')
+            return json.dumps({'status': 'ok' if success else 'error'}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'保存 Tushare Token 失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_tushare_apis(self):
+        """获取 Tushare 可用接口列表（实时探测权限）"""
+        try:
+            from tushare_source import _get_token, TushareSource
+            if not _get_token():
+                return json.dumps({
+                    'status': 'ok',
+                    'detected': False,
+                    'apis': [],
+                    'message': '未配置 Token',
+                }, ensure_ascii=False)
+            # 创建临时实例探测权限
+            tmp = TushareSource(
+                dispatch_callback=lambda m: None,
+                seen_ids=set(),
+                source_id='tushare',
+            )
+            apis = tmp.get_available_apis()
+            api_desc = {
+                'daily': '日线行情（免费）',
+                'news': '财经新闻（高积分）',
+                'moneyflow': '资金流向（高积分）',
+                'top_list': '龙虎榜（高积分）',
+                'kpl_list': '涨停板（高积分）',
+            }
+            apis_with_desc = [{'name': a, 'desc': api_desc.get(a, a)} for a in apis]
+            return json.dumps({
+                'status': 'ok',
+                'detected': True,
+                'apis': apis_with_desc,
+                'message': f'已检测到 {len(apis)} 个可用接口',
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'探测 Tushare 接口失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    # ===== Wind 数据源配置 =====
+    def get_wind_config(self):
+        """获取 Wind 完整配置（API Key 脱敏）"""
+        try:
+            from wind_source import load_wind_config, _DAILY_QUOTA_LIMIT
+            config = load_wind_config()
+            api_key = config.get('api_key', '')
+            # 脱敏
+            if api_key and len(api_key) > 8:
+                masked = api_key[:4] + '*' * (len(api_key) - 8) + api_key[-4:]
+            else:
+                masked = '****' if api_key else ''
+            # 返回（不暴露原始 api_key）
+            safe_config = {
+                'api_key_masked': masked,
+                'has_api_key': bool(api_key),
+                'modules': config.get('modules', {}),
+                'daily_quota_used': config.get('daily_quota_used', 0),
+                'daily_quota_limit': _DAILY_QUOTA_LIMIT,
+                'daily_quota_date': config.get('daily_quota_date', ''),
+            }
+            return json.dumps({'status': 'ok', 'config': safe_config}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'获取 Wind 配置失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def save_wind_api_key(self, api_key):
+        """保存 Wind API Key（不影响其他配置）"""
+        try:
+            from wind_source import load_wind_config, save_wind_config
+            config = load_wind_config()
+            config['api_key'] = api_key or ''
+            success = save_wind_config(config)
+            return json.dumps({'status': 'ok' if success else 'error'}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'保存 Wind API Key 失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def save_wind_modules(self, modules_json):
+        """保存 Wind 模块配置（news/announcements/macro 三个模块的开关与参数）"""
+        try:
+            from wind_source import load_wind_config, save_wind_config
+            config = load_wind_config()
+            new_modules = json.loads(modules_json) if isinstance(modules_json, str) else modules_json
+            # 合并默认值，避免字段缺失
+            default_modules = {
+                'news': {'enabled': False, 'keywords': [], 'poll_interval': 120, 'top_k': 5},
+                'announcements': {'enabled': False, 'types': ['定报', '重大事项', '分红', '增发', '业绩预告'],
+                                  'watch_stocks': [], 'poll_interval': 300},
+                'macro': {'enabled': False, 'indicators': ['CPI', 'PPI', 'PMI', '社融'],
+                          'poll_interval': 600},
+            }
+            merged = {}
+            for mod_key, mod_default in default_modules.items():
+                user_val = new_modules.get(mod_key, {})
+                if not isinstance(user_val, dict):
+                    user_val = {}
+                merged[mod_key] = {**mod_default, **user_val}
+            config['modules'] = merged
+            success = save_wind_config(config)
+            # 更新内存中的 Wind 实例配置
+            if success and hasattr(self, '_data_source_manager') and self._data_source_manager:
+                if hasattr(self._data_source_manager, '_wind_source') and self._data_source_manager._wind_source:
+                    self._data_source_manager._wind_source._config = config
+            return json.dumps({'status': 'ok' if success else 'error'}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'保存 Wind 模块配置失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_wind_quota(self):
+        """获取 Wind 日额度状态"""
+        try:
+            from wind_source import load_wind_config, _DAILY_QUOTA_LIMIT
+            from datetime import datetime as _dt
+            config = load_wind_config()
+            today = _dt.now().strftime('%Y-%m-%d')
+            used = config.get('daily_quota_used', 0) if config.get('daily_quota_date') == today else 0
+            return json.dumps({
+                'status': 'ok',
+                'used': used,
+                'limit': _DAILY_QUOTA_LIMIT,
+                'remaining': max(0, _DAILY_QUOTA_LIMIT - used),
+                'date': today,
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'获取 Wind 额度失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
 
     def ai_analyze(self, title, content, model_name, api_key, api_url, model_name_param):
         try:
@@ -880,6 +1101,243 @@ class Api:
             logger.error(f'AI分析失败: {e}')
             return json.dumps({'error': str(e)})
 
+    # ===== Edge TTS 语音引擎 =====
+    def tts_get_voices(self):
+        """获取可用的 Edge TTS 音色列表"""
+        try:
+            from ai_tts import get_engine
+            engine = get_engine()
+            voices = engine.get_voices()
+            return json.dumps({'status': 'ok', 'voices': voices}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'获取TTS音色失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def tts_synthesize(self, text, voice='zh-CN-YunyangNeural', rate='+0%', volume='+0%'):
+        """文本转语音，返回音频 base64 data URI（避免 file:// 协议被拦截）"""
+        try:
+            from ai_tts import get_engine
+            import base64
+            engine = get_engine()
+            audio_path = engine.synthesize(text, voice, rate, volume)
+            if audio_path and os.path.exists(audio_path):
+                with open(audio_path, 'rb') as f:
+                    audio_b64 = base64.b64encode(f.read()).decode('utf-8')
+                data_uri = f'data:audio/mp3;base64,{audio_b64}'
+                return json.dumps({'status': 'ok', 'audio_data': data_uri, 'audio_path': audio_path}, ensure_ascii=False)
+            return json.dumps({'status': 'error', 'message': '合成失败'})
+        except Exception as e:
+            logger.error(f'TTS合成失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def tts_clear_cache(self):
+        """清空 TTS 缓存"""
+        try:
+            from ai_tts import get_engine
+            engine = get_engine()
+            engine.clear_cache()
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    # ===== 窗口透明度 =====
+    def set_window_opacity(self, opacity):
+        """设置窗口透明度 (0-100)"""
+        try:
+            import ctypes
+            hwnd = self._find_hwnd()
+            if not hwnd:
+                return json.dumps({'status': 'error', 'message': '未找到窗口句柄'})
+
+            # Windows 分层窗口透明度
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            LWA_ALPHA = 0x00000002
+
+            current_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            if not (current_style & WS_EX_LAYERED):
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, current_style | WS_EX_LAYERED)
+
+            alpha = max(30, min(255, int(opacity * 2.55)))  # 0-100 → 30-255（最低30保证可见）
+            ctypes.windll.user32.SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA)
+
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.error(f'设置窗口透明度失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    # ===== 自选股分时图数据 =====
+    def get_stock_minutes(self, code):
+        """获取当日分时数据
+        
+        Args:
+            code: 股票代码，如 'sh600000' 或 '600000'
+        """
+        try:
+            import requests as req
+            # 标准化代码
+            code = code.strip().lower()
+            if not code.startswith(('sh', 'sz', 'bj')):
+                if code.startswith('6'):
+                    code = 'sh' + code
+                elif code.startswith(('0', '3')):
+                    code = 'sz' + code
+                elif code.startswith(('8', '4')):
+                    code = 'bj' + code
+
+            # 腾讯分时数据接口
+            url = f'https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={code}'
+            session = req.Session()
+            session.trust_env = False
+            resp = session.get(url, timeout=5)
+            data = resp.json()
+
+            if data.get('code') != 0:
+                return json.dumps({'status': 'error', 'message': '接口返回错误'})
+
+            minute_data = data.get('data', {}).get(code, {})
+            if not minute_data:
+                return json.dumps({'status': 'error', 'message': '无分时数据'})
+
+            # 解析分时数据
+            prices = []
+            volumes = []
+            times = []
+            for entry in minute_data.get('data', []):
+                parts = entry.split(' ')
+                if len(parts) >= 4:
+                    times.append(parts[0])
+                    prices.append(float(parts[1]))
+                    volumes.append(float(parts[2]))
+
+            # 昨收价
+            pre_close = minute_data.get('qt', {}).get(code, [0])[4] if minute_data.get('qt') else 0
+            if not pre_close and prices:
+                pre_close = prices[0]
+
+            return json.dumps({
+                'status': 'ok',
+                'code': code,
+                'prices': prices,
+                'volumes': volumes,
+                'times': times,
+                'pre_close': float(pre_close) if pre_close else 0
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'获取分时数据失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    # ===== 股票历史数据（用于ATR计算） =====
+    def get_stock_history(self, code, days=20):
+        """获取近N日K线数据，用于计算ATR等指标"""
+        try:
+            import requests as req
+            code = code.strip().lower()
+            if not code.startswith(('sh', 'sz', 'bj')):
+                if code.startswith('6'):
+                    code = 'sh' + code
+                elif code.startswith(('0', '3')):
+                    code = 'sz' + code
+                elif code.startswith(('8', '4')):
+                    code = 'bj' + code
+
+            url = f'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code}_day,{days}-0'
+            session = req.Session()
+            session.trust_env = False
+            resp = session.get(url, timeout=5)
+            text = resp.text
+
+            # 腾讯接口返回 JSONP 格式
+            import re
+            json_match = re.search(r'\{.*\}', text)
+            if not json_match:
+                return json.dumps({'status': 'error', 'message': '解析失败'})
+            data = json.loads(json_match.group())
+
+            kline_data = data.get('data', {}).get(code, {})
+            day_data = kline_data.get('qfqday', kline_data.get('day', []))
+
+            result = []
+            for row in day_data:
+                if len(row) >= 6:
+                    result.append({
+                        'date': row[0],
+                        'open': float(row[1]),
+                        'close': float(row[2]),
+                        'high': float(row[3]),
+                        'low': float(row[4]),
+                        'volume': float(row[5])
+                    })
+
+            return json.dumps({
+                'status': 'ok',
+                'code': code,
+                'data': result
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'获取历史数据失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    # ===== 五档盘口数据 =====
+    def get_stock_orderbook(self, code):
+        """获取五档盘口数据"""
+        try:
+            import requests as req
+            code = code.strip().lower()
+            if not code.startswith(('sh', 'sz', 'bj')):
+                if code.startswith('6'):
+                    code = 'sh' + code
+                elif code.startswith(('0', '3')):
+                    code = 'sz' + code
+                elif code.startswith(('8', '4')):
+                    code = 'bj' + code
+
+            url = f'https://qt.gtimg.cn/q={code}'
+            session = req.Session()
+            session.trust_env = False
+            resp = session.get(url, timeout=5)
+            resp.encoding = 'gbk'
+            text = resp.text
+
+            # 解析腾讯行情数据
+            # 格式: v_sh600000="1~浦发银行~600000~10.50~10.45~..."
+            import re
+            match = re.search(r'"([^"]+)"', text)
+            if not match:
+                return json.dumps({'status': 'error', 'message': '解析失败'})
+
+            fields = match.group(1).split('~')
+            if len(fields) < 49:
+                return json.dumps({'status': 'error', 'message': '数据字段不足'})
+
+            # 五档买卖盘
+            # 买1-5: 9-18, 卖1-5: 19-28
+            # 实际腾讯格式: 买1价=9, 买1量=10, 买2价=11, 买2量=12...
+            bids = []  # 买盘
+            asks = []  # 卖盘
+            for i in range(5):
+                bid_price = float(fields[9 + i * 2]) if fields[9 + i * 2] else 0
+                bid_volume = int(float(fields[10 + i * 2])) if fields[10 + i * 2] else 0
+                ask_price = float(fields[19 + i * 2]) if fields[19 + i * 2] else 0
+                ask_volume = int(float(fields[20 + i * 2])) if fields[20 + i * 2] else 0
+                bids.append({'price': bid_price, 'volume': bid_volume})
+                asks.append({'price': ask_price, 'volume': ask_volume})
+
+            return json.dumps({
+                'status': 'ok',
+                'code': code,
+                'name': fields[1],
+                'price': float(fields[3]) if fields[3] else 0,
+                'pre_close': float(fields[4]) if fields[4] else 0,
+                'bids': bids,
+                'asks': asks,
+                'total_volume': int(float(fields[36])) if len(fields) > 36 and fields[36] else 0,
+                'turnover': float(fields[37]) if len(fields) > 37 and fields[37] else 0,
+            }, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f'获取盘口数据失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
 
 def get_html_path():
     if getattr(sys, 'frozen', False):
@@ -890,7 +1348,7 @@ def get_html_path():
 
 
 def main():
-    logger.info('=== 涨停财经聚合播报 v3.11.1版（开源版）启动 ===')
+    logger.info('=== 涨停财经聚合播报 v4.0.0版（开源版）启动 ===')
 
     _init_seen_db()
     _cleanup_old_seen_aids(days=7)
@@ -915,7 +1373,7 @@ def main():
     api.migrate_config_if_needed()
 
     window = webview.create_window(
-        '涨停财经聚合播报 v3.11.1版',
+        '涨停财经聚合播报 v4.0.0版',
         url=get_html_path(),
         width=default_width,
         height=default_height,

@@ -28,10 +28,12 @@
 
   // ===== 设置 =====
   const ALL_SOURCES = [
-    '实时聚合', '东方财富公告', '龙虎榜', '券商研报', '公告解读', '北向资金', '外网资讯'
+    '涨停聚合（Beta）', '传统聚合', '外网资讯', '东方财富公告', '龙虎榜', '券商研报', '公告解读', '北向资金'
   ];
 
   let settings = loadSettings();
+  // 暴露到全局，同步 darkMode 状态
+  window._settings = settings;
   // 立即保存设置到文件（确保 Python 端能读取主题配置）
   try { saveSettings(); } catch(e) {}
   let synth = window.speechSynthesis;
@@ -163,7 +165,8 @@
   const FONT_SCALE = {
     'small': 1.0,
     'medium': 1.125,
-    'large': 1.25
+    'large': 1.25,
+    'xlarge': 1.5
   };
 
   function applyFontSize(size) {
@@ -376,10 +379,30 @@
       parseAndRenderHTML(resp.html);
       $loading.classList.remove('show');
 
-      // 启动 WebSocket
+      // 启动 WebSocket（仅在传统聚合数据源启用时）
       if (resp.token && resp.wsConfig) {
-        setStatus('connecting', '正在连接实时推送...');
-        await pywebview.api.start_ws();
+        // 检查传统聚合（ztfi）数据源是否启用
+        let ztfiEnabled = true; // 默认启用（兼容旧版）
+        try {
+          const dsResp = await pywebview.api.get_data_sources();
+          const dsData = JSON.parse(dsResp);
+          if (dsData.status === 'ok') {
+            const ztfiSource = (dsData.sources || []).find(s => s.id === 'ztfi');
+            if (ztfiSource) {
+              ztfiEnabled = ztfiSource.enabled;
+            }
+          }
+        } catch (e) {
+          console.warn('[init] 获取数据源状态失败，默认启动 WebSocket:', e);
+        }
+
+        if (ztfiEnabled) {
+          setStatus('connecting', '正在连接实时推送...');
+          await pywebview.api.start_ws();
+        } else {
+          console.log('[init] 传统聚合（ztfi）已关闭，跳过 WebSocket 启动');
+          setStatus('ok', '已连接（传统聚合已关闭）');
+        }
       } else {
         setStatus('error', 'WS 配置缺失，30秒后重试...');
         setTimeout(init, 30000);
@@ -393,6 +416,219 @@
     initVoice();
     initSettings();
     scheduleCleanup();
+    initTTSSettings();
+  }
+
+  // ===== TTS 设置初始化（主题皮肤已移除） =====
+  function initTTSSettings() {
+
+    // TTS 引擎选择
+    const ttsEngineSelect = document.getElementById('ttsEngineSelect');
+    const ttsVoiceRow = document.getElementById('ttsVoiceRow');
+    if (ttsEngineSelect) {
+      ttsEngineSelect.addEventListener('change', (e) => {
+        _ttsEngine = e.target.value;
+        localStorage.setItem('tts_engine', _ttsEngine);
+        // 根据引擎切换显示对应音色行
+        if ($voiceSettings) $voiceSettings.style.display = (settings.voiceEnabled && _ttsEngine === 'web') ? 'flex' : 'none';
+        if (ttsVoiceRow) ttsVoiceRow.style.display = (settings.voiceEnabled && _ttsEngine === 'edge') ? 'flex' : 'none';
+        // 切换到 Edge 时检测可用性
+        if (_ttsEngine === 'edge') {
+          checkEdgeTTSAvailability();
+        }
+      });
+      // 恢复保存的值
+      _ttsEngine = localStorage.getItem('tts_engine') || 'web';
+      ttsEngineSelect.value = _ttsEngine;
+      if (ttsVoiceRow) ttsVoiceRow.style.display = (settings.voiceEnabled && _ttsEngine === 'edge') ? 'flex' : 'none';
+      // 启动时检测 Edge TTS 可用性
+      if (_ttsEngine === 'edge') {
+        checkEdgeTTSAvailability();
+      }
+    }
+
+    // 检测 Edge TTS 可用性并加载音色列表
+    async function checkEdgeTTSAvailability() {
+      try {
+        if (!window.pywebview || !pywebview.api || !pywebview.api.tts_get_voices) return;
+        const result = await pywebview.api.tts_get_voices();
+        const data = JSON.parse(result);
+        if (data.status !== 'ok' || !data.voices) {
+          console.warn('Edge TTS 不可用:', data.message || '未知错误');
+          return;
+        }
+        // 音色列表已静态写在 HTML 中，这里仅做可用性确认
+        console.log('Edge TTS 可用，音色数:', Object.keys(data.voices).length);
+      } catch (e) {
+        console.warn('Edge TTS 检测失败:', e);
+      }
+    }
+
+    // TTS 音色选择
+    const ttsVoiceSelect = document.getElementById('ttsVoiceSelect');
+    if (ttsVoiceSelect) {
+      ttsVoiceSelect.addEventListener('change', (e) => {
+        _ttsVoice = e.target.value;
+        localStorage.setItem('tts_voice', _ttsVoice);
+      });
+      _ttsVoice = localStorage.getItem('tts_voice') || 'zh-CN-YunyangNeural';
+      ttsVoiceSelect.value = _ttsVoice;
+    }
+
+    // Edge TTS 试听按钮
+    const ttsVoiceTestBtn = document.getElementById('ttsVoiceTest');
+    if (ttsVoiceTestBtn) {
+      ttsVoiceTestBtn.addEventListener('click', async () => {
+        const voice = ttsVoiceSelect ? ttsVoiceSelect.value : 'zh-CN-YunyangNeural';
+        const testText = '这是 Edge TTS 语音播报测试，欢迎使用涨停财经聚合播报。';
+        ttsVoiceTestBtn.disabled = true;
+        ttsVoiceTestBtn.textContent = '合成中...';
+        try {
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.tts_synthesize) {
+            const result = await window.pywebview.api.tts_synthesize(testText, voice, '+0%', '+0%');
+            const data = JSON.parse(result);
+            if (data.status === 'ok' && data.audio_data) {
+              const audio = new Audio(data.audio_data);
+              audio.play().catch(err => console.warn('播放失败:', err));
+            } else if (data.status === 'ok' && data.audio_path) {
+              const audio = new Audio('file:///' + data.audio_path.replace(/\\/g, '/'));
+              audio.play().catch(err => console.warn('播放失败:', err));
+            } else {
+              console.warn('Edge TTS 合成失败:', data.message);
+              alert('Edge TTS 合成失败：' + (data.message || '未知错误'));
+            }
+          }
+        } catch (e) {
+          console.warn('Edge TTS 试听失败:', e);
+          alert('Edge TTS 试听失败：' + e.message);
+        } finally {
+          ttsVoiceTestBtn.disabled = false;
+          ttsVoiceTestBtn.textContent = '试听';
+        }
+      });
+    }
+
+    // TTS 关键词屏蔽
+    const blockInput = document.getElementById('ttsBlockKeywordsInput');
+    const blockTags = document.getElementById('ttsBlockKeywordsTags');
+    if (blockInput) {
+      try {
+        _ttsBlockKeywords = JSON.parse(localStorage.getItem('tts_block_keywords') || '[]');
+      } catch (e) {
+        _ttsBlockKeywords = [];
+      }
+      renderBlockKeywords();
+      blockInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && blockInput.value.trim()) {
+          e.preventDefault();
+          _ttsBlockKeywords.push(blockInput.value.trim());
+          blockInput.value = '';
+          localStorage.setItem('tts_block_keywords', JSON.stringify(_ttsBlockKeywords));
+          renderBlockKeywords();
+        }
+      });
+    }
+
+    function renderBlockKeywords() {
+      if (!blockTags) return;
+      blockTags.innerHTML = '';
+      _ttsBlockKeywords.forEach((kw, i) => {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex;align-items:center;gap:2px;padding:2px 6px;background:var(--tag-bg);color:var(--tag-text);border-radius:3px;font-size:11px;';
+        tag.textContent = kw;
+        const rmBtn = document.createElement('span');
+        rmBtn.textContent = '×';
+        rmBtn.style.cssText = 'cursor:pointer;margin-left:2px;font-weight:bold;';
+        rmBtn.onclick = () => {
+          _ttsBlockKeywords.splice(i, 1);
+          localStorage.setItem('tts_block_keywords', JSON.stringify(_ttsBlockKeywords));
+          renderBlockKeywords();
+        };
+        tag.appendChild(rmBtn);
+        blockTags.appendChild(tag);
+      });
+    }
+
+    // 定时静音
+    const silentEnabled = document.getElementById('ttsSilentEnabled');
+    const silentPeriodsRow = document.getElementById('ttsSilentPeriodsRow');
+    if (silentEnabled) {
+      _ttsSilentEnabled = localStorage.getItem('tts_silent_enabled') === 'true';
+      silentEnabled.checked = _ttsSilentEnabled;
+      if (silentPeriodsRow) silentPeriodsRow.style.display = _ttsSilentEnabled ? 'flex' : 'none';
+      silentEnabled.addEventListener('change', (e) => {
+        _ttsSilentEnabled = e.target.checked;
+        localStorage.setItem('tts_silent_enabled', _ttsSilentEnabled);
+        if (silentPeriodsRow) silentPeriodsRow.style.display = _ttsSilentEnabled ? 'flex' : 'none';
+      });
+    }
+    // 恢复静音时段
+    try {
+      const periods = JSON.parse(localStorage.getItem('tts_silent_periods') || '[]');
+      if (periods[0]) {
+        const s1 = document.getElementById('ttsSilentStart1');
+        const e1 = document.getElementById('ttsSilentEnd1');
+        if (s1) s1.value = periods[0].start;
+        if (e1) e1.value = periods[0].end;
+      }
+      if (periods[1]) {
+        const s2 = document.getElementById('ttsSilentStart2');
+        const e2 = document.getElementById('ttsSilentEnd2');
+        if (s2) s2.value = periods[1].start;
+        if (e2) e2.value = periods[1].end;
+      }
+    } catch (e) {}
+    // 保存静音时段
+    ['ttsSilentStart1', 'ttsSilentEnd1', 'ttsSilentStart2', 'ttsSilentEnd2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', saveSilentPeriods);
+      }
+    });
+
+    function saveSilentPeriods() {
+      const periods = [];
+      const s1 = document.getElementById('ttsSilentStart1')?.value;
+      const e1 = document.getElementById('ttsSilentEnd1')?.value;
+      const s2 = document.getElementById('ttsSilentStart2')?.value;
+      const e2 = document.getElementById('ttsSilentEnd2')?.value;
+      if (s1 && e1) periods.push({ start: s1, end: e1 });
+      if (s2 && e2) periods.push({ start: s2, end: e2 });
+      _ttsSilentPeriods = periods;
+      localStorage.setItem('tts_silent_periods', JSON.stringify(periods));
+    }
+    saveSilentPeriods();
+
+    // 多条件提醒设置
+    const alertChangePercent = document.getElementById('alertChangePercent');
+    const alertVolumeRatio = document.getElementById('alertVolumeRatio');
+    const alertAmplitude = document.getElementById('alertAmplitude');
+    const alertTriggerMode = document.getElementById('alertTriggerMode');
+    const alertCooldown = document.getElementById('alertCooldown');
+
+    if (alertChangePercent) {
+      alertChangePercent.value = _alertConditions.changePercent;
+      alertVolumeRatio.value = _alertConditions.volumeRatio;
+      alertAmplitude.value = _alertConditions.amplitude;
+      alertTriggerMode.value = _alertConditions.triggerMode;
+      alertCooldown.value = _alertConditions.cooldown;
+
+      [alertChangePercent, alertVolumeRatio, alertAmplitude, alertTriggerMode, alertCooldown].forEach(el => {
+        if (el) el.addEventListener('change', () => {
+          _alertConditions = {
+            changePercent: parseFloat(alertChangePercent.value) || 5,
+            volumeRatio: parseFloat(alertVolumeRatio.value) || 2,
+            amplitude: parseFloat(alertAmplitude.value) || 8,
+            triggerMode: alertTriggerMode.value || 'any',
+            cooldown: parseInt(alertCooldown.value) || 300
+          };
+          localStorage.setItem('alert_conditions', JSON.stringify(_alertConditions));
+        });
+      });
+    }
+
+    // 启动自选股监控
+    startWatchlistAlertMonitor();
   }
 
   // ===== 后端事件回调 =====
@@ -509,12 +745,15 @@
     if (!item || !item.aid || seenAids.has(item.aid)) return;
 
     // 来源过滤
-    // WebSocket 实时聚合消息（无 source_id）统一用"实时聚合"作为过滤来源
+    // WebSocket 传统聚合消息（无 source_id 或 source_id=ztfi）统一用"传统聚合"作为过滤来源
+    // akshare_beta 消息统一用"涨停聚合（Beta）"作为过滤来源
     // foreign_news 消息统一用"外网资讯"作为过滤来源
     // 其他数据源消息用 comefrom 作为过滤来源
     let source = '';
-    if (!item.source_id) {
-      source = '实时聚合';
+    if (!item.source_id || item.source_id === 'ztfi') {
+      source = '传统聚合';
+    } else if (item.source_id === 'akshare_beta') {
+      source = '涨停聚合（Beta）';
     } else if (item.source_id === 'foreign_news') {
       source = '外网资讯';
     } else {
@@ -1257,6 +1496,10 @@
         </div>
         <button class="watchlist-move-btn" title="移动到分组">→</button>
         <button class="watchlist-quote-btn" title="查看行情">📊</button>
+        <button class="watchlist-minute-btn" title="分时图">📈</button>
+        <div class="watchlist-minute-container" style="display:none;">
+          <canvas class="minute-chart-canvas"></canvas>
+        </div>
       </div>
     `;
   }
@@ -1297,6 +1540,63 @@
         const item = btn.closest('.watchlist-item');
         const code = item.dataset.code;
         await showStockQuoteDialog(code);
+      };
+    });
+
+    // 分时图按钮
+    dialog.querySelectorAll('.watchlist-minute-btn').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const item = btn.closest('.watchlist-item');
+        const code = item.dataset.code;
+        const container = item.querySelector('.watchlist-minute-container');
+        if (!container) return;
+
+        // 切换显示
+        const isVisible = container.style.display !== 'none';
+        if (isVisible) {
+          container.style.display = 'none';
+          return;
+        }
+        container.style.display = 'block';
+
+        // 检查 MinuteChart 是否可用
+        if (typeof MinuteChart === 'undefined') {
+          container.querySelector('.minute-chart-canvas').insertAdjacentHTML('beforebegin', '<div style="padding:8px;color:var(--text-secondary);font-size:12px;text-align:center;">分时图模块未加载</div>');
+          return;
+        }
+
+        // 显示加载中
+        const canvas = container.querySelector('.minute-chart-canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary') || '#666';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('加载分时数据中...', canvas.width / 2, canvas.height / 2);
+
+        try {
+          if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_stock_minutes) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillText('后端接口不可用', canvas.width / 2, canvas.height / 2);
+            return;
+          }
+          const result = await window.pywebview.api.get_stock_minutes(code);
+          const data = typeof result === 'string' ? JSON.parse(result) : result;
+          if (data.status !== 'ok' || !data.data) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillText(data.message || '无分时数据', canvas.width / 2, canvas.height / 2);
+            return;
+          }
+          const chart = new MinuteChart(canvas);
+          chart.setData(data.data);
+          chart.draw();
+        } catch (err) {
+          console.error('加载分时图失败:', err);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#e53935';
+          ctx.fillText('加载失败: ' + (err.message || ''), canvas.width / 2, canvas.height / 2);
+        }
       };
     });
     
@@ -1506,6 +1806,19 @@
   async function checkWatchlistAlerts() {
     if (!settings.watchlistAlertEnabled) return;
     if (!window.historyStorage) return;
+
+    // 收盘后不执行自选股异动提醒（交易时间：9:25-11:30, 13:00-15:00）
+    const now = new Date();
+    const day = now.getDay();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const time = hours * 60 + minutes; // 当天分钟数
+    // 周末不检查
+    if (day === 0 || day === 6) return;
+    // 非交易时间段不检查（9:25=565, 11:30=690, 13:00=780, 15:00=900）
+    const inMorning = time >= 565 && time <= 690;
+    const inAfternoon = time >= 780 && time <= 900;
+    if (!inMorning && !inAfternoon) return;
     
     try {
       const watchlist = await window.historyStorage.getAllWatchlist();
@@ -1572,6 +1885,13 @@
         } else {
           // 未超过阈值，重置状态（允许下次重新触发）
           watchlistAlertState[code] = null;
+        }
+
+        // 多条件提醒检查
+        checkMultiConditionAlerts(q.quote);
+        // 盘口异动检查（每30秒检查一次）
+        if (Math.floor(Date.now() / 30000) % 2 === 0) { // 降频检查
+          checkOrderbookAlert(q.quote.code, q.quote.name);
         }
       }
     } catch (err) {
@@ -1737,6 +2057,239 @@
     }
   }
 
+  // ===== 多条件提醒 + 智能阈值 + 盘口异动 =====
+  let _alertConditions = JSON.parse(localStorage.getItem('alert_conditions') || '{"changePercent":5,"volumeRatio":2,"amplitude":8,"triggerMode":"any","cooldown":300}');
+  let _alertLastTrigger = {}; // 记录每只股票上次触发时间
+
+  // 计算ATR（平均真实波幅）
+  async function calculateATR(code) {
+    try {
+      if (!window.pywebview || !window.pywebview.api) return 0;
+      const result = await window.pywebview.api.get_stock_history(code, 21);
+      const data = JSON.parse(result);
+      if (data.status !== 'ok' || !data.data || data.data.length < 2) return 0;
+
+      let trSum = 0;
+      const klines = data.data;
+      for (let i = 1; i < klines.length; i++) {
+        const high = klines[i].high;
+        const low = klines[i].low;
+        const prevClose = klines[i-1].close;
+        const tr = Math.max(
+          high - low,
+          Math.abs(high - prevClose),
+          Math.abs(low - prevClose)
+        );
+        trSum += tr;
+      }
+      const atr = trSum / (klines.length - 1);
+      const lastClose = klines[klines.length - 1].close;
+      return lastClose > 0 ? (atr / lastClose * 100) : 0; // 返回ATR百分比
+    } catch (e) {
+      console.error('计算ATR失败:', e);
+      return 0;
+    }
+  }
+
+  // 获取智能阈值
+  async function getSmartThreshold(code) {
+    const atr = await calculateATR(code);
+    const baseThreshold = _alertConditions.changePercent || 5;
+    // 智能阈值 = max(固定阈值, 2 × ATR%)
+    return Math.max(baseThreshold, atr * 2);
+  }
+
+  // 计算20日平均成交量
+  async function getAvgVolume(code) {
+    try {
+      if (!window.pywebview || !window.pywebview.api) return 0;
+      const result = await window.pywebview.api.get_stock_history(code, 21);
+      const data = JSON.parse(result);
+      if (data.status !== 'ok' || !data.data || data.data.length < 2) return 0;
+      const klines = data.data;
+      let volSum = 0;
+      for (let i = 0; i < klines.length - 1; i++) { // 不含今天
+        volSum += klines[i].volume;
+      }
+      return volSum / (klines.length - 1);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // 多条件提醒检查
+  async function checkMultiConditionAlerts(stockData) {
+    if (!_alertConditions) return;
+    const code = stockData.code || stockData.id;
+    const name = stockData.name || stockData.title || '';
+
+    // 冷却检查
+    const now = Date.now();
+    if (_alertLastTrigger[code] && (now - _alertLastTrigger[code]) < (_alertConditions.cooldown || 300) * 1000) {
+      return;
+    }
+
+    const results = [];
+
+    // 条件1：涨跌幅
+    const changePercent = Math.abs(parseFloat(stockData.changePercent || stockData.rise || 0));
+    const smartThreshold = await getSmartThreshold(code);
+    if (changePercent >= smartThreshold) {
+      results.push({ type: '涨跌幅', value: changePercent.toFixed(2) + '%', threshold: smartThreshold.toFixed(2) + '%' });
+    }
+
+    // 条件2：成交量倍数
+    const avgVol = await getAvgVolume(code);
+    const currentVol = parseFloat(stockData.volume || 0);
+    if (avgVol > 0 && currentVol / avgVol >= (_alertConditions.volumeRatio || 2)) {
+      results.push({ type: '成交量异动', value: (currentVol / avgVol).toFixed(1) + '倍', threshold: _alertConditions.volumeRatio + '倍' });
+    }
+
+    // 条件3：振幅
+    const high = parseFloat(stockData.high || 0);
+    const low = parseFloat(stockData.low || 0);
+    const preClose = parseFloat(stockData.preClose || stockData.yesterdayClose || 0);
+    if (preClose > 0) {
+      const amplitude = ((high - low) / preClose * 100);
+      if (amplitude >= (_alertConditions.amplitude || 8)) {
+        results.push({ type: '振幅', value: amplitude.toFixed(2) + '%', threshold: _alertConditions.amplitude + '%' });
+      }
+    }
+
+    // 触发判断
+    const triggered = _alertConditions.triggerMode === 'all'
+      ? results.length === 3
+      : results.length > 0;
+
+    if (triggered) {
+      _alertLastTrigger[code] = now;
+      showMultiConditionPopup(name, code, results);
+    }
+  }
+
+  // 多条件提醒弹窗
+  function showMultiConditionPopup(name, code, results) {
+    // 移除已有弹窗
+    const existing = document.querySelector('.multi-condition-popup');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.className = 'multi-condition-popup';
+
+    let resultsHTML = results.map(r => `
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:13px;color:var(--text);">${r.type}</span>
+        <span style="font-size:13px;color:#ff6b35;font-weight:bold;">${r.value} (阈值: ${r.threshold})</span>
+      </div>
+    `).join('');
+
+    popup.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h3 style="margin:0;font-size:15px;color:var(--text);">⚡ 多条件异动 - ${name}</h3>
+        <button class="dialog-close-btn" onclick="this.closest('.multi-condition-popup').remove()" title="关闭">
+          <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:#e53935;"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">代码: ${code} | 时间: ${new Date().toLocaleTimeString()}</div>
+      ${resultsHTML}
+      <div style="margin-top:12px;text-align:right;">
+        <button onclick="this.closest('.multi-condition-popup').remove()" style="font-size:13px;padding:4px 16px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);cursor:pointer;">确认</button>
+      </div>
+    `;
+
+    document.body.appendChild(popup);
+
+    // 10秒后自动消失（如果用户没交互）
+    setTimeout(() => {
+      if (popup.parentNode) popup.remove();
+    }, 10000);
+  }
+
+  // 盘口异动监控
+  async function checkOrderbookAlert(code, name) {
+    try {
+      if (!window.pywebview || !window.pywebview.api) return;
+      const result = await window.pywebview.api.get_stock_orderbook(code);
+      const data = JSON.parse(result);
+      if (data.status !== 'ok') return;
+
+      const alerts = [];
+      const totalVolume = data.total_volume || 0;
+
+      // 大单压单：卖一量 > 总量0.1%
+      if (data.asks[0] && data.asks[0].volume > 0 && totalVolume > 0) {
+        const askRatio = data.asks[0].volume / totalVolume * 100;
+        if (askRatio > 0.1) {
+          alerts.push({ type: '大单压单', desc: `卖一量 ${(data.asks[0].volume/10000).toFixed(1)}万手 (${askRatio.toFixed(2)}%)` });
+        }
+      }
+
+      // 大单托单：买一量 > 总量0.1%
+      if (data.bids[0] && data.bids[0].volume > 0 && totalVolume > 0) {
+        const bidRatio = data.bids[0].volume / totalVolume * 100;
+        if (bidRatio > 0.1) {
+          alerts.push({ type: '大单托单', desc: `买一量 ${(data.bids[0].volume/10000).toFixed(1)}万手 (${bidRatio.toFixed(2)}%)` });
+        }
+      }
+
+      // 封涨停：涨幅接近涨停且买一量极大
+      if (data.pre_close > 0) {
+        const limitUpPrice = data.pre_close * 1.1;
+        if (data.price >= limitUpPrice * 0.998 && data.bids[0] && data.bids[0].volume > totalVolume * 0.05) {
+          alerts.push({ type: '封涨停', desc: `买一封单 ${(data.bids[0].volume/10000).toFixed(1)}万手` });
+        }
+        // 封跌停
+        const limitDownPrice = data.pre_close * 0.9;
+        if (data.price <= limitDownPrice * 1.002 && data.asks[0] && data.asks[0].volume > totalVolume * 0.05) {
+          alerts.push({ type: '封跌停', desc: `卖一封单 ${(data.asks[0].volume/10000).toFixed(1)}万手` });
+        }
+      }
+
+      if (alerts.length > 0) {
+        showOrderbookAlert(name, code, alerts, data);
+      }
+    } catch (e) {
+      console.error('盘口异动检查失败:', e);
+    }
+  }
+
+  // 盘口异动弹窗
+  function showOrderbookAlert(name, code, alerts, stockData) {
+    const existing = document.querySelector('.orderbook-alert');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.className = 'orderbook-alert';
+
+    let alertsHTML = alerts.map(a => `
+      <div style="padding:6px 0;border-bottom:1px solid rgba(255,107,53,0.2);">
+        <span style="font-size:14px;font-weight:bold;color:#ff6b35;">${a.type}</span>
+        <span style="font-size:12px;color:var(--text-secondary);margin-left:8px;">${a.desc}</span>
+      </div>
+    `).join('');
+
+    popup.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h3 style="margin:0;font-size:15px;color:#ff6b35;">⚡ 盘口异动 - ${name}</h3>
+        <button class="dialog-close-btn" onclick="this.closest('.orderbook-alert').remove()" title="关闭">
+          <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:#e53935;"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
+        代码: ${code} | 现价: ${stockData.price.toFixed(2)} | 时间: ${new Date().toLocaleTimeString()}
+      </div>
+      ${alertsHTML}
+      <div style="margin-top:12px;text-align:right;">
+        <button onclick="this.closest('.orderbook-alert').remove()" style="font-size:13px;padding:4px 16px;border:1px solid #ff6b35;border-radius:4px;background:#ff6b35;color:#fff;cursor:pointer;">确认</button>
+      </div>
+    `;
+
+    document.body.appendChild(popup);
+    setTimeout(() => {
+      if (popup.parentNode) popup.remove();
+    }, 10000);
+  }
+
   // ===== 加载更多 =====
   async function loadMore() {
     $loading.classList.add('show');
@@ -1792,19 +2345,106 @@
     if (synth) {
       synth.cancel();
     }
+    // 停止 Edge TTS 音频播放
+    if (_currentAudio) {
+      try { _currentAudio.pause(); _currentAudio.currentTime = 0; } catch (e) {}
+      _currentAudio = null;
+    }
     voiceQueue = [];
     speaking = false;
+    // 递增令牌，使正在进行的 Edge TTS 异步请求失效
+    _ttsRequestToken++;
+  }
+
+  // ===== Edge TTS 语音引擎 =====
+  let _ttsEngine = 'web'; // 'web' 或 'edge'
+  let _ttsVoice = 'zh-CN-YunyangNeural';
+  let _ttsRequestToken = 0; // 请求令牌，stopVoice 时递增，使进行中的异步请求失效
+  let _ttsBlockKeywords = [];
+  let _ttsSilentEnabled = false;
+  let _ttsSilentPeriods = [];
+  let _currentAudio = null;
+
+  async function speakWithEdgeTTS(text) {
+    if (!window.pywebview || !window.pywebview.api) return false;
+    const myToken = _ttsRequestToken; // 记录当前令牌
+    try {
+      const rateStr = (parseFloat(document.getElementById('voiceRate')?.value || 1.5) - 1) * 100;
+      const rate = (rateStr >= 0 ? '+' : '') + rateStr + '%';
+      const result = await window.pywebview.api.tts_synthesize(text, _ttsVoice, rate, '+0%');
+      // 检查令牌：如果在异步等待期间被 stopVoice 了，放弃播放
+      if (myToken !== _ttsRequestToken) return true; // 返回 true 避免回退到 web
+      const data = JSON.parse(result);
+      if (data.status === 'ok' && data.audio_data) {
+        // 再次检查令牌
+        if (myToken !== _ttsRequestToken) return true;
+        _currentAudio = new Audio(data.audio_data);
+        _currentAudio.onended = () => {
+          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
+        };
+        _currentAudio.onerror = () => {
+          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
+        };
+        _currentAudio.play().catch(e => console.error('Edge TTS 播放失败:', e));
+        return true;
+      } else if (data.status === 'ok' && data.audio_path) {
+        if (myToken !== _ttsRequestToken) return true;
+        _currentAudio = new Audio('file:///' + data.audio_path.replace(/\\/g, '/'));
+        _currentAudio.onended = () => {
+          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
+        };
+        _currentAudio.onerror = () => {
+          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
+        };
+        _currentAudio.play().catch(e => console.error('Edge TTS 播放失败:', e));
+        return true;
+      }
+      console.warn('Edge TTS 返回异常:', data.message);
+    } catch (e) {
+      console.error('Edge TTS 播放失败:', e);
+    }
+    return false;
+  }
+
+  function shouldSkipByKeyword(text) {
+    if (!_ttsBlockKeywords || _ttsBlockKeywords.length === 0) return false;
+    const escaped = _ttsBlockKeywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(escaped.join('|'), 'gi');
+    return regex.test(text);
+  }
+
+  function timeToMinutes(timeStr) {
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  function isInSilentPeriod() {
+    if (!_ttsSilentEnabled || _ttsSilentPeriods.length === 0) return false;
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    for (const period of _ttsSilentPeriods) {
+      const start = timeToMinutes(period.start);
+      const end = timeToMinutes(period.end);
+      if (start <= end) {
+        if (currentMinutes >= start && currentMinutes < end) return true;
+      } else {
+        if (currentMinutes >= start || currentMinutes < end) return true;
+      }
+    }
+    return false;
   }
 
   function enqueueVoice(text, ctime) {
     if (!synth || !text) return;
 
-    if (ctime) {
-      const now = Math.floor(Date.now() / 1000);
-      if (now - ctime > VOICE_TIME_THRESHOLD) {
-        return;
-      }
-    }
+    if (shouldSkipByKeyword(text)) return;
+    if (isInSilentPeriod()) return;
+
+    // 注意：不再基于 ctime（新闻发布时间）判断是否播报。
+    // 原因：各子源 API 时效性不同（如新浪财经接近实时，同花顺/东方财富可能有数分钟延迟），
+    //       用 ctime 过滤会导致延迟子源的新闻被静默跳过。
+    //       后端已通过 skip_tts=true 机制（基于入队时间，5分钟超时）统一控制，
+    //       shouldAnnounce 已检查 skip_tts，此处无需重复过滤。
 
     const speakText = text.length > 80 ? text.substring(0, 80) + '...' : text;
 
@@ -1829,6 +2469,22 @@
     }
     speaking = true;
     const text = voiceQueue.shift();
+
+    // 根据引擎选择：Edge TTS 优先（如果可用且已选择）
+    if (_ttsEngine === 'edge' && window.pywebview && window.pywebview.api && window.pywebview.api.tts_synthesize) {
+      speakWithEdgeTTS(text).then(ok => {
+        if (!ok) {
+          // Edge TTS 失败，回退到浏览器内置
+          _speakWithWeb(text);
+        }
+      });
+      return;
+    }
+    _speakWithWeb(text);
+  }
+
+  // 浏览器内置语音播报
+  function _speakWithWeb(text) {
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = 'zh-CN';
     utter.rate = parseFloat($voiceRate.value) || 1.5;
@@ -1847,6 +2503,11 @@
   const SKIP_SOURCES = ['券商研报', '公告解读'];
 
   function shouldAnnounce(item) {
+    // 超时消息：后端标记 skip_tts=true，只展示不播报
+    if (item.skip_tts === true) {
+      return false;
+    }
+
     const source = item.comefrom || '';
     
     // 检查是否命中关键词高亮（标题或内容包含关键词）
@@ -1888,7 +2549,7 @@
     } catch (e) {}
     return {
       sources: [], // 默认不过滤，显示所有来源
-      fontSize: 'medium',
+      fontSize: 'large',
       voiceEnabled: true,
       voiceIndex: 0,
       voiceRate: 1.5,
@@ -1896,7 +2557,7 @@
       showStocks: true,
       showRelated: true,
       hideDuplicates: true,
-      keywordHighlight: false,
+      keywordHighlight: true,
       keywords: [],
       keywordAlert: false,
       keywordAlertKeywords: [],
@@ -1947,14 +2608,28 @@
     $voiceSpeedRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
     $voiceSettings.style.display = settings.voiceEnabled ? 'flex' : 'none';
     $voiceInterruptModeRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
+    const $ttsEngineRow = document.getElementById('ttsEngineRow');
+    if ($ttsEngineRow) $ttsEngineRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
 
     $voiceEnabled.addEventListener('change', () => {
       settings.voiceEnabled = $voiceEnabled.checked;
       $voiceSettings.style.display = settings.voiceEnabled ? 'flex' : 'none';
       $voiceSpeedRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
       $voiceInterruptModeRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
+      if ($ttsEngineRow) $ttsEngineRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
+      // 根据当前 TTS 引擎显示对应音色行
+      updateTtsVoiceRowVisibility();
       saveSettings();
     });
+
+    // 根据当前 TTS 引擎显示/隐藏对应音色选择行
+    function updateTtsVoiceRowVisibility() {
+      const engine = localStorage.getItem('tts_engine') || 'web';
+      if ($voiceSettings) $voiceSettings.style.display = (settings.voiceEnabled && engine === 'web') ? 'flex' : 'none';
+      const $ttsVoiceRow = document.getElementById('ttsVoiceRow');
+      if ($ttsVoiceRow) $ttsVoiceRow.style.display = (settings.voiceEnabled && engine === 'edge') ? 'flex' : 'none';
+    }
+    updateTtsVoiceRowVisibility();
 
     $voiceRate.value = settings.voiceRate;
     $voiceRate.addEventListener('change', () => {
@@ -3159,6 +3834,8 @@
       const sources = data.sources || [];
       const dialog = document.createElement('div');
       dialog.className = 'datasource-overlay';
+      // 需要"配置"按钮的数据源
+      const configableIds = ['tushare', 'wind'];
       dialog.innerHTML = `
         <div class="datasource-panel">
           <div class="datasource-header">
@@ -3178,6 +3855,7 @@
                   </div>
                 </div>
                 <div class="datasource-item-right">
+                  ${configableIds.includes(s.id) ? `<button class="datasource-config-btn" data-source-id="${s.id}">配置</button>` : ''}
                   <button class="datasource-test-btn" data-source-id="${s.id}">测试</button>
                   <label class="datasource-toggle">
                     <input type="checkbox" ${s.enabled ? 'checked' : ''}>
@@ -3219,7 +3897,340 @@
           btn.disabled = false; btn.textContent = '测试';
         });
       });
+      // 配置按钮
+      dialog.querySelectorAll('.datasource-config-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sourceId = btn.dataset.sourceId;
+          if (sourceId === 'tushare') showTushareConfigDialog();
+          else if (sourceId === 'wind') showWindConfigDialog();
+        });
+      });
     } catch (e) { alert('数据源管理加载失败: ' + e.message); }
+  }
+
+  // ===== Tushare 配置弹窗 =====
+  async function showTushareConfigDialog() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    let currentData = null;
+    try {
+      const resp = await pywebview.api.get_tushare_config();
+      currentData = JSON.parse(resp);
+    } catch (e) { alert('加载 Tushare 配置失败: ' + e.message); return; }
+
+    const dialog = document.createElement('div');
+    dialog.className = 'datasource-overlay';
+    dialog.innerHTML = `
+      <div class="datasource-panel">
+        <div class="datasource-header">
+          <span class="datasource-title">Tushare 配置</span>
+          <button class="dialog-close-btn" title="关闭">
+            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+        <div class="datasource-config-body">
+          <div class="config-row">
+            <label class="config-label">API Token</label>
+            <input type="password" id="tushare-token-input" class="config-input" placeholder="粘贴 Tushare Pro Token" autocomplete="off">
+            <div class="config-hint" id="tushare-token-hint">
+              ${currentData.status === 'ok' && currentData.has_token ? '当前 Token: ' + esc(currentData.token_masked) : '尚未配置 Token'}
+            </div>
+          </div>
+          <div class="config-actions">
+            <button id="tushare-save-btn" class="config-save-btn">保存 Token</button>
+            <button id="tushare-detect-btn" class="config-secondary-btn">检测接口权限</button>
+          </div>
+          <div class="config-row">
+            <label class="config-label">可用接口</label>
+            <div id="tushare-apis-list" class="config-apis">
+              <div class="config-hint">点击"检测接口权限"按钮，自动探测 Token 可用的接口</div>
+            </div>
+          </div>
+          <div class="config-tip">
+            <div class="config-tip-title">提示</div>
+            <div>· Token 获取：<a href="#" id="tushare-reg-link">tushare.pro</a> 注册后在个人主页复制</div>
+            <div>· 免费权限：日线行情、股票基础信息</div>
+            <div>· 高积分权限：财经新闻、资金流向、龙虎榜、涨停板</div>
+            <div>· 接口按 Token 权限自动开放，无需手动选择</div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.remove(); });
+    dialog.querySelector('.dialog-close-btn').addEventListener('click', () => dialog.remove());
+    dialog.querySelector('#tushare-reg-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.open('https://tushare.pro/register', '_blank');
+    });
+    // 保存 Token
+    dialog.querySelector('#tushare-save-btn').addEventListener('click', async () => {
+      const token = dialog.querySelector('#tushare-token-input').value.trim();
+      if (!token) { alert('请输入 Token'); return; }
+      try {
+        const resp = await pywebview.api.save_tushare_token(token);
+        const d = JSON.parse(resp);
+        if (d.status === 'ok') {
+          alert('Token 保存成功');
+          // 刷新显示
+          const cfgResp = await pywebview.api.get_tushare_config();
+          const cfg = JSON.parse(cfgResp);
+          if (cfg.status === 'ok') {
+            dialog.querySelector('#tushare-token-hint').textContent = '当前 Token: ' + cfg.token_masked;
+          }
+          dialog.querySelector('#tushare-token-input').value = '';
+        } else {
+          alert('保存失败');
+        }
+      } catch (err) { alert('保存失败: ' + err.message); }
+    });
+    // 检测接口权限
+    dialog.querySelector('#tushare-detect-btn').addEventListener('click', async () => {
+      const apisDiv = dialog.querySelector('#tushare-apis-list');
+      apisDiv.innerHTML = '<div class="config-hint">检测中...</div>';
+      try {
+        const resp = await pywebview.api.get_tushare_apis();
+        const d = JSON.parse(resp);
+        if (d.status === 'ok' && d.detected) {
+          if (d.apis && d.apis.length > 0) {
+            apisDiv.innerHTML = d.apis.map(a => `
+              <div class="config-api-item">
+                <span class="api-name">${esc(a.name)}</span>
+                <span class="api-desc">${esc(a.desc)}</span>
+              </div>
+            `).join('');
+          } else {
+            apisDiv.innerHTML = '<div class="config-hint">未检测到可用接口，请检查 Token 权限</div>';
+          }
+        } else {
+          apisDiv.innerHTML = '<div class="config-hint">' + esc(d.message || '检测失败') + '</div>';
+        }
+      } catch (err) {
+        apisDiv.innerHTML = '<div class="config-hint">检测失败: ' + esc(err.message) + '</div>';
+      }
+    });
+  }
+
+  // ===== Wind 独立设置页弹窗 =====
+  async function showWindConfigDialog() {
+    if (!window.pywebview || !window.pywebview.api) return;
+    let cfg = null;
+    try {
+      const resp = await pywebview.api.get_wind_config();
+      const d = JSON.parse(resp);
+      if (d.status === 'ok') cfg = d.config;
+      else { alert('加载 Wind 配置失败: ' + (d.message || '')); return; }
+    } catch (e) { alert('加载 Wind 配置失败: ' + e.message); return; }
+
+    const modules = cfg.modules || {};
+    const news = modules.news || {};
+    const ann = modules.announcements || {};
+    const macro = modules.macro || {};
+
+    const dialog = document.createElement('div');
+    dialog.className = 'datasource-overlay';
+    dialog.innerHTML = `
+      <div class="datasource-panel wind-panel">
+        <div class="datasource-header">
+          <span class="datasource-title">Wind 高级设置</span>
+          <button class="dialog-close-btn" title="关闭">
+            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+        <div class="datasource-config-body wind-config-body">
+          <!-- API Key -->
+          <div class="config-section">
+            <div class="config-section-title">API Key</div>
+            <div class="config-row">
+              <input type="password" id="wind-apikey-input" class="config-input" placeholder="粘贴 Wind API Key" autocomplete="off">
+              <div class="config-hint" id="wind-apikey-hint">
+                ${cfg.has_api_key ? '当前 Key: ' + esc(cfg.api_key_masked) : '尚未配置 API Key'}
+              </div>
+            </div>
+            <div class="config-actions">
+              <button id="wind-save-key-btn" class="config-save-btn">保存 Key</button>
+            </div>
+          </div>
+
+          <!-- 额度 -->
+          <div class="config-section">
+            <div class="config-section-title">日额度</div>
+            <div class="config-quota" id="wind-quota-display">
+              <span>${cfg.daily_quota_used || 0} / ${cfg.daily_quota_limit || 500}</span>
+              <span class="config-hint">(日期: ${esc(cfg.daily_quota_date || '未记录')})</span>
+              <button id="wind-refresh-quota-btn" class="config-secondary-btn">刷新</button>
+            </div>
+          </div>
+
+          <!-- 模块1: 财经新闻 -->
+          <div class="config-section">
+            <div class="config-section-title">
+              <label class="datasource-toggle">
+                <input type="checkbox" id="wind-news-enabled" ${news.enabled ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+              模块1：财经新闻 RAG
+            </div>
+            <div class="config-row">
+              <label class="config-label">关键词（逗号分隔，最多 5 个）</label>
+              <input type="text" id="wind-news-keywords" class="config-input" 
+                     value="${esc((news.keywords || []).join(', '))}" 
+                     placeholder="如: 半导体, 新能源, 央行">
+            </div>
+            <div class="config-row">
+              <label class="config-label">每次返回条数 (top_k)</label>
+              <input type="number" id="wind-news-topk" class="config-input" 
+                     value="${news.top_k || 5}" min="1" max="20" style="width:80px">
+            </div>
+          </div>
+
+          <!-- 模块2: 上市公司公告 -->
+          <div class="config-section">
+            <div class="config-section-title">
+              <label class="datasource-toggle">
+                <input type="checkbox" id="wind-ann-enabled" ${ann.enabled ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+              模块2：上市公司公告
+            </div>
+            <div class="config-row">
+              <label class="config-label">关注股票（逗号分隔，留空则按公告类型）</label>
+              <input type="text" id="wind-ann-stocks" class="config-input" 
+                     value="${esc((ann.watch_stocks || []).join(', '))}" 
+                     placeholder="如: 贵州茅台, 中国平安">
+            </div>
+            <div class="config-row">
+              <label class="config-label">公告类型（逗号分隔）</label>
+              <input type="text" id="wind-ann-types" class="config-input" 
+                     value="${esc((ann.types || []).join(', '))}" 
+                     placeholder="如: 定报, 重大事项, 分红">
+            </div>
+          </div>
+
+          <!-- 模块3: 宏观经济指标 -->
+          <div class="config-section">
+            <div class="config-section-title">
+              <label class="datasource-toggle">
+                <input type="checkbox" id="wind-macro-enabled" ${macro.enabled ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </label>
+              模块3：宏观经济指标
+            </div>
+            <div class="config-row">
+              <label class="config-label">监控指标（逗号分隔）</label>
+              <input type="text" id="wind-macro-indicators" class="config-input" 
+                     value="${esc((macro.indicators || []).join(', '))}" 
+                     placeholder="如: CPI, PPI, PMI, 社融">
+            </div>
+          </div>
+
+          <div class="config-actions config-actions-bottom">
+            <button id="wind-save-modules-btn" class="config-save-btn">保存模块配置</button>
+            <button id="wind-test-btn" class="config-secondary-btn">测试连接</button>
+          </div>
+          <div class="config-tip">
+            <div class="config-tip-title">说明</div>
+            <div>· API Key 获取：<a href="#" id="wind-portal-link">aifinmarket.wind.com.cn</a> 开发者中心</div>
+            <div>· Wind 通过 MCP 协议直连，3 个模块独立开关、独立轮询</div>
+            <div>· 公告每 5 轮、宏观每 10 轮抓取一次（按数据更新频率优化）</div>
+            <div>· 日额度耗尽后将自动停止调用，次日重置</div>
+          </div>
+          <div class="wind-test-result"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.remove(); });
+    dialog.querySelector('.dialog-close-btn').addEventListener('click', () => dialog.remove());
+    dialog.querySelector('#wind-portal-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.open('https://aifinmarket.wind.com.cn/#/user/overview', '_blank');
+    });
+    // 保存 API Key
+    dialog.querySelector('#wind-save-key-btn').addEventListener('click', async () => {
+      const key = dialog.querySelector('#wind-apikey-input').value.trim();
+      if (!key) { alert('请输入 API Key'); return; }
+      try {
+        const resp = await pywebview.api.save_wind_api_key(key);
+        const d = JSON.parse(resp);
+        if (d.status === 'ok') {
+          alert('API Key 保存成功');
+          const cfgResp = await pywebview.api.get_wind_config();
+          const cfgD = JSON.parse(cfgResp);
+          if (cfgD.status === 'ok') {
+            dialog.querySelector('#wind-apikey-hint').textContent = '当前 Key: ' + cfgD.config.api_key_masked;
+          }
+          dialog.querySelector('#wind-apikey-input').value = '';
+        } else { alert('保存失败'); }
+      } catch (err) { alert('保存失败: ' + err.message); }
+    });
+    // 保存模块配置
+    dialog.querySelector('#wind-save-modules-btn').addEventListener('click', async () => {
+      const newsKeywords = dialog.querySelector('#wind-news-keywords').value
+        .split(',').map(s => s.trim()).filter(s => s).slice(0, 5);
+      const annStocks = dialog.querySelector('#wind-ann-stocks').value
+        .split(',').map(s => s.trim()).filter(s => s);
+      const annTypes = dialog.querySelector('#wind-ann-types').value
+        .split(',').map(s => s.trim()).filter(s => s);
+      const macroIndicators = dialog.querySelector('#wind-macro-indicators').value
+        .split(',').map(s => s.trim()).filter(s => s);
+      const modules = {
+        news: {
+          enabled: dialog.querySelector('#wind-news-enabled').checked,
+          keywords: newsKeywords,
+          top_k: parseInt(dialog.querySelector('#wind-news-topk').value) || 5,
+        },
+        announcements: {
+          enabled: dialog.querySelector('#wind-ann-enabled').checked,
+          watch_stocks: annStocks,
+          types: annTypes,
+        },
+        macro: {
+          enabled: dialog.querySelector('#wind-macro-enabled').checked,
+          indicators: macroIndicators,
+        },
+      };
+      try {
+        const resp = await pywebview.api.save_wind_modules(JSON.stringify(modules));
+        const d = JSON.parse(resp);
+        if (d.status === 'ok') {
+          alert('模块配置已保存');
+        } else { alert('保存失败'); }
+      } catch (err) { alert('保存失败: ' + err.message); }
+    });
+    // 刷新额度
+    dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', async () => {
+      try {
+        const resp = await pywebview.api.get_wind_quota();
+        const d = JSON.parse(resp);
+        if (d.status === 'ok') {
+          dialog.querySelector('#wind-quota-display').innerHTML = `
+            <span>${d.used} / ${d.limit}</span>
+            <span class="config-hint">(日期: ${esc(d.date)})</span>
+            <button id="wind-refresh-quota-btn" class="config-secondary-btn">刷新</button>
+          `;
+          // 重新绑定刷新按钮
+          dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', () => {
+            dialog.querySelector('#wind-refresh-quota-btn').click();
+          });
+        }
+      } catch (err) { alert('刷新失败: ' + err.message); }
+    });
+    // 测试连接
+    dialog.querySelector('#wind-test-btn').addEventListener('click', async () => {
+      const resultDiv = dialog.querySelector('.wind-test-result');
+      const btn = dialog.querySelector('#wind-test-btn');
+      btn.disabled = true; btn.textContent = '测试中...';
+      try {
+        const resp = await pywebview.api.test_data_source('wind');
+        const d = JSON.parse(resp); const r = d.result || {};
+        resultDiv.textContent = `${r.success ? '✓' : '✗'} ${r.message || '连接失败'}${r.latency ? ' (' + r.latency + 'ms)' : ''}`;
+        resultDiv.style.color = r.success ? '#4caf50' : '#f44336';
+      } catch (err) {
+        resultDiv.textContent = '测试失败: ' + err.message;
+        resultDiv.style.color = '#f44336';
+      }
+      btn.disabled = false; btn.textContent = '测试连接';
+    });
   }
 
   // 绑定对话框按钮事件
@@ -3284,7 +4295,7 @@
       if (window.pywebview && window.pywebview.api && window.pywebview.api.check_update) {
         const result = await pywebview.api.check_update();
         const data = JSON.parse(result);
-        
+
         if (data.status === 'update_available') {
           if (data.urgent) {
             showUrgentOverlay(data);
@@ -3292,15 +4303,21 @@
             showUpdateDialog(data);
           }
         } else if (data.status === 'latest') {
-          alert('当前版本已是最新版本');
+          alert('✅ 当前版本已是最新版本（' + (data.current_version || '') + '）');
         } else {
-          alert(data.message || '检查更新失败，请稍后重试');
+          // 错误提示更明确
+          const msg = data.message || '未知错误';
+          if (msg.includes('网络连接') || msg.includes('无法连接') || msg.includes('timeout')) {
+            alert('❌ 检查更新失败：无法连接 GitHub\n\n请确认：\n1. 网络连接正常\n2. 代理工具（Clash/v2ray）已启动\n3. 代理端口可访问\n\n技术详情：' + msg);
+          } else {
+            alert('❌ 检查更新失败：' + msg);
+          }
         }
       } else {
-        alert('更新检查API不可用');
+        alert('更新检查功能不可用');
       }
     } catch (e) {
-      alert('检查更新失败: ' + e.message);
+      alert('检查更新异常: ' + e.message);
     } finally {
       $btnCheckUpdate.textContent = originalText;
       $btnCheckUpdate.disabled = false;

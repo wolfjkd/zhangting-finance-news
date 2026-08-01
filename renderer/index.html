@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>涨停财经聚合播报 v3.11.1版（开源版）</title>
+  <title>涨停财经聚合播报 v4.0.0版（开源版）</title>
   <link rel="stylesheet" href="style.css">
+  <script src="modules/minute-chart.js"></script>
 </head>
 <body>
   <!-- 顶部工具栏 -->
@@ -50,11 +51,6 @@
           <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
         </svg>
         <span class="btn-badge" id="watchlistBadge" style="display:none;">0</span>
-      </button>
-      <button class="btn btn-icon" id="btnDonate" title="赞赏支持">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-        </svg>
       </button>
       <button class="btn btn-icon" id="btnSettings" title="设置">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -131,36 +127,7 @@
         </div>
       </div>
 
-      <!-- 语音播报 -->
-      <div class="settings-section">
-        <div class="settings-section-title">语音播报</div>
-        <div class="setting-row">
-          <span class="setting-label">开启语音播报</span>
-          <label class="toggle">
-            <input type="checkbox" id="voiceEnabled">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="voice-row" id="voiceSettings" style="display:none;">
-          <select class="voice-select" id="voiceSelect"></select>
-          <button class="voice-test-btn" id="voiceTest">试听</button>
-        </div>
-        <div class="setting-row" id="voiceSpeedRow" style="display:none;">
-          <span class="setting-label">播报语速</span>
-          <select class="voice-select" id="voiceRate" style="width:80px;">
-            <option value="1">正常</option>
-            <option value="1.5" selected>偏快</option>
-            <option value="2">快</option>
-          </select>
-        </div>
-        <div class="setting-row" id="voiceInterruptModeRow" style="display:none;">
-          <span class="setting-label">播报模式</span>
-          <select class="voice-select" id="voiceInterruptMode" style="width:140px;">
-            <option value="complete">完整播报</option>
-            <option value="immediate">即时中断</option>
-          </select>
-        </div>
-      </div>
+      <!-- 语音播报（已合并到 Edge TTS 栏目） -->
 
       <!-- 消息去重 -->
       <div class="settings-section">
@@ -175,30 +142,46 @@
         <div class="setting-hint">多个来源推送同一事件时，只显示一条并在下方标注来源数</div>
       </div>
 
-      <!-- 关键词高亮 -->
+      <!-- 关键词管理（高亮 + 屏蔽合并栏目） -->
       <div class="settings-section">
-        <div class="settings-section-title">关键词高亮</div>
-        <div class="setting-row">
-          <span class="setting-label">开启关键词高亮</span>
-          <label class="toggle">
-            <input type="checkbox" id="keywordHighlight">
-            <span class="toggle-slider"></span>
-          </label>
+        <div class="settings-section-title">关键词管理</div>
+
+        <!-- 高亮关键词子区（淡红色框） -->
+        <div style="margin-bottom:10px;padding:8px;border-left:3px solid #f5a0a0;background:#fdf6f6;border-radius:4px;">
+          <div class="setting-row">
+            <span class="setting-label" style="font-weight:bold;">高亮关键词</span>
+            <label class="toggle">
+              <input type="checkbox" id="keywordHighlight">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="keyword-input-row" id="keywordInputRow">
+            <input type="text" id="keywordInput" class="keyword-input" placeholder="输入高亮关键词，回车添加">
+            <button id="keywordAddBtn" class="keyword-add-btn">添加</button>
+          </div>
+          <div class="keyword-tags" id="keywordTags"></div>
+          <div class="setting-hint">关键词会以高亮色标记在消息标题和正文中</div>
+          <div class="setting-row" style="margin-top:8px;">
+            <span class="setting-label">关键词触发警报</span>
+            <label class="toggle">
+              <input type="checkbox" id="keywordAlert">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="setting-hint">命中高亮关键词时播放警报声并弹窗提醒</div>
         </div>
-        <div class="keyword-input-row" id="keywordInputRow">
-          <input type="text" id="keywordInput" class="keyword-input" placeholder="输入关键词，回车添加（支持多个）">
-          <button id="keywordAddBtn" class="keyword-add-btn">添加</button>
+
+        <!-- 屏蔽关键词子区（淡绿色框） -->
+        <div style="padding:8px;border-left:3px solid #a0d8a0;background:#f4faf4;border-radius:4px;">
+          <div class="setting-row">
+            <span class="setting-label" style="font-weight:bold;">屏蔽关键词（语音）</span>
+          </div>
+          <div class="setting-hint">命中以下关键词的消息将不会被语音播报</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+            <input type="text" id="ttsBlockKeywordsInput" placeholder="输入屏蔽关键词后回车" style="flex:1;min-width:120px;font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+          </div>
+          <div id="ttsBlockKeywordsTags" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;"></div>
         </div>
-        <div class="keyword-tags" id="keywordTags"></div>
-        <div class="setting-hint">关键词会以高亮色标记在消息标题和正文中</div>
-        <div class="setting-row" style="margin-top:8px;">
-          <span class="setting-label">关键词触发警报</span>
-          <label class="toggle">
-            <input type="checkbox" id="keywordAlert">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-hint">命中关键词时播放警报声并弹窗提醒（使用高亮关键词列表）</div>
       </div>
 
       <!-- 其他设置 -->
@@ -211,13 +194,15 @@
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div class="setting-row">
+        <div class="setting-hint">在新闻卡片中显示该新闻涉及的股票标签及涨跌幅</div>
+        <div class="setting-row" style="margin-top:8px;">
           <span class="setting-label">显示关联新闻</span>
           <label class="toggle">
             <input type="checkbox" id="showRelated" checked>
             <span class="toggle-slider"></span>
           </label>
         </div>
+        <div class="setting-hint">在新闻下方显示同一事件的其他来源报道</div>
       </div>
 
       <!-- 自选股异动提醒 -->
@@ -255,10 +240,11 @@
         <div class="settings-section-title">字体大小</div>
         <div class="setting-row">
           <span class="setting-label">界面字体</span>
-          <select class="voice-select" id="fontSize" style="width:100px;">
+          <select class="voice-select" id="fontSize" style="width:110px;">
             <option value="small">小（4条）</option>
             <option value="medium">中（3条半）</option>
             <option value="large">大（3条）</option>
+            <option value="xlarge">特大（2条）</option>
           </select>
         </div>
         <div class="setting-hint">调整整个界面的字体大小，括号内为默认窗口高度可显示的新闻条数</div>
@@ -302,16 +288,118 @@
         </div>
       </div>
 
+      <!-- 语音播报（合并栏目：原语音播报 + Edge TTS） -->
+      <div class="settings-section">
+        <div class="settings-section-title">语音播报</div>
+        <div class="setting-row">
+          <span class="setting-label">开启语音播报</span>
+          <label class="toggle">
+            <input type="checkbox" id="voiceEnabled">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row" id="ttsEngineRow" style="display:none;">
+          <span class="setting-label">TTS 引擎</span>
+          <select id="ttsEngineSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            <option value="web">浏览器内置</option>
+            <option value="edge">Edge TTS（高质量）</option>
+          </select>
+        </div>
+        <div class="voice-row" id="voiceSettings" style="display:none;">
+          <select class="voice-select" id="voiceSelect"></select>
+          <button class="voice-test-btn" id="voiceTest">试听</button>
+        </div>
+        <div class="setting-row" id="ttsVoiceRow" style="display:none;">
+          <span class="setting-label">Edge 音色</span>
+          <select id="ttsVoiceSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);min-width:160px;">
+            <option value="zh-CN-YunyangNeural">云扬（男）- 新闻播报</option>
+            <option value="zh-CN-YunjianNeural">云健（男）- 沉稳大气</option>
+            <option value="zh-CN-YunxiaNeural">云夏（男）- 年轻活力</option>
+            <option value="zh-CN-XiaoxiaoNeural">晓晓（女）- 温柔清晰</option>
+            <option value="zh-CN-XiaoyiNeural">晓伊（女）- 活泼俏皮</option>
+            <option value="zh-CN-liaoning-XiaobeiNeural">晓北（女·东北口音）</option>
+            <option value="zh-CN-shaanxi-XiaoniNeural">晓妮（女·陕西口音）</option>
+          </select>
+          <button class="voice-test-btn" id="ttsVoiceTest" style="margin-left:4px;">试听</button>
+        </div>
+        <div class="setting-row" id="voiceSpeedRow" style="display:none;">
+          <span class="setting-label">播报语速</span>
+          <select class="voice-select" id="voiceRate" style="width:80px;">
+            <option value="1">正常</option>
+            <option value="1.5" selected>偏快</option>
+            <option value="2">快</option>
+          </select>
+        </div>
+        <div class="setting-row" id="voiceInterruptModeRow" style="display:none;">
+          <span class="setting-label">播报模式</span>
+          <select class="voice-select" id="voiceInterruptMode" style="width:140px;">
+            <option value="complete">完整播报</option>
+            <option value="immediate">即时中断</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">定时静音</span>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;">
+            <input type="checkbox" id="ttsSilentEnabled" style="width:auto;"> 启用
+          </label>
+        </div>
+        <div class="setting-row" id="ttsSilentPeriodsRow" style="display:none;">
+          <span class="setting-label">静音时段</span>
+          <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;gap:4px;align-items:center;">
+              <input type="time" id="ttsSilentStart1" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+              <span style="font-size:12px;">至</span>
+              <input type="time" id="ttsSilentEnd1" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            </div>
+            <div style="display:flex;gap:4px;align-items:center;">
+              <input type="time" id="ttsSilentStart2" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+              <span style="font-size:12px;">至</span>
+              <input type="time" id="ttsSilentEnd2" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 主题皮肤已移除，仅保留右下角白色/暗色切换 -->
+
+      <!-- 自选股异动提醒 -->
+      <div class="settings-section">
+        <div class="settings-section-title">自选股异动提醒</div>
+        <div class="setting-row">
+          <span class="setting-label">涨跌幅阈值(%)</span>
+          <input type="number" id="alertChangePercent" value="5" min="1" max="20" step="0.5" style="width:60px;font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">成交量倍数</span>
+          <input type="number" id="alertVolumeRatio" value="2" min="1" max="10" step="0.5" style="width:60px;font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+          <span style="font-size:11px;color:var(--text-secondary);margin-left:4px;">相对20日均量</span>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">振幅阈值(%)</span>
+          <input type="number" id="alertAmplitude" value="8" min="2" max="30" step="0.5" style="width:60px;font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">触发模式</span>
+          <select id="alertTriggerMode" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            <option value="any">任一条件满足</option>
+            <option value="all">全部条件满足</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">冷却时间(秒)</span>
+          <input type="number" id="alertCooldown" value="300" min="60" max="3600" step="60" style="width:80px;font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+        </div>
+        <div class="setting-hint" style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
+          智能阈值已启用：基于ATR动态调整涨跌幅阈值，波动大的股票自动放宽
+        </div>
+      </div>
+
       <!-- 关于 -->
       <div class="settings-section">
         <div class="settings-section-title">关于</div>
         <div class="setting-row">
           <span class="setting-label">版本</span>
-          <span style="font-size:13px; color:#666;">v3.11.1（开源版）</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">许可证</span>
-          <a href="#" onclick="showLicenseDialog(); return false;" style="font-size:13px; color:#0366d6; text-decoration:none;">MIT License</a>
+          <span style="font-size:13px; color:#666;">v4.0.0（开源版）</span>
         </div>
         <div class="setting-row">
           <span class="setting-label">项目主页</span>
@@ -340,7 +428,7 @@
     <div class="update-content">
       <div class="update-info">
         <div class="update-version">
-          <span class="update-current">当前版本: v3.11.1</span>
+          <span class="update-current">当前版本: v4.0.0</span>
           <span class="update-arrow">→</span>
           <span class="update-latest">最新版本: <span id="updateLatestVersion"></span></span>
         </div>

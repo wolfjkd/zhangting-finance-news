@@ -8,6 +8,7 @@ __pycache__/
 # WorkBuddy / Trae 本地开发目录
 .workbuddy/
 .workbuddy记忆目录/
+.trae/
 
 # IDE
 .idea/

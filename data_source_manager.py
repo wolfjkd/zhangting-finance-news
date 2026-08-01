@@ -373,42 +373,14 @@ class DataSourceManager:
     def _init_default_sources(self):
         default_sources = [
             DataSourceConfig(
-                id="ztfi", name="实时聚合", type=DataSourceType.WEBSOCKET,
-                enabled=True, priority=1, description="聚合15家主流财经资讯源实时推送：财联社、新浪财经、东方财富、同花顺、华尔街见闻、格隆汇、选股宝、科创板日报、时报快讯、e公司、北京商报、人民财讯、央视新闻、新华社、科创版日报"
-            ),
-            DataSourceConfig(
-                id="eastmoney", name="东方财富公告", type=DataSourceType.API,
-                enabled=True, priority=2, description="东财重要公告",
-                endpoints={"announcements": "https://np-anotice-stock.eastmoney.com/api/security/ann"},
-                poll_interval=300
-            ),
-            DataSourceConfig(
-                id="research", name="券商研报", type=DataSourceType.API,
-                enabled=False, priority=4, description="研报评级变动",
-                endpoints={"reports": "https://reportapi.eastmoney.com/report/list"},
-                poll_interval=600
-            ),
-            DataSourceConfig(
-                id="northbound", name="北向资金", type=DataSourceType.API,
-                enabled=True, priority=6, description="实时北向资金流向",
-                endpoints={"realtime": "https://push2delay.eastmoney.com/api/qt/kamt.rtmin/get"},
-                poll_interval=60
-            ),
-            DataSourceConfig(
-                id="dragon_tiger", name="龙虎榜", type=DataSourceType.API,
-                enabled=True, priority=3, description="每日龙虎榜数据",
-                endpoints={"daily": "https://push2.eastmoney.com/api/qt/clist/get"},
-                poll_interval=300
-            ),
-            DataSourceConfig(
-                id="ann_interpret", name="公告解读", type=DataSourceType.API,
-                enabled=True, priority=5, description="AI解读公告要点",
-                endpoints={"base": "https://np-anotice-stock.eastmoney.com/api/security/ann"},
-                poll_interval=300
+                id="akshare_beta", name="涨停聚合（Beta）", type=DataSourceType.API,
+                enabled=True, priority=1,
+                description="基于AKShare聚合：财联社电报、同花顺财经、央视新闻、东方财富个股资讯。独立数据源，不依赖鼓掌财经，支持多源降级切换。",
+                poll_interval=40
             ),
             DataSourceConfig(
                 id="foreign_news", name="外网资讯", type=DataSourceType.API,
-                enabled=True, priority=7, 
+                enabled=True, priority=2,
                 description="汇集9大外网资讯源：Bloomberg（彭博社）、CNBC（财经新闻）、BBC News（国际新闻）、X(Twitter)重要账号（@elonmusk/@OpenAI/@ChineseWSJ等）、Reddit（热门话题）、Google News（新闻聚合）、TechCrunch（科技创业）、Hacker News（科技前沿）、Wired（深度科技），覆盖财经、科技、政策、全球市场等领域（需自备代理）",
                 endpoints={
                     "bloomberg": "https://feeds.bloomberg.com",
@@ -422,6 +394,58 @@ class DataSourceManager:
                     "wired": "https://www.wired.com/feed/rss"
                 },
                 poll_interval=120
+            ),
+            DataSourceConfig(
+                id="tushare", name="Tushare 数据源", type=DataSourceType.API,
+                enabled=False, priority=3,
+                description="【需自行配置 Token】Tushare Pro 金融数据接口。"
+                            "功能随 Token 权限等级开放：日线行情、股票基础信息（免费）；"
+                            "财经新闻、资金流向、龙虎榜、涨停板（需高积分Token）。"
+                            "Token 获取：tushare.pro 注册",
+                poll_interval=300
+            ),
+            DataSourceConfig(
+                id="wind", name="Wind 数据源", type=DataSourceType.API,
+                enabled=False, priority=4,
+                description="【需自行配置 API Key】万得 Wind 金融数据。"
+                            "能力：财经新闻 RAG 搜索、上市公司公告、宏观经济指标、"
+                            "A股/港股/美股行情与基本面、基金ETF、债券、指数板块。"
+                            "API Key 获取：aifinmarket.wind.com.cn 开发者中心",
+                poll_interval=120
+            ),
+            DataSourceConfig(
+                id="ztfi", name="传统聚合", type=DataSourceType.WEBSOCKET,
+                enabled=True, priority=5, description="聚合15家主流财经资讯源实时推送：财联社、新浪财经、东方财富、同花顺、华尔街见闻、格隆汇、选股宝、科创板日报、时报快讯、e公司、北京商报、人民财讯、央视新闻、新华社、科创版日报"
+            ),
+            DataSourceConfig(
+                id="eastmoney", name="东方财富公告", type=DataSourceType.API,
+                enabled=False, priority=6, description="东财重要公告",
+                endpoints={"announcements": "https://np-anotice-stock.eastmoney.com/api/security/ann"},
+                poll_interval=300
+            ),
+            DataSourceConfig(
+                id="research", name="券商研报", type=DataSourceType.API,
+                enabled=False, priority=7, description="研报评级变动",
+                endpoints={"reports": "https://reportapi.eastmoney.com/report/list"},
+                poll_interval=600
+            ),
+            DataSourceConfig(
+                id="northbound", name="北向资金", type=DataSourceType.API,
+                enabled=False, priority=8, description="实时北向资金流向",
+                endpoints={"realtime": "https://push2delay.eastmoney.com/api/qt/kamt.rtmin/get"},
+                poll_interval=60
+            ),
+            DataSourceConfig(
+                id="dragon_tiger", name="龙虎榜", type=DataSourceType.API,
+                enabled=False, priority=9, description="每日龙虎榜数据",
+                endpoints={"daily": "https://push2.eastmoney.com/api/qt/clist/get"},
+                poll_interval=300
+            ),
+            DataSourceConfig(
+                id="ann_interpret", name="公告解读", type=DataSourceType.API,
+                enabled=False, priority=10, description="AI解读公告要点",
+                endpoints={"base": "https://np-anotice-stock.eastmoney.com/api/security/ann"},
+                poll_interval=300
             ),
         ]
         for source in default_sources:
@@ -533,6 +557,18 @@ class DataSourceManager:
             logger.info("启动外网资讯轮询线程，间隔 %d 秒", source.poll_interval)
             self._start_poll_thread("foreign_news", self._fetch_foreign_news, source.poll_interval)
             self._start_x_priority_thread()
+        elif source_id == "akshare_beta":
+            logger.info("启动涨停聚合（Beta）轮询线程，间隔 %d 秒", source.poll_interval)
+            self._init_akshare_source()
+            self._start_poll_thread("akshare_beta", self._fetch_akshare_news, source.poll_interval)
+        elif source_id == "tushare":
+            logger.info("启动 Tushare 数据源轮询线程，间隔 %d 秒", source.poll_interval)
+            self._init_tushare_source()
+            self._start_poll_thread("tushare", self._fetch_tushare_news, source.poll_interval)
+        elif source_id == "wind":
+            logger.info("启动 Wind 数据源轮询线程，间隔 %d 秒", source.poll_interval)
+            self._init_wind_source()
+            self._start_poll_thread("wind", self._fetch_wind_news, source.poll_interval)
 
     def _start_x_priority_thread(self):
         """启动X平台独立优先轮询线程（30秒间隔）"""
@@ -2391,6 +2427,157 @@ class DataSourceManager:
         
         return messages
 
+    # ===== 涨停聚合（Beta）数据源 =====
+    def _init_akshare_source(self):
+        """初始化 AKShare 数据源实例"""
+        try:
+            from akshare_source import AKShareSource
+            self._akshare_source = AKShareSource(
+                dispatch_callback=self._dispatch_message,
+                seen_ids=self._seen_ids.get("akshare_beta", set()),
+                source_id="akshare_beta"
+            )
+            self._seen_ids["akshare_beta"] = self._akshare_source._seen_ids
+        except ImportError:
+            logger.error("akshare_source 模块导入失败，请确认 akshare 已安装")
+            self._akshare_source = None
+        except Exception as e:
+            logger.error("初始化涨停聚合（Beta）失败: %s", e)
+            self._akshare_source = None
+
+    def _init_tushare_source(self):
+        """初始化 Tushare 数据源实例"""
+        try:
+            from tushare_source import TushareSource
+            self._tushare_source = TushareSource(
+                dispatch_callback=self._dispatch_message,
+                seen_ids=self._seen_ids.get("tushare", set()),
+                source_id="tushare"
+            )
+            self._seen_ids["tushare"] = self._tushare_source._seen_ids
+        except ImportError:
+            logger.error("tushare_source 模块导入失败")
+            self._tushare_source = None
+        except Exception as e:
+            logger.error("初始化 Tushare 数据源失败: %s", e)
+            self._tushare_source = None
+
+    def _init_wind_source(self):
+        """初始化 Wind 数据源实例"""
+        try:
+            from wind_source import WindSource
+            self._wind_source = WindSource(
+                dispatch_callback=self._dispatch_message,
+                seen_ids=self._seen_ids.get("wind", set()),
+                source_id="wind"
+            )
+            self._seen_ids["wind"] = self._wind_source._seen_ids
+        except ImportError:
+            logger.error("wind_source 模块导入失败")
+            self._wind_source = None
+        except Exception as e:
+            logger.error("初始化 Wind 数据源失败: %s", e)
+            self._wind_source = None
+
+    def _fetch_akshare_news(self):
+        """涨停聚合（Beta）轮询入口"""
+        if not hasattr(self, '_akshare_source') or self._akshare_source is None:
+            self._init_akshare_source()
+        if self._akshare_source is None:
+            return
+
+        try:
+            self._akshare_source.fetch_all()
+            # 每5轮询一次RSS（5分钟）
+            if not hasattr(self, '_rss_counter'):
+                self._rss_counter = 0
+            self._rss_counter += 1
+            if self._rss_counter >= 5:
+                self._rss_counter = 0
+                self._fetch_rss_feeds()
+        except Exception as e:
+            logger.error("涨停聚合（Beta）轮询失败: %s", e)
+
+    def set_akshare_stock_codes(self, codes: List[str]):
+        """更新自选股代码列表，用于 AKShare 个股资讯"""
+        if hasattr(self, '_akshare_source') and self._akshare_source:
+            self._akshare_source.set_stock_codes(codes)
+
+    def _fetch_tushare_news(self):
+        """Tushare 数据源轮询入口"""
+        if not hasattr(self, '_tushare_source') or self._tushare_source is None:
+            self._init_tushare_source()
+        if self._tushare_source is None:
+            return
+        try:
+            self._tushare_source.fetch_all()
+        except Exception as e:
+            logger.error("Tushare 数据源轮询失败: %s", e)
+
+    def _fetch_wind_news(self):
+        """Wind 数据源轮询入口"""
+        if not hasattr(self, '_wind_source') or self._wind_source is None:
+            self._init_wind_source()
+        if self._wind_source is None:
+            return
+        try:
+            self._wind_source.fetch_all()
+        except Exception as e:
+            logger.error("Wind 数据源轮询失败: %s", e)
+
+    def _fetch_rss_feeds(self):
+        """获取媒体 RSS 订阅源（作为涨停聚合的补充）"""
+        rss_sources = [
+            {"url": "https://www.cls.cn/rss", "name": "财联社RSS", "source_detail": "财联社RSS"},
+            {"url": "https://wallstreetcn.com/rss", "name": "华尔街见闻RSS", "source_detail": "华尔街见闻RSS"},
+        ]
+        import feedparser
+        for rss in rss_sources:
+            try:
+                feed = feedparser.parse(rss["url"])
+                if not feed.entries:
+                    continue
+                messages = []
+                seen = self._seen_ids.get("akshare_beta", set())
+                for entry in feed.entries[:10]:  # 每个源最多10条
+                    title = entry.get('title', '').strip()
+                    if not title or title in seen:
+                        continue
+                    seen.add(title)
+                    content = entry.get('summary', entry.get('description', ''))[:500]
+                    pub_time = ''
+                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                        import time as _time
+                        ctime = int(_time.mktime(entry.published_parsed))
+                        pub_time = _time.strftime('%H:%M:%S', entry.published_parsed)
+                    else:
+                        ctime = int(time.time())
+
+                    messages.append({
+                        'aid': _make_aid("akshare_beta", title + str(ctime)),
+                        'title': title,
+                        'content': content,
+                        'comefrom': f'涨停聚合（Beta）·{rss["source_detail"]}',
+                        'ctime': ctime,
+                        'ptime': pub_time,
+                        'categoryId': 0,
+                        'stocks': [],
+                        'child': [],
+                        'source_id': 'akshare_beta',
+                        'source_name': '涨停聚合（Beta）',
+                        'source_detail': rss["source_detail"],
+                    })
+
+                for i, msg in enumerate(messages):
+                    self._dispatch_message(msg)
+                    if i < len(messages) - 1:
+                        time.sleep(0.5)
+
+                if messages:
+                    logger.info("RSS %s: 推送 %d 条", rss["name"], len(messages))
+            except Exception as e:
+                logger.debug("RSS %s 获取失败: %s", rss["name"], e)
+
     # ===== 消息处理 =====
     def _process_source_messages(self, source_id: str, messages: List[Dict]):
         if not messages:
@@ -2436,6 +2623,24 @@ class DataSourceManager:
     def stop_all_sources(self):
         self.running = False
         self._stop_delay_push_thread()
+        # 停止 akshare 推送释放线程
+        if hasattr(self, '_akshare_source') and self._akshare_source:
+            try:
+                self._akshare_source.stop()
+            except Exception as e:
+                logger.error("停止 akshare_source 失败: %s", e)
+        # 停止 tushare 数据源
+        if hasattr(self, '_tushare_source') and self._tushare_source:
+            try:
+                self._tushare_source.stop()
+            except Exception as e:
+                logger.error("停止 tushare_source 失败: %s", e)
+        # 停止 wind 数据源
+        if hasattr(self, '_wind_source') and self._wind_source:
+            try:
+                self._wind_source.stop()
+            except Exception as e:
+                logger.error("停止 wind_source 失败: %s", e)
         for source_id in self.sources:
             self._stop_source(source_id)
 
@@ -2611,6 +2816,34 @@ class DataSourceManager:
             if data and data.get("data"):
                 return {"success": True, "message": "连接成功", "latency": latency}
             return {"success": False, "message": "API 返回异常", "latency": latency}
+
+        if source_id == "tushare":
+            t0 = time.time()
+            try:
+                from tushare_source import TushareSource
+                tmp = TushareSource(dispatch_callback=lambda m: None, seen_ids=set(), source_id="tushare")
+                result = tmp.test_connection()
+                latency = int((time.time() - t0) * 1000)
+                return {"success": result.get("success", False),
+                        "message": result.get("message", "未知"),
+                        "latency": latency}
+            except Exception as e:
+                latency = int((time.time() - t0) * 1000)
+                return {"success": False, "message": f"测试失败: {e}", "latency": latency}
+
+        if source_id == "wind":
+            t0 = time.time()
+            try:
+                from wind_source import WindSource
+                tmp = WindSource(dispatch_callback=lambda m: None, seen_ids=set(), source_id="wind")
+                result = tmp.test_connection()
+                latency = int((time.time() - t0) * 1000)
+                return {"success": result.get("success", False),
+                        "message": result.get("message", "未知"),
+                        "latency": latency}
+            except Exception as e:
+                latency = int((time.time() - t0) * 1000)
+                return {"success": False, "message": f"测试失败: {e}", "latency": latency}
 
         if source_id == "foreign_news":
             # 1) 检测代理（Clash/Mihomo/v2rayN/系统代理/环境变量等）
