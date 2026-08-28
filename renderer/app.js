@@ -2857,6 +2857,23 @@
       $favoritesDialog.style.display = 'flex';
     });
 
+    // 自绘标题栏窗口按钮（frameless，见 DESIGN_SYSTEM.md A.6）
+    document.getElementById('btnMinimize')?.addEventListener('click', () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.minimize_window) {
+        pywebview.api.minimize_window().catch(() => {});
+      }
+    });
+    document.getElementById('btnMaximize')?.addEventListener('click', () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize) {
+        pywebview.api.toggle_maximize().catch(() => {});
+      }
+    });
+    document.getElementById('btnClose')?.addEventListener('click', () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.exit_app) {
+        pywebview.api.exit_app();
+      }
+    });
+
     $searchDialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
       $searchDialog.style.display = 'none';
     });
@@ -3816,6 +3833,96 @@
     }
   });
 
+  // ===== frameless 窗口边缘拖拽缩放 =====
+  // pywebview 官方限制：frameless 窗口不支持鼠标 resize（resizable=True 无效）。
+  // 方案：JS 检测窗口边缘热区（8px），按住拖动时实时调用后端 resize_window(w,h) 缩放。
+  function initFramelessResize() {
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.resize_window) return;
+    const EDGE = 8;               // 边缘热区宽度
+    const MIN_W = 320, MIN_H = 400; // 与 app.py min_size 一致
+    let resizing = null;          // { edge: 'e'|'s'|'se', startX, startY, startW, startH }
+    let hoverEdge = null;
+
+    const api = window.pywebview.api;
+
+    function getEdge(e) {
+      const w = window.innerWidth, h = window.innerHeight;
+      const x = e.clientX, y = e.clientY;
+      const right = w - x <= EDGE;
+      const left = x <= EDGE;
+      const bottom = h - y <= EDGE;
+      // 顶部边缘排除标题栏区域（标题栏是拖拽区，不是 resize 热区，避免冲突）
+      const titlebarH = 32;
+      const top = y <= EDGE && y > titlebarH;
+      if (right && bottom) return 'se';
+      if (left && bottom) return 'sw';
+      if (right && top) return 'ne';
+      if (left && top) return 'nw';
+      if (right) return 'e';
+      if (left) return 'w';
+      if (bottom) return 's';
+      if (top) return 'n';
+      return null;
+    }
+
+    function cursorFor(edge) {
+      if (edge === 'e' || edge === 'w') return 'ew-resize';
+      if (edge === 'n' || edge === 's') return 'ns-resize';
+      if (edge === 'se' || edge === 'nw') return 'nwse-resize';
+      if (edge === 'sw' || edge === 'ne') return 'nesw-resize';
+      return '';
+    }
+
+    document.addEventListener('mousemove', (e) => {
+      if (resizing) {
+        // 实时缩放
+        let nw = resizing.startW, nh = resizing.startH;
+        const dx = e.clientX - resizing.startX;
+        const dy = e.clientY - resizing.startY;
+        if (resizing.edge.includes('e')) nw = resizing.startW + dx;
+        if (resizing.edge.includes('s')) nh = resizing.startH + dy;
+        if (resizing.edge.includes('w')) nw = resizing.startW - dx;
+        if (resizing.edge.includes('n')) nh = resizing.startH - dy;
+        nw = Math.max(MIN_W, Math.round(nw));
+        nh = Math.max(MIN_H, Math.round(nh));
+        api.resize_window(nw, nh).catch(() => {});
+        return;
+      }
+      const edge = getEdge(e);
+      if (edge !== hoverEdge) {
+        hoverEdge = edge;
+        document.body.style.cursor = cursorFor(edge) || '';
+      }
+    });
+
+    document.addEventListener('mousedown', (e) => {
+      const edge = getEdge(e);
+      if (!edge) return;
+      // 边缘按下：进入缩放模式，阻止默认行为（避免选中文本等）
+      e.preventDefault();
+      resizing = {
+        edge,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: window.innerWidth,
+        startH: window.innerHeight
+      };
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (resizing) {
+        resizing = null;
+        document.body.style.cursor = '';
+      }
+    });
+
+    // 离开窗口时复位
+    document.addEventListener('mouseleave', () => {
+      hoverEdge = null;
+      if (!resizing) document.body.style.cursor = '';
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       try { initThemeUI(); } catch (e) { console.warn('[theme]', e); }
@@ -3824,6 +3931,16 @@
   } else {
     try { initThemeUI(); } catch (e) { console.warn('[theme]', e); }
     waitForApi(30);
+  }
+
+  // frameless 边缘缩放依赖 pywebview js_api（resize_window），
+  // 必须等 pywebviewready 注入完成后绑定；在此独立监听，不依赖 init() 是否执行。
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.resize_window) {
+    try { initFramelessResize(); } catch (e) { console.warn('[resize]', e); }
+  } else {
+    window.addEventListener('pywebviewready', () => {
+      try { initFramelessResize(); } catch (e) { console.warn('[resize]', e); }
+    });
   }
 
   // 初始化主题设置面板 UI（attachUI 绑定卡片点击 + 恢复上次主题）

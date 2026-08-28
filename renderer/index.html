@@ -3,11 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>涨停财经聚合播报 v4.0.0版（开源版）</title>
+  <title>涨停财经聚合播报 v4.1.0版（开源版）</title>
   <link rel="stylesheet" href="style.css">
   <script src="modules/minute-chart.js"></script>
 </head>
 <body>
+  <!-- 自绘标题栏（frameless：随主题语义 token 全色跟随，见 DESIGN_SYSTEM.md A.6）
+       .pywebview-drag-region = pywebview 官方拖拽区类（WebView2 下 -webkit-app-region 无效，
+       必须用此类让 customize.js 识别拖拽区；按钮区不在此类内所以点击正常） -->
+  <div class="titlebar" id="titlebar">
+    <div class="titlebar-left pywebview-drag-region">
+      <svg class="titlebar-icon" viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
+        <rect x="0.5" y="0.5" width="13" height="13" rx="3" fill="#0366D6"/>
+        <path d="M3 9 C3.7 8, 4.4 7.6, 5 7.3 C5.6 7, 5.9 6.6, 6.4 5.9 C6.9 5.2, 7.6 4.6, 8.7 4.2" stroke="#FFFFFF" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+        <polygon points="9.4,3.6 8.0,3.9 9.0,4.7" fill="#FFFFFF"/>
+        <circle cx="9.5" cy="3.7" r="0.8" fill="#D73A49"/>
+        <path d="M5 10.5 Q7 11 9 10" stroke="#FFFFFF" stroke-width="0.7" stroke-linecap="round" fill="none" opacity="0.8"/>
+      </svg>
+      <span class="titlebar-title">涨停财经聚合播报 v4.1.0</span>
+    </div>
+    <!-- 中间可拖拽填充区：扩展拖拽范围到接近右侧按钮，但不侵入按钮区 -->
+    <div class="titlebar-filler pywebview-drag-region"></div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" id="btnMinimize" title="最小化" aria-label="最小化">
+        <svg viewBox="0 0 10 10" width="10" height="10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="titlebar-btn" id="btnMaximize" title="最大化" aria-label="最大化">
+        <svg viewBox="0 0 10 10" width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="titlebar-btn titlebar-btn-close" id="btnClose" title="关闭" aria-label="关闭">
+        <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 0L10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+    </div>
+  </div>
   <!-- 顶部工具栏 -->
   <div class="toolbar">
     <div class="toolbar-left">
@@ -429,7 +457,7 @@
         <div class="settings-section-title">关于</div>
         <div class="setting-row">
           <span class="setting-label">版本</span>
-          <span style="font-size:13px; color:#666;">v4.0.0（开源版）</span>
+          <span style="font-size:13px; color:#666;">v4.1.0（开源版）</span>
         </div>
         <div class="setting-row">
           <span class="setting-label">项目主页</span>
@@ -458,7 +486,7 @@
     <div class="update-content">
       <div class="update-info">
         <div class="update-version">
-          <span class="update-current">当前版本: v4.0.0</span>
+          <span class="update-current">当前版本: v4.1.0</span>
           <span class="update-arrow">→</span>
           <span class="update-latest">最新版本: <span id="updateLatestVersion"></span></span>
         </div>

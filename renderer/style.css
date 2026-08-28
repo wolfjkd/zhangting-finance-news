@@ -20,6 +20,7 @@
   --tag-text: #586069;
   --bg-secondary: #f7f8fa;
   --radius: 6px;
+  --titlebar-h: 32px;
   --toolbar-h: 40px;
   --statusbar-h: 28px;
   --priority-critical-bg: #fff5f5;
@@ -145,6 +146,93 @@ html, body {
   user-select: none;
 }
 
+/* ===== 自绘标题栏（frameless，随主题 token 全色跟随，见 DESIGN_SYSTEM.md A.6） =====
+   拖拽：titlebar-left 使用 pywebview 官方 .pywebview-drag-region 类（WebView2 下
+   -webkit-app-region 无效，pywebview 用 JS 检测该类元素实现拖拽） */
+.titlebar {
+  height: var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+  position: relative;
+  z-index: 10;
+}
+
+/* 拖拽区左半部（图标+标题）：鼠标按下时由 pywebview customize.js 识别为窗口拖动 */
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  min-width: 0;
+  overflow: hidden;
+  cursor: default;
+}
+
+.titlebar-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.titlebar-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 中间可拖拽填充区：占满 left 与 controls 之间的空白，扩展拖拽范围但避开按钮区 */
+.titlebar-filler {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+}
+
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.titlebar-btn {
+  width: 40px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.titlebar-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.titlebar-btn-close:hover {
+  background: var(--red);
+  color: #fff;
+}
+
+/* 深色模式显式兜底（防止暗色下按钮 hover 背景异常） */
+body.dark-mode .titlebar {
+  background: var(--bg-card) !important;
+  border-bottom-color: var(--border) !important;
+}
+body.dark-mode .titlebar-btn-close:hover {
+  background: var(--red) !important;
+  color: #fff !important;
+}
+
 /* ===== 工具栏 ===== */
 .toolbar {
   height: var(--toolbar-h);
@@ -254,7 +342,7 @@ body.dark-mode .toolbar-right {
 /* ===== 新闻容器 ===== */
 .news-container {
   position: absolute;
-  top: var(--toolbar-h);
+  top: calc(var(--titlebar-h) + var(--toolbar-h));
   bottom: calc(var(--statusbar-h) + 28px);
   left: 0;
   right: 0;
@@ -741,6 +829,11 @@ body.dark-mode .toolbar-right {
   justify-content: space-between;
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  border-radius: 10px 10px 0 0;
 }
 
 .settings-header h3 {
@@ -1026,6 +1119,11 @@ body.dark-mode .toolbar-right {
   justify-content: space-between;
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  border-radius: 10px 10px 0 0;
 }
 
 .dialog-header h3 {
@@ -1408,6 +1506,8 @@ body.dark-mode .toolbar-right {
   border-radius: 10px;
   width: 90%;
   max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
   display: flex;
   flex-direction: column;
@@ -1418,6 +1518,11 @@ body.dark-mode .toolbar-right {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px 10px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  border-radius: 10px 10px 0 0;
 }
 
 .datasource-title {

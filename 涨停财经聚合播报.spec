@@ -32,7 +32,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='涨停财经聚合播报_v4.0.0',
+    name='涨停财经聚合播报_v4.1.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

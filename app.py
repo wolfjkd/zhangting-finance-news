@@ -150,7 +150,7 @@ def _apply_initial_theme(window):
             logger.debug(f'获取 renderer_hwnd 失败: {e}')
 
         if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.0.0版')
+            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.1.0版')
 
         if not hwnd:
             logger.warning('初始主题应用失败: 未找到窗口句柄')
@@ -174,7 +174,7 @@ class Api:
         self._main_hwnd = None
 
     def minimize_window(self):
-        self._window.minimize()
+        self._window().minimize()
         return json.dumps({'status': 'ok'})
 
     def exit_app(self):
@@ -191,11 +191,21 @@ class Api:
             return json.dumps({'status': 'error', 'message': str(e)})
 
     def toggle_maximize(self):
-        if self._window.is_maximized:
-            self._window.restore()
-        else:
-            self._window.maximize()
-        return json.dumps({'status': 'ok'})
+        # 注意：pywebview Window 对象没有 is_maximized 属性（会 AttributeError），
+        # 用自维护标志 _is_maximized 记录状态。
+        try:
+            window = self._window()
+            if getattr(self, '_is_maximized', False):
+                window.restore()
+                self._is_maximized = False
+            else:
+                window.maximize()
+                self._is_maximized = True
+            logger.info(f'toggle_maximize -> {"restore" if not self._is_maximized else "maximize"}')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.warning(f'toggle_maximize 异常: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
 
     def toggle_pin(self, pinned):
         logger.info(f'=== toggle_pin 调用, pinned={pinned} ===')
@@ -216,13 +226,13 @@ class Api:
             return json.dumps({'status': 'error', 'message': str(e)})
 
     def resize_window(self, width, height):
-        self._window.resize(int(width), int(height))
+        self._window().resize(int(width), int(height))
         return json.dumps({'status': 'ok'})
 
     def get_window_size(self):
         return json.dumps({
-            'width': self._window.width,
-            'height': self._window.height
+            'width': self._window().width,
+            'height': self._window().height
         })
 
     def _find_hwnd(self):
@@ -241,7 +251,7 @@ class Api:
         except Exception as e:
             logger.debug(f'从 renderer 获取 HWND 失败: {e}')
 
-        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.0.0版')
+        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.1.0版')
         if hwnd:
             self._main_hwnd = hwnd
             return hwnd
@@ -297,7 +307,7 @@ class Api:
             logger.warning(f'读取设置失败: {e}')
             return json.dumps({})
 
-    _CURRENT_VERSION = 'v4.0.0'
+    _CURRENT_VERSION = 'v4.1.0'
     _VERSION_JSON_URL = 'https://raw.githubusercontent.com/wolfjkd/ZTFI-News/main/version.json'
     _RELEASES_API_URL = 'https://api.github.com/repos/wolfjkd/ZTFI-News/releases/latest'
 
@@ -615,8 +625,9 @@ class Api:
 
     def resize_window(self, width, height):
         try:
-            if self._window:
-                self._window.resize(width, height)
+            win = self._window()
+            if win:
+                win.resize(width, height)
                 return json.dumps({'status': 'ok'})
             return json.dumps({'status': 'no_window'})
         except Exception as e:
@@ -1348,21 +1359,21 @@ def get_html_path():
 
 
 def main():
-    logger.info('=== 涨停财经聚合播报 v4.0.0版（开源版）启动 ===')
+    logger.info('=== 涨停财经聚合播报 v4.1.0版（开源版）启动 ===')
 
     _init_seen_db()
     _cleanup_old_seen_aids(days=7)
 
     # 读取保存的窗口尺寸
-    default_width, default_height = 500, 800
+    default_width, default_height = 450, 900
     try:
         config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
         config_path = os.path.join(config_dir, 'window_size.json')
         if os.path.exists(config_path):
             with open(config_path, 'r', encoding='utf-8') as f:
                 size_data = json.loads(f.read())
-                default_width = size_data.get('width', 500)
-                default_height = size_data.get('height', 800)
+                default_width = size_data.get('width', 450)
+                default_height = size_data.get('height', 900)
                 logger.info(f'读取到窗口尺寸: {default_width}x{default_height}')
     except Exception as e:
         logger.warning(f'读取窗口尺寸失败，使用默认值: {e}')
@@ -1373,7 +1384,7 @@ def main():
     api.migrate_config_if_needed()
 
     window = webview.create_window(
-        '涨停财经聚合播报 v4.0.0版',
+        '涨停财经聚合播报 v4.1.0版',
         url=get_html_path(),
         width=default_width,
         height=default_height,
@@ -1381,6 +1392,8 @@ def main():
         resizable=True,
         on_top=False,
         text_select=True,
+        frameless=True,    # 自绘标题栏：移除原生 Windows 标题栏，由 HTML/CSS 渲染（见 DESIGN_SYSTEM.md A.6）
+        easy_drag=False,   # 关闭全窗拖拽（否则按钮点击被吞）：拖拽用 titlebar 的 .pywebview-drag-region 类 + JS 边缘缩放
         js_api=api
     )
 

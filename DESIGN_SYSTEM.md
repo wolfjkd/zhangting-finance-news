@@ -5,7 +5,7 @@
 
 > ⚠️ **范围勘误**：本项目包含两个界面表面。
 > - **宣传展示页 `ztfi-news-landing.html`**：使用下方深蓝 `#1A237E` + 金 `#FFC107` 的深色金融主题。
-> - **桌面客户端 `renderer/index.html`**：使用 `UI_DESIGN_SPEC.md` 中定义的 GitHub 蓝 `#0366D6` / `#58A6FF` 浅色/深色双主题，窗口默认 **500×800**。
+> - **桌面客户端 `renderer/index.html`**：使用 `UI_DESIGN_SPEC.md` 中定义的 GitHub 蓝 `#0366D6` / `#58A6FF` 浅色/深色双主题，窗口默认 **450×900**。
 > 下文令牌主要针对宣传展示页；桌面客户端真实形态与令牌见附录 A。
 
 ---
@@ -36,7 +36,7 @@
 - **入口**：设置面板 →「主题皮肤」，5 个预设（科技蓝 / 护眼绿 / 经典黑 / 活力橙 / 少女粉）+ 1 张「亮/暗」卡，网格卡片一键切换。
 - **代码位置**：`renderer/themes.js` 的 `ThemeSystem` 对象；`index.html` 已引入该文件并在设置面板渲染网格；`app.js` 的 `initThemeGrid()` 绑定点击与激活高亮。
 - **每个预设覆盖完整 40 项语义色令牌**（含 `--stock-up/--stock-down` 涨红跌绿、`--bg-secondary`、`--priority-*-bg`、`--trial-*`、`--alert-*`、`--risk-*`、`--success/danger-*`、`--star-color` 等），切换通过往 `:root` 写行内变量实现，优先级高于任何类。
-- **与暗色开关互斥**：`applyTheme` 会摘除 `body.dark-mode` 类，并用感知亮度 `_detectDarkTone` 联动原生标题栏（`set_theme`）明暗；右下角亮/暗开关与预设双通道并存、不打架。
+- **与暗色开关互斥**：`applyTheme` 会摘除 `body.dark-mode` 类；标题栏为自绘（见 A.6），整栏背景/文字随预设语义 token 走，无需再依赖 DWM 原生栏切换。
 - **修复的隐藏 bug**：`--bg-secondary` 此前被 style.css L633 / app.js 隐私表格引用却一直未定义（全局唯一「使用但未定义」变量），已补齐。
 
 ---
@@ -389,8 +389,9 @@
 
 | 项目 | 值 | 说明 |
 |------|-----|------|
-| 默认窗口尺寸 | 500×800 px | `app.py` 默认尺寸，最小 320×400，可拉伸 |
-| 标题栏高度 | 32 px | 原生 Windows 标题栏（DWM 跟随深/浅主题） |
+| 默认窗口尺寸 | 450×900 px | `app.py` 默认尺寸，最小 320×400，可拉伸 |
+| 窗口形态 | 无边框自绘标题栏 | `frameless=True` + `easy_drag=True`，标题栏由 HTML/CSS 渲染（见 A.6） |
+| 标题栏高度 | 32 px | 自绘：左 窗口图标+标题，右 最小化/最大化/关闭按钮组（见 A.6） |
 | 工具栏高度 | 40 px | 连接状态 + 8 个图标按钮 |
 | 状态栏高度 | 28 px | 消息计数 / 赞赏 / 更新时间 / 主题切换 |
 | 风险提示条 | 22 px | 橙色文字，底部状态栏上方 |
@@ -472,7 +473,85 @@
 | 关键词/股票标签 | 12px（药丸） |
 | Toggle | 11px |
 
-### A.6 关键组件
+### A.6 自绘标题栏组件（frameless 方案）
+
+> 背景：原生 Windows 标题栏的 DWM 切换（`DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)`）只能翻转标题栏**文字/图标明暗**，标题栏**背景色由系统「应用模式」锁定**，无法随 App 内 6 套主题实时变色。改用 **`frameless=True` 自绘标题栏**后，整栏由 HTML/CSS 渲染，背景/文字/按钮 100% 跟随语义 token，任意预设一键全色跟随。
+
+**窗口参数**（`app.py` `webview.create_window`）
+```python
+window = webview.create_window(
+    '涨停财经聚合播报 v4.1.0版',
+    url=get_html_path(),
+    width=default_width, height=default_height,
+    min_size=(320, 400), resizable=True,
+    frameless=True,          # 移除原生标题栏
+    easy_drag=False,         # 关闭全窗拖拽（否则吞掉按钮点击）
+    text_select=True, js_api=api
+)
+```
+
+> ⚠️ **frameless 的三项关键机制（pywebview 6.2.1 + WebView2）**：
+> 1. **拖拽**：`-webkit-app-region: drag` 在 WebView2 下**无效**！pywebview 用 **JS 检测 `.pywebview-drag-region` 类元素**实现拖拽（customize.js `onBodyMouseDown` 向上遍历祖先匹配 `DRAG_REGION_SELECTOR`，默认 `.pywebview-drag-region`）。因此**拖拽区元素必须加该类**（本项目加在 `.titlebar-left` + `.titlebar-filler`）；按钮区（`.titlebar-controls`）不加 → 点击正常、互不干扰。**注意**：不能把类加在 `.titlebar` 本体（按钮会向上遍历误匹配到它）。
+> 2. **缩放**：pywebview 官方明确「frameless 窗口不支持鼠标拖拽 resize」。对策：`app.js` 的 `initFramelessResize()` 检测四边/四角 8px 热区 → 实时调后端 `resize_window(w,h)`（最小钳制 320×400；顶部热区排除标题栏 32px 避免与拖拽冲突）。
+> 3. **后端窗口方法**：`Api._window` 是 `lambda: window_ref`，调用必须写 `self._window().minimize()/.resize()/.width`（先调 lambda 拿 window 对象），直接 `self._window.minimize()` 会抛 `AttributeError`（历史 bug，已修复）。**且 `Window` 无 `is_maximized` 属性**（会 AttributeError），`toggle_maximize` 用自维护 `self._is_maximized` 标志。
+
+**结构**（`renderer/index.html`，置于 toolbar 之上）
+```html
+<div class="titlebar" id="titlebar">
+  <div class="titlebar-left pywebview-drag-region">
+    <svg class="titlebar-icon" viewBox="0 0 14 14"><!-- 品牌 Logo --></svg>
+    <span class="titlebar-title">涨停财经聚合播报 v4.1.0</span>
+  </div>
+  <div class="titlebar-filler pywebview-drag-region"><!-- 中间空白可拖，扩展拖拽范围 --></div>
+  <div class="titlebar-controls">
+    <button class="titlebar-btn" id="btnMinimize" title="最小化">
+      <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"/></svg>
+    </button>
+    <button class="titlebar-btn" id="btnMaximize" title="最大化">
+      <svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"/></svg>
+    </button>
+    <button class="titlebar-btn titlebar-btn-close" id="btnClose" title="关闭">
+      <svg viewBox="0 0 10 10"><path d="M0 0L10 10M10 0L0 10" stroke="currentColor"/></svg>
+    </button>
+  </div>
+</div>
+```
+
+**关键 CSS**（`renderer/style.css`，全部走 token）
+```css
+.titlebar {
+  height: 32px;                       /* 与 A.1 标题栏高度一致 */
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg-card);         /* 亮/暗/5 预设全跟随 */
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;           /* 整栏可拖拽 */
+  user-select: none; flex-shrink: 0;
+}
+.titlebar-controls { display: flex; -webkit-app-region: no-drag; }  /* 按钮区排除拖拽 */
+.titlebar-btn {
+  width: 40px; height: 32px; border: none; background: transparent;
+  color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.titlebar-btn:hover        { background: var(--hover); color: var(--text); }
+.titlebar-btn-close:hover  { background: var(--red);   color: #fff; }   /* 关闭钮 hover 红色 */
+.titlebar-title { font-size: 12px; color: var(--text-secondary); }
+```
+
+**行为**（`renderer/app.js`，pywebview js_api 已具备对应后端方法）
+| 按钮 | 后端方法 | 说明 |
+|------|---------|------|
+| 最小化 | `pywebview.api.minimize_window()` | `app.py` Api 已实现 |
+| 最大化/还原 | `pywebview.api.toggle_maximize()` | 已实现 |
+| 关闭 | `pywebview.api.exit_app()` | 已实现 |
+
+**设计要点**
+- 标题栏与工具栏**同底色**（`--bg-card`）、同一 `--border` 分隔线 → 视觉上是一体化顶部区，不突兀（这是当年自绘「裸条」不满意的核心修正）。
+- 关闭钮 hover 用 `--red`（状态语义：红=危险/关闭），与对话框关闭叉语义一致。
+- 拖拽区 `drag` / 交互区 `no-drag`：按钮、搜索框等可点元素必须排除。
+- 暗色预设（经典黑）下：`--bg-card:#1c2128`、`--text-secondary:#9aa4af`、关闭钮 hover `--red:#f85149`，整栏自动变暗。
+
+### A.7 关键组件
 
 **工具栏按钮**
 ```css
@@ -523,7 +602,7 @@
 }
 ```
 
-### A.7 待修正：涨跌幅颜色语义
+### A.8 待修正：涨跌幅颜色语义
 
 当前 `UI_DESIGN_SPEC.md` 将 `--green` 用于上涨、`--red` 用于下跌（美股惯例）。
 但本项目面向 A 股用户，**应采用「涨红跌绿」**：
