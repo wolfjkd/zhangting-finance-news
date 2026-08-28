@@ -5,20 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
-## [Unreleased]
+## [v4.1.0] - 2026-08-28
 
 ### Added
-- 设计规范（DESIGN_SYSTEM.md）：新增 Design Token 单一事实来源文档（圆角/间距/字阶/阴影/语义色梯度），与 Ardot 设计规范板 `719463203883100` 对齐
-- 主题皮肤设置 UI 恢复：settings 面板新增「主题皮肤」区块（5 预设 + 亮/暗共 6 张网格卡），并新增 `ThemeSystem.attachUI()` 幂等绑定
+- 自绘标题栏（frameless）：切换到无边框自绘标题栏，标题栏由 HTML/CSS 渲染，背景/文字/按钮随 6 套主题语义 token 100% 实时变色（原生 DWM 栏只能翻文字色、背景锁定应用模式的问题彻底解决）；含最小化/最大化/关闭三个窗口按钮与边缘尺寸调节交互
+- 品牌 Logo「涨停声波」：标题栏左侧新增品牌标识（蓝底上升 K 线 + 红涨停圆点 + 声波弧线，14px SVG）
+- 边缘缩放（frameless 自绘 resize）：窗口四边/四角 8px 热区检测，按住拖动实时调用后端 `resize_window` 缩放（最小 320×400）
+- 设计规范（DESIGN_SYSTEM.md）：补齐 A.6 自绘标题栏组件规范（窗口参数/拖拽机制/缩放对策/结构与行为规格，含 pywebview 6.2.1 + WebView2 三项关键机制记录）
 
 ### Changed
-- 主题系统全量重建：5 个预设主题补齐为完整 40 语义色令牌集（含 `--stock-up/down` A股涨红跌绿、优先级/试用/风险/警示/成功/危险语义色），预设与暗色开关改为互斥模型，切换时清除残留内联变量防串肤
-- `themes.js` 根因修复：顶层 `const ThemeSystem` 在经典 `<script>` 下不挂到 `window`，显式 `window.ThemeSystem = ThemeSystem` 全局暴露，从根本上修好「预设主题全部不可用」
-- `app.js`：`initThemeUI()` 兼容 `window.ThemeSystem` 与词法 `ThemeSystem` 双通道；`waitForApi` 重赋值 `settings` 后同步 `window._settings` 引用防 stale
-- `style.css`：补齐 `--bg-secondary`、新增 `.theme-grid/.theme-card/*` 组件样式
+- 默认窗口尺寸：`500×800` → `450×900`（更贴合长窄新闻流布局）
+- 拖拽机制适配：WebView2 下 `-webkit-app-region` 无效，改用 pywebview 官方 `.pywebview-drag-region` 类实现拖拽，拖拽区扩展至标题栏左半区 + 中间填充区、避让右侧三个窗口按钮
 
 ### Fixed
+- 修复「最大化/还原失效」：后端 `Window` 无 `is_maximized` 属性（抛 AttributeError），改用自维护 `_is_maximized` 标志记录状态
+- 修复「标题栏窗口按钮（最小化/最大化/关闭）」：后端 `Api._window` 为 lambda，方法误用 `self._window.minimize()` 抛 AttributeError，统一改为 `self._window().minimize()` 等
+- 修复「frameless 不可边缩放、拖拽区与按钮冲突」：JS 边缘热区 `getEdge` 顶部排除标题栏区避免与拖拽冲突
+- 修复「设置/对话框/数据源面板头部滚动被容器裁剪」：`.settings-header/.dialog-header/.datasource-header` 改为 `position: sticky` 顶部吸附，`.datasource-panel` 加 `max-height:80vh; overflow-y:auto`
 - 修复「6 套预设主题全部不可用」：定位到 `window.ThemeSystem` 为 `undefined` 导致 `attachUI()` 从未执行（事件未绑定），已显式全局暴露修复
+
+### Changed（主题系统）
+- 主题系统全量重建：`themes.js` 顶层 `const ThemeSystem` 在经典 `<script>` 下不挂到 `window`，显式 `window.ThemeSystem = ThemeSystem` 全局暴露
+- `app.js`：`initThemeUI()` 兼容 `window.ThemeSystem` 与词法 `ThemeSystem` 双通道；`waitForApi` 重赋值 `settings` 后同步 `window._settings` 引用
+- `style.css`：补齐 `--bg-secondary`、新增 `.theme-grid/.theme-card/*` 组件样式
+- 主题皮肤设置 UI：settings 面板新增「主题皮肤」区块（5 预设 + 亮/暗共 6 张网格卡），并新增 `ThemeSystem.attachUI()` 幂等绑定
+- 设计规范（DESIGN_SYSTEM.md）：新增 Design Token 单一事实来源文档，与 Ardot 设计规范板对齐
 
 ## [v4.0.0] - 2026-07-28
 
