@@ -71,7 +71,7 @@
 
   <!-- 金融风险提示条 -->
   <div class="risk-bar">
-    <span style="font-size:12px; color:#ff9800;">⚠️ 本工具仅数据展示，不构成任何投资建议，投资风险自行承担</span>
+    <span style="font-size:12px; color: var(--warn-bar-text);">⚠️ 本工具仅数据展示，不构成任何投资建议，投资风险自行承担</span>
   </div>
 
   <!-- 底部状态栏 -->
@@ -80,7 +80,7 @@
     <span id="authStatus" class="auth-status"></span>
     <div class="statusbar-right">
       <button class="donate-btn" id="statusDonateBtn" title="赞赏作者">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="#e53935">
+        <svg viewBox="0 0 24 24" width="14" height="14" style="fill: var(--danger-icon)">
           <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
         </svg>
         <span>赞赏作者</span>
@@ -113,7 +113,7 @@
       <div class="settings-header">
         <h3>设置</h3>
         <button class="settings-close" id="settingsClose" title="关闭">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="#e53935">
+          <svg viewBox="0 0 24 24" width="20" height="20" style="fill: var(--danger-icon)">
             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
           </svg>
         </button>
@@ -360,7 +360,37 @@
         </div>
       </div>
 
-      <!-- 主题皮肤已移除，仅保留右下角白色/暗色切换 -->
+      <!-- 主题皮肤：5 个预设 + 亮/暗切换 -->
+      <div class="settings-section">
+        <div class="settings-section-title">主题皮肤</div>
+        <div class="theme-grid" id="themeGrid">
+          <button class="theme-card" data-theme="tech-blue">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#ffffff 0 50%,#0366d6 50% 100%)"></span>
+            <span class="theme-card-name">科技蓝</span>
+          </button>
+          <button class="theme-card" data-theme="eye-care-green">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#f2f8f2 0 50%,#3b8c2e 50% 100%)"></span>
+            <span class="theme-card-name">护眼绿</span>
+          </button>
+          <button class="theme-card" data-theme="classic-black">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#111418 0 50%,#e3b341 50% 100%)"></span>
+            <span class="theme-card-name">经典黑</span>
+          </button>
+          <button class="theme-card" data-theme="vibrant-orange">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#fff7f0 0 50%,#e3620c 50% 100%)"></span>
+            <span class="theme-card-name">活力橙</span>
+          </button>
+          <button class="theme-card" data-theme="soft-pink">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#fff5f8 0 50%,#d6588c 50% 100%)"></span>
+            <span class="theme-card-name">少女粉</span>
+          </button>
+          <button class="theme-card" data-theme="__dark">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#242526 0 50%,#ffffff 50% 100%)"></span>
+            <span class="theme-card-name">亮/暗</span>
+          </button>
+        </div>
+        <div class="setting-hint">选择一个预设主题即可切换配色；「亮/暗」为系统亮暗切换（默认）。A股涨红跌绿语义在各主题下保持一致。</div>
+      </div>
 
       <!-- 自选股异动提醒 -->
       <div class="settings-section">
@@ -409,9 +439,9 @@
         <div class="setting-hint">本工具完全免费开放，若对你有帮助，可自愿小额赞助支持后续更新</div>
         <button id="btnDonate" class="auth-activate-btn" style="width:100%; margin-top:10px;">💝 赞赏支持</button>
         <!-- 投资风险提示 -->
-        <div style="margin-top:15px; padding:12px; background:#fff3e0; border-radius:6px; border-left:4px solid #ff9800;">
-          <div style="font-size:14px; font-weight:bold; color:#e65100; margin-bottom:6px;">⚠️ 投资风险提示</div>
-          <div style="font-size:12px; color:#5d4037; line-height:1.5;">本软件仅提供财经资讯聚合服务，不构成任何投资建议。投资有风险，入市需谨慎。</div>
+        <div style="margin-top:15px; padding:12px; background:var(--warn-bar-bg); border-radius:var(--radius-btn); border-left:4px solid var(--warn-bar-text);">
+          <div style="font-size:14px; font-weight:bold; color:var(--warn-bar-text); margin-bottom:6px;">⚠️ 投资风险提示</div>
+          <div style="font-size:12px; color:var(--text-secondary); line-height:1.5;">本软件仅提供财经资讯聚合服务，不构成任何投资建议。投资有风险，入市需谨慎。</div>
         </div>
       </div>
     </div>
@@ -521,7 +551,7 @@
   <script src="modules/news-classifier.js"></script>
   <script src="modules/stock-quote.js"></script>
   <script src="modules/history-storage.js"></script>
-  
+  <script src="themes.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

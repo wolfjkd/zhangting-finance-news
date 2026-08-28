@@ -13,8 +13,12 @@
   --accent: #0366d6;
   --green: #28a745;
   --red: #d73a49;
+  --stock-up: #d73a49;
+  --stock-down: #28a745;
   --orange: #e36209;
   --tag-bg: #f0f1f3;
+  --tag-text: #586069;
+  --bg-secondary: #f7f8fa;
   --radius: 6px;
   --toolbar-h: 40px;
   --statusbar-h: 28px;
@@ -34,6 +38,49 @@
   --danger-bg: #f8d7da;
   --danger-text: #721c24;
   --font-scale: 1.0;
+
+  /* ===== Design System 令牌（单一事实来源 · 与 Ardot 设计规范板 719463203883100 一致）===== */
+  /* 圆角梯度（对话框/卡片/按钮/标签/药丸）*/
+  --radius-dialog: 10px;
+  --radius-card: 8px;
+  --radius-btn: 6px;
+  --radius-tag: 4px;
+  --radius-pill: 16px;
+  /* 间距梯度 */
+  --space-xs: 4px;
+  --space-sm: 6px;
+  --space-md: 8px;
+  --space-lg: 10px;
+  --space-xl: 12px;
+  --space-2xl: 16px;
+  /* 字阶（与 UI_DESIGN_SPEC 字阶表一致）*/
+  --fs-h0: 36px;
+  --fs-h1: 18px;
+  --fs-h2: 16px;
+  --fs-h3: 15px;
+  --fs-body: 14px;
+  --fs-body-sm: 13px;
+  --fs-caption: 12px;
+  --fs-label: 11px;
+  --fs-micro: 10px;
+  /* 层次阴影 */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  /* 语义补充色（收口 index.html 硬编码，全局固定语义，不随皮肤切换）*/
+  --risk-text: #e65100;
+  --risk-bg: #fff3e0;
+  --danger-icon: #d73a49;
+  --warn-bar-text: #e65100;
+  --warn-bar-bg: #fff3e0;
+  /* 优先级边框 / 收藏星标 / 关键词预警组件（全局固定语义，不随皮肤切换）*/
+  --priority-critical-border: #ff0000;
+  --priority-high-border: #ff6b35;
+  --priority-medium-border: #ffc107;
+  --star-color: #ffc107;
+  --alert-bg: #fce4ec;
+  --alert-border: #ef9a9a;
+  --alert-title: #c62828;
 }
 
 body.dark-mode {
@@ -48,8 +95,11 @@ body.dark-mode {
   --accent: #58a6ff;
   --green: #3fb950;
   --red: #f85149;
+  --stock-up: #f85149;
+  --stock-down: #3fb950;
   --orange: #e3b341;
   --tag-bg: #3a3b3c;
+  --bg-secondary: #343536;
   --priority-critical-bg: #4a1a1a;
   --priority-high-bg: #4a331a;
   --priority-medium-bg: #4a4a1a;
@@ -65,6 +115,23 @@ body.dark-mode {
   --success-text: #3fb950;
   --danger-bg: #3a1a1a;
   --danger-text: #f85149;
+
+  /* Design System 暗色语义补充 */
+  --risk-text: #ffb74d;
+  --risk-bg: #3a2e1a;
+  --danger-icon: #f85149;
+  --warn-bar-text: #ffb74d;
+  --warn-bar-bg: #3a2e1a;
+  --priority-critical-border: #ff4d4f;
+  --priority-high-border: #ffa940;
+  --priority-medium-border: #ffd666;
+  --star-color: #ffc107;
+  --alert-bg: #3a1a1a;
+  --alert-border: #7a3a3a;
+  --alert-title: #ff8a80;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
 }
 
 html, body {
@@ -266,15 +333,15 @@ body.dark-mode .toolbar-right {
 
 /* 优先级边框 */
 .news-item.priority-critical {
-  border-left-color: #FF0000;
+  border-left-color: var(--priority-critical-border);
   background: var(--priority-critical-bg);
 }
 .news-item.priority-high {
-  border-left-color: #FF6B35;
+  border-left-color: var(--priority-high-border);
   background: var(--priority-high-bg);
 }
 .news-item.priority-medium {
-  border-left-color: #FFC107;
+  border-left-color: var(--priority-medium-border);
   background: var(--priority-medium-bg);
 }
 
@@ -467,8 +534,8 @@ body.dark-mode .toolbar-right {
 }
 
 .btn-favorite.favorited svg {
-  fill: #ffc107;
-  stroke: #ffc107;
+  fill: var(--star-color);
+  stroke: var(--star-color);
 }
 
 .btn-favorite.favorited {
@@ -502,7 +569,7 @@ body.dark-mode .toolbar-right {
   max-width: 120px;
   max-height: 120px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--radius-btn);
   cursor: pointer;
   transition: transform 0.2s;
 }
@@ -519,9 +586,9 @@ body.dark-mode .toolbar-right {
 }
 
 .stock-tag {
-  font-size: calc(11px * var(--font-scale));
+  font-size: calc(var(--fs-label) * var(--font-scale));
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-tag);
   background: var(--tag-bg);
   border: 1px solid var(--border);
 }
@@ -535,8 +602,8 @@ body.dark-mode .toolbar-right {
   font-weight: 600;
 }
 
-.stock-tag .stock-rise.up { color: var(--red); }
-.stock-tag .stock-rise.down { color: var(--green); }
+.stock-tag .stock-rise.up { color: var(--stock-up); }
+.stock-tag .stock-rise.down { color: var(--stock-down); }
 
 .news-related {
   margin-top: calc(6px * var(--font-scale));
@@ -622,7 +689,7 @@ body.dark-mode .toolbar-right {
   border: none;
   padding: 2px 6px;
   font-size: 12px;
-  color: #e53935;
+  color: var(--red);
   cursor: pointer;
   border-radius: 4px;
   transition: background 0.15s;
@@ -985,7 +1052,7 @@ body.dark-mode .toolbar-right {
 .dialog-close-btn svg {
   width: 20px;
   height: 20px;
-  fill: #e53935;
+  fill: var(--red);
 }
 
 .dialog-content {
@@ -1154,6 +1221,52 @@ body.dark-mode .toolbar-right {
   line-height: 1.5;
 }
 
+/* ===== 主题皮肤网格 ===== */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-md) var(--space-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.theme-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.theme-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-sm);
+}
+
+.theme-swatch {
+  width: 44px;
+  height: 28px;
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.theme-card-name {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+.theme-card.active .theme-card-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* 相似消息来源标签 */
 .news-dup-badge {
   display: inline-flex;
@@ -1241,8 +1354,8 @@ body.dark-mode .toolbar-right {
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  background: #fce4ec;
-  border-bottom: 1px solid #ef9a9a;
+  background: var(--alert-bg);
+  border-bottom: 1px solid var(--alert-border);
 }
 
 .kw-alert-icon {
@@ -1253,7 +1366,7 @@ body.dark-mode .toolbar-right {
   flex: 1;
   font-size: 12px;
   font-weight: 600;
-  color: #c62828;
+  color: var(--alert-title);
 }
 
 .kw-alert-close {
@@ -1799,17 +1912,17 @@ body.dark-mode .toolbar-right {
 }
 
 .news-item-enhanced.priority-critical {
-  border-left-color: #FF0000;
+  border-left-color: var(--priority-critical-border);
   background-color: var(--priority-critical-bg);
 }
 
 .news-item-enhanced.priority-high {
-  border-left-color: #FF6B35;
+  border-left-color: var(--priority-high-border);
   background-color: var(--priority-high-bg);
 }
 
 .news-item-enhanced.priority-medium {
-  border-left-color: #FFC107;
+  border-left-color: var(--priority-medium-border);
   background-color: var(--priority-medium-bg);
 }
 
@@ -1954,7 +2067,7 @@ body.dark-mode .toolbar-right {
 }
 
 .btn-export.primary {
-  background-color: #2196F3;
+  background-color: var(--accent);
   color: white;
 }
 
@@ -2009,7 +2122,7 @@ body.dark-mode .toolbar-right {
 
 .history-search button {
   padding: 8px 16px;
-  background-color: #2196F3;
+  background-color: var(--accent);
   color: white;
   border: none;
   border-radius: 6px;
@@ -2064,7 +2177,7 @@ body.dark-mode .toolbar-right {
 
 /* 自选股匹配标记 */
 .watchlist-match {
-  border-left: 3px solid #ffb300 !important;
+  border-left: 3px solid var(--trial-border) !important;
 }
 
 .watchlist-badge {
@@ -2072,7 +2185,7 @@ body.dark-mode .toolbar-right {
   align-items: center;
   padding: 2px 6px;
   font-size: 11px;
-  color: #e65100;
+  color: var(--risk-text);
   background: rgba(255, 179, 0, 0.12);
   border: 1px solid rgba(255, 179, 0, 0.3);
   border-radius: 10px;
@@ -2168,7 +2281,7 @@ body.dark-mode .toolbar-right {
 }
 
 .watchlist-add-btn:hover {
-  background: #0257b5;
+  background: var(--accent);
 }
 
 .watchlist-list {
@@ -2197,7 +2310,7 @@ body.dark-mode .toolbar-right {
 .watchlist-remove-btn {
   background: none;
   border: none;
-  color: #e53935;
+  color: var(--red);
   font-size: 18px;
   cursor: pointer;
   padding: 2px 6px;
@@ -2333,19 +2446,19 @@ body.dark-mode .toolbar-right {
 }
 
 .quote-grid-value.up {
-  color: #e53935;
+  color: var(--red);
 }
 
 .quote-grid-value.down {
-  color: #43a047;
+  color: var(--green);
 }
 
 .up {
-  color: #e53935;
+  color: var(--red);
 }
 
 .down {
-  color: #43a047;
+  color: var(--green);
 }
 
 /* ===== 自选股异动提醒弹窗 ===== */
@@ -2359,7 +2472,7 @@ body.dark-mode .toolbar-right {
   max-width: 360px;
   background: var(--bg);
   border-radius: 12px;
-  border: 2px solid #ffb300;
+  border: 2px solid var(--trial-border);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   z-index: 2000;
   overflow: hidden;
@@ -2408,7 +2521,7 @@ body.dark-mode .toolbar-right {
   flex: 1;
   font-size: 15px;
   font-weight: 600;
-  color: #e65100;
+  color: var(--risk-text);
 }
 
 .alert-body {
@@ -2443,7 +2556,7 @@ body.dark-mode .toolbar-right {
 
 .alert-message {
   font-size: 14px;
-  color: #e65100;
+  color: var(--risk-text);
   background: rgba(255, 179, 0, 0.1);
   padding: 8px 16px;
   border-radius: 20px;
@@ -2469,7 +2582,7 @@ body.dark-mode .toolbar-right {
 }
 
 .alert-view-btn:hover {
-  background: #0257b5;
+  background: var(--accent);
 }
 
 /* ===== 自选股分组管理 ===== */
@@ -2940,18 +3053,6 @@ body.dark-mode .toolbar-right {
   max-width: 160px;
 }
 
-/* ===== 主题系统 CSS 变量（补充，供 ThemeSystem 使用） ===== */
-:root {
-    --bg: #ffffff;
-    --accent: #0366d6;
-    --text: #1a1a1a;
-    --bg-card: #f8f9fa;
-    --border: #e1e4e8;
-    --bg-hover: #f1f5f9;
-    --text-secondary: #666;
-    --tag-bg: #e8f0fe;
-    --tag-text: #0366d6;
-}
 
 /* ===== 主题预设按钮 ===== */
 .theme-preset-btn {
@@ -3023,7 +3124,7 @@ body.dark-mode .toolbar-right {
     transform: translate(-50%, -50%);
     z-index: 2001;
     background: var(--bg);
-    border: 2px solid #ff6b35;
+    border: 2px solid var(--priority-high-border);
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(255,107,53,0.3);
     padding: 16px;

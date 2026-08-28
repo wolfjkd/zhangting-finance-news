@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [Unreleased]
+
+### Added
+- 设计规范（DESIGN_SYSTEM.md）：新增 Design Token 单一事实来源文档（圆角/间距/字阶/阴影/语义色梯度），与 Ardot 设计规范板 `719463203883100` 对齐
+- 主题皮肤设置 UI 恢复：settings 面板新增「主题皮肤」区块（5 预设 + 亮/暗共 6 张网格卡），并新增 `ThemeSystem.attachUI()` 幂等绑定
+
+### Changed
+- 主题系统全量重建：5 个预设主题补齐为完整 40 语义色令牌集（含 `--stock-up/down` A股涨红跌绿、优先级/试用/风险/警示/成功/危险语义色），预设与暗色开关改为互斥模型，切换时清除残留内联变量防串肤
+- `themes.js` 根因修复：顶层 `const ThemeSystem` 在经典 `<script>` 下不挂到 `window`，显式 `window.ThemeSystem = ThemeSystem` 全局暴露，从根本上修好「预设主题全部不可用」
+- `app.js`：`initThemeUI()` 兼容 `window.ThemeSystem` 与词法 `ThemeSystem` 双通道；`waitForApi` 重赋值 `settings` 后同步 `window._settings` 引用防 stale
+- `style.css`：补齐 `--bg-secondary`、新增 `.theme-grid/.theme-card/*` 组件样式
+
+### Fixed
+- 修复「6 套预设主题全部不可用」：定位到 `window.ThemeSystem` 为 `undefined` 导致 `attachUI()` 从未执行（事件未绑定），已显式全局暴露修复
+
 ## [v4.0.0] - 2026-07-28
 
 ### Added

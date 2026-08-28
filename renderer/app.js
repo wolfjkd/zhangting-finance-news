@@ -419,7 +419,7 @@
     initTTSSettings();
   }
 
-  // ===== TTS 设置初始化（主题皮肤已移除） =====
+  // ===== TTS 设置初始化 =====
   function initTTSSettings() {
 
     // TTS 引擎选择
@@ -3787,6 +3787,9 @@
             if (Object.keys(parsed).length > 0) {
               localStorage.setItem('ztfi-settings', JSON.stringify(parsed));
               settings = loadSettings();
+              // settings 被重新赋值成新对象后，同步 window._settings 引用，
+              // 避免主题系统/暗色开关读到已失效的旧 settings 对象。
+              window._settings = settings;
             }
           }
         }
@@ -3814,9 +3817,25 @@
   });
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => waitForApi(30));
+    document.addEventListener('DOMContentLoaded', () => {
+      try { initThemeUI(); } catch (e) { console.warn('[theme]', e); }
+      waitForApi(30);
+    });
   } else {
+    try { initThemeUI(); } catch (e) { console.warn('[theme]', e); }
     waitForApi(30);
+  }
+
+  // 初始化主题设置面板 UI（attachUI 绑定卡片点击 + 恢复上次主题）
+  // 兼容两种暴露方式：window.ThemeSystem（显式挂载）或同 realm 词法绑定 ThemeSystem。
+  function initThemeUI() {
+    const ts = (typeof window !== 'undefined' && window.ThemeSystem) ||
+               (typeof ThemeSystem !== 'undefined' ? ThemeSystem : null);
+    if (ts && typeof ts.attachUI === 'function') {
+      ts.attachUI();
+    } else {
+      console.warn('[theme] ThemeSystem 未就绪，跳过初始化');
+    }
   }
 
   // ===== 对话框功能（原 ui-enhancements.js）=====

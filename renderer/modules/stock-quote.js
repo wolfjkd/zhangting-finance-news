@@ -1,6 +1,6 @@
 /**
  * 股票行情查询模块
- * 集成 trader-finance-hub 和 tdx-connector 的实时行情能力
+ * 集成 tradex-hub 和 tdx-connector 的实时行情能力
  */
 
 class StockQuoteManager {
