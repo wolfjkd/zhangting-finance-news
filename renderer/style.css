@@ -3308,6 +3308,11 @@ body.dark-mode .toolbar-right {
   justify-content: center;
   animation: onboardingFadeIn 0.25s ease-out;
 }
+/* 临时隐藏态：用户点了动作按钮（查看数据源等）去操作其它面板时，
+   引导不销毁、保留当前步骤，等用户关闭那个面板后自动恢复显示 */
+.onboarding-overlay.onboarding-hidden {
+  display: none !important;
+}
 @keyframes onboardingFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

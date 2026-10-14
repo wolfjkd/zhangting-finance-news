@@ -4128,7 +4128,7 @@
             券商研报、北向资金、龙虎榜、外网资讯等（需要 Token 的源会引导你配置）。
           </p>
         `,
-        action: { label: '查看数据源', callback: () => { if (window.closeOnboarding) window.closeOnboarding(true); showDataSourceDialog(); } }
+        action: { label: '查看数据源', callback: () => { showDataSourceDialog(); } }
       },
       {
         title: '② 添加你的自选股',
@@ -4143,7 +4143,7 @@
             弹提醒，非交易时段不打扰你。
           </p>
         `,
-        action: { label: '打开自选股', callback: () => { if (window.closeOnboarding) window.closeOnboarding(true); $btnWatchlist.click(); } }
+        action: { label: '打开自选股', callback: () => { $btnWatchlist.click(); } }
       },
       {
         title: '③ AI 解读 & 语音播报（可选）',
@@ -4161,7 +4161,7 @@
             两者都在<strong>设置 → AI 分析 / 语音播报</strong>里配置。
           </p>
         `,
-        action: { label: '去配置 AI', callback: () => { if (window.closeOnboarding) window.closeOnboarding(true); window.openSettingsAtSection('ai'); } }
+        action: { label: '去配置 AI', callback: () => { window.openSettingsAtSection('ai'); } }
       },
       {
         title: '④ 还有这些贴心功能',
@@ -4196,6 +4196,61 @@
     overlay.className = 'onboarding-overlay';
     overlay.id = 'onboardingDialog';
 
+    // ===== 临时隐藏/恢复机制（支持"去配置后回到当前步骤继续引导"）=====
+    // 用户点动作按钮（查看数据源/打开自选股/去配置 AI）时，引导不销毁，
+    // 只临时隐藏（加 onboarding-hidden class），并打开对应面板；
+    // 当用户关闭那个面板后，引导自动回到当前步骤继续显示。
+    let isPaused = false;           // 是否处于"临时隐藏等待用户返回"状态
+    let pauseWatcher = null;        // MutationObserver 实例
+
+    function hideOnboardingTemporarily() {
+      if (isPaused) return;
+      isPaused = true;
+      overlay.classList.add('onboarding-hidden');
+      // 用轮询 + MutationObserver 双保险检测其它面板是否关闭。
+      // 两种面板类型：
+      //   A. 动态创建型（datasource-overlay 等）：从 body 移除
+      //   B. 常驻切换型（settingsOverlay 等）：class 里移除 'show'
+      if (pauseWatcher) pauseWatcher.disconnect();
+      const checkAndResume = () => {
+        if (!isPaused || !overlay.parentNode) return;
+        const blocking = isAnyOtherBlockingPanelOpen();
+        if (!blocking) resumeOnboarding();
+      };
+      pauseWatcher = new MutationObserver(checkAndResume);
+      pauseWatcher.observe(document.body, {
+        childList: true,
+        subtree: false,
+        attributes: true,
+        attributeFilter: ['class']
+      });
+      // 兜底：500ms 后再检查一次（避免 observer 时序漏掉某些边界场景）
+      setTimeout(checkAndResume, 500);
+    }
+
+    // 检查当前是否还有任何阻挡引导的其它面板/对话框开着
+    function isAnyOtherBlockingPanelOpen() {
+      const allElements = document.body.children;
+      for (let i = 0; i < allElements.length; i++) {
+        const el = allElements[i];
+        if (el === overlay) continue;            // 跳过引导自身
+        if (!(el instanceof HTMLElement)) continue;
+        const cls = el.className || '';
+        // 1) 常驻切换型：设置面板等通过 .show 显示
+        if (cls.includes('overlay') && cls.includes('show')) return true;
+        // 2) 动态创建型：datasource-overlay / watchlist-overlay / search-overlay / favorites-overlay
+        if (/\b(datasource-overlay|watchlist-overlay|search-overlay|favorites-overlay)\b/.test(cls)) return true;
+      }
+      return false;
+    }
+
+    function resumeOnboarding() {
+      if (!isPaused) return;
+      isPaused = false;
+      overlay.classList.remove('onboarding-hidden');
+      if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
+    }
+
     function render() {
       const s = steps[currentStep];
       const isLast = currentStep === steps.length - 1;
@@ -4222,21 +4277,23 @@
     }
 
     function bindEvents() {
-      // 跳过/完成
+      // 跳过/完成 —— 用户主动跳过，标记完成避免下次再弹（视为用户放弃引导）
       overlay.querySelector('.onboarding-skip').addEventListener('click', () => {
         closeOnboarding(true);
       });
       // 上一步
       const prev = overlay.querySelector('.onboarding-prev');
       if (prev) prev.addEventListener('click', () => { currentStep--; render(); });
-      // 动作按钮（如"去配置"）——会先关闭引导再执行 callback
+      // 动作按钮（如"查看数据源"/"打开自选股"/"去配置 AI"）
+      // 关键改动：不标记完成、不销毁引导——只临时隐藏，执行 callback 打开对应面板，
+      // 等用户关闭那个面板后引导自动回到当前步骤继续
       const actionBtn = overlay.querySelector('.onboarding-action');
       if (actionBtn) actionBtn.addEventListener('click', () => {
         const cb = steps[currentStep].action.callback;
-        closeOnboarding(true);
+        hideOnboardingTemporarily();
         try { cb(); } catch (e) { console.warn('onboarding action error:', e); }
       });
-      // 下一步/完成
+      // 下一步/完成 —— 只有走到最后一步点"开始使用"才标记完成
       overlay.querySelector('.onboarding-next').addEventListener('click', () => {
         if (currentStep < steps.length - 1) { currentStep++; render(); }
         else { closeOnboarding(true); }
@@ -4244,16 +4301,19 @@
     }
 
     function closeOnboarding(markCompleted) {
+      if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
       if (overlay.parentNode) overlay.remove();
       if (markCompleted) {
-        // 标记按版本号区分——每个新版本首次运行都会重新弹
+        // 仅当用户走完全部步骤点"开始使用"、或主动点"跳过"时才标记完成。
+        // 标记按版本号区分——同一版本只弹一次，下次升级到新版本才会重新弹。
         localStorage.setItem('onboarding_completed_v' + getCurrentVersion(), '1');
       }
     }
-    // 暴露给步骤内 action 的关闭函数
+    // 暴露给步骤内 action 的关闭函数（保留兼容性，但现在 action 一般用 hide 而不是 close）
     window._closeOnboarding = closeOnboarding;
-    // 兼容上面 steps 里用的 closeOnboarding() 调用
     window.closeOnboarding = closeOnboarding;
+    window.hideOnboardingTemporarily = hideOnboardingTemporarily;
+    window.resumeOnboarding = resumeOnboarding;
 
     document.body.appendChild(overlay);
     render();
