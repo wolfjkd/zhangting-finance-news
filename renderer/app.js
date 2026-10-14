@@ -3011,6 +3011,12 @@
       if (settings.isPinned && window.pywebview && window.pywebview.api && window.pywebview.api.toggle_pin) {
         pywebview.api.toggle_pin(true).catch(() => {});
       }
+      // 首次启动引导（检测 localStorage 标记）
+      setTimeout(() => {
+        if (localStorage.getItem('onboarding_completed') !== '1') {
+          showOnboardingDialog();
+        }
+      }, 800);  // 延迟 800ms 避免和启动动画抢镜
       // 监听窗口大小变化，保存到后端
       window.addEventListener('resize', () => {
         if (windowResizeTimer) clearTimeout(windowResizeTimer);
@@ -4086,6 +4092,168 @@
       console.warn('[theme] ThemeSystem 未就绪，跳过初始化');
     }
   }
+
+  // ===== 首次启动引导（详细版）=====
+  // 分步式卡片：欢迎 → 新闻来源 → 自选股 → AI/TTS → 完成
+  // 通过 localStorage.onboarding_completed 标记避免重复弹出
+  function showOnboardingDialog() {
+    const steps = [
+      {
+        title: '欢迎使用涨停财经聚合播报',
+        icon: '🎉',
+        content: `
+          <p style="font-size:14px;line-height:1.7;margin-bottom:12px;">
+            这是一个 A 股财经新闻聚合桌面端，实时推送 15+ 主流财经源的资讯电报。
+          </p>
+          <p style="font-size:13px;color:var(--text-soft);line-height:1.6;">
+            接下来用 3 分钟带你了解核心功能。随时可在"关于"里重新打开本引导。
+          </p>
+        `
+      },
+      {
+        title: '① 新闻来源已默认开启',
+        icon: '📰',
+        content: `
+          <p style="font-size:13px;line-height:1.7;margin-bottom:10px;">
+            默认已为你开启<strong>传统聚合</strong>数据源——聚合了财联社、新浪财经、
+            东方财富、同花顺、华尔街见闻、格隆汇等 15 家主流财经媒体的实时电报。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            想要更多源？进入<strong>设置 → 数据源管理</strong>，可按需开启东方财富公告、
+            券商研报、北向资金、龙虎榜、外网资讯等（需要 Token 的源会引导你配置）。
+          </p>
+        `,
+        action: { label: '查看数据源', callback: () => { if (window.closeOnboarding) window.closeOnboarding(true); showDataSourceDialog(); } }
+      },
+      {
+        title: '② 添加你的自选股',
+        icon: '⭐',
+        content: `
+          <p style="font-size:13px;line-height:1.7;margin-bottom:10px;">
+            点击底部的<strong>自选股图标</strong>（五角星按钮），输入 6 位股票代码即可添加。
+            支持按分组管理（如：底仓、观察、短线）。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            添加后，<strong>交易时间段</strong>（9:25-11:30 / 13:00-15:00）会在价格异动时
+            弹提醒，非交易时段不打扰你。
+          </p>
+        `,
+        action: { label: '打开自选股', callback: () => { if (window.closeOnboarding) window.closeOnboarding(true); $btnWatchlist.click(); } }
+      },
+      {
+        title: '③ AI 解读 & 语音播报（可选）',
+        icon: '🤖',
+        content: `
+          <p style="font-size:13px;line-height:1.7;margin-bottom:10px;">
+            每条新闻右侧的<strong>"AI 解读"按钮</strong>会用大模型分析利好/利空/中性，
+            并给出摘要——<em>需要先配置 API 密钥才能用</em>。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;margin-bottom:10px;">
+            <strong>语音播报</strong>（TTS）支持浏览器内置或 Edge TTS 高质量音色，
+            内置无需配置；Edge TTS 也是免费的。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            两者都在<strong>设置 → AI 分析 / 语音播报</strong>里配置。
+          </p>
+        `,
+        action: { label: '去配置 AI', callback: () => { if (window.closeOnboarding) window.closeOnboarding(true); window.openSettingsAtSection('ai'); } }
+      },
+      {
+        title: '④ 还有这些贴心功能',
+        icon: '✨',
+        content: `
+          <ul style="font-size:13px;line-height:1.9;padding-left:18px;margin:0;">
+            <li><strong>主题切换</strong>：亮色/暗色，跟随系统或手动切换</li>
+            <li><strong>窗口置顶</strong>：盯盘时压在其他窗口上方</li>
+            <li><strong>自动滚动</strong>：新消息自动滚到可视区</li>
+            <li><strong>收藏 & 搜索</strong>：重要消息一键收藏，历史可搜索</li>
+            <li><strong>关键词高亮</strong>：设置面板里配置自定义关键词</li>
+            <li><strong>T+0 复盘</strong>：内置底仓股盘后分析工具</li>
+          </ul>
+        `
+      },
+      {
+        title: '准备就绪，开始使用',
+        icon: '🚀',
+        content: `
+          <p style="font-size:14px;line-height:1.7;margin-bottom:12px;">
+            一切就绪！默认新闻源已经为你开启，几秒内就会看到第一条电报。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            有问题可在<strong>关于 → 检查更新</strong>里查看版本，或访问 GitHub 仓库提 issue。
+          </p>
+        `
+      }
+    ];
+
+    let currentStep = 0;
+    const overlay = document.createElement('div');
+    overlay.className = 'onboarding-overlay';
+    overlay.id = 'onboardingDialog';
+
+    function render() {
+      const s = steps[currentStep];
+      const isLast = currentStep === steps.length - 1;
+      const hasAction = s.action;
+      overlay.innerHTML = `
+        <div class="onboarding-panel">
+          <div class="onboarding-header">
+            <span class="onboarding-icon">${s.icon}</span>
+            <span class="onboarding-title">${s.title}</span>
+            <button class="onboarding-skip" title="${isLast ? '完成' : '跳过引导'}">${isLast ? '✓' : '跳过'}</button>
+          </div>
+          <div class="onboarding-body">${s.content}</div>
+          <div class="onboarding-footer">
+            <div class="onboarding-progress">${currentStep + 1} / ${steps.length}</div>
+            <div class="onboarding-actions">
+              ${currentStep > 0 ? '<button class="onboarding-prev">上一步</button>' : ''}
+              ${hasAction ? `<button class="onboarding-action">${s.action.label}</button>` : ''}
+              <button class="onboarding-next ${isLast ? 'primary' : ''}">${isLast ? '开始使用' : '下一步'}</button>
+            </div>
+          </div>
+        </div>
+      `;
+      bindEvents();
+    }
+
+    function bindEvents() {
+      // 跳过/完成
+      overlay.querySelector('.onboarding-skip').addEventListener('click', () => {
+        closeOnboarding(true);
+      });
+      // 上一步
+      const prev = overlay.querySelector('.onboarding-prev');
+      if (prev) prev.addEventListener('click', () => { currentStep--; render(); });
+      // 动作按钮（如"去配置"）——会先关闭引导再执行 callback
+      const actionBtn = overlay.querySelector('.onboarding-action');
+      if (actionBtn) actionBtn.addEventListener('click', () => {
+        const cb = steps[currentStep].action.callback;
+        closeOnboarding(true);
+        try { cb(); } catch (e) { console.warn('onboarding action error:', e); }
+      });
+      // 下一步/完成
+      overlay.querySelector('.onboarding-next').addEventListener('click', () => {
+        if (currentStep < steps.length - 1) { currentStep++; render(); }
+        else { closeOnboarding(true); }
+      });
+    }
+
+    function closeOnboarding(markCompleted) {
+      if (overlay.parentNode) overlay.remove();
+      if (markCompleted) localStorage.setItem('onboarding_completed', '1');
+    }
+    // 暴露给步骤内 action 的关闭函数
+    window._closeOnboarding = closeOnboarding;
+    // 兼容上面 steps 里用的 closeOnboarding() 调用
+    window.closeOnboarding = closeOnboarding;
+
+    document.body.appendChild(overlay);
+    render();
+  }
+
+
+
+
 
   // ===== 对话框功能（原 ui-enhancements.js）=====
 
