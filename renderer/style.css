@@ -1681,20 +1681,38 @@ body.dark-mode .toolbar-right {
 }
 
 /* ===== 数据源配置弹窗（Tushare/Wind）===== */
+/* 齿轮图标按钮（SVG），覆盖旧"配置"文字按钮样式 */
 .datasource-config-btn {
-  padding: 3px 10px;
-  border: 1px solid var(--accent);
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border: 1px solid var(--border) !important;
   border-radius: var(--radius);
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
+  background: var(--bg) !important;
+  color: var(--text-secondary) !important;
   cursor: pointer;
-  white-space: nowrap;
   transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.datasource-config-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
 }
 
 .datasource-config-btn:hover {
-  opacity: 0.85;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: var(--bg-secondary) !important;
+}
+
+.datasource-config-btn:active svg {
+  transform: rotate(60deg);
+  transition: transform 0.3s;
 }
 
 .datasource-config-btn:disabled {

@@ -3011,12 +3011,6 @@
       if (settings.isPinned && window.pywebview && window.pywebview.api && window.pywebview.api.toggle_pin) {
         pywebview.api.toggle_pin(true).catch(() => {});
       }
-      // 首次启动引导（检测 localStorage 标记）
-      setTimeout(() => {
-        if (localStorage.getItem('onboarding_completed') !== '1') {
-          showOnboardingDialog();
-        }
-      }, 800);  // 延迟 800ms 避免和启动动画抢镜
       // 监听窗口大小变化，保存到后端
       window.addEventListener('resize', () => {
         if (windowResizeTimer) clearTimeout(windowResizeTimer);
@@ -3029,6 +3023,17 @@
         }, 1000);
       });
     });
+
+    // 首次启动引导（按版本号判断——每个新版本首次运行都弹一次）
+    // 必须放在 init() 同步执行路径上，不能放进 pywebviewready 监听器——
+    // 因为免责声明接受后才调用 init()，此时 pywebviewready 事件早已触发，
+    // 新注册的监听器不会再执行，会导致引导永远弹不出。
+    setTimeout(() => {
+      const onboardingKey = 'onboarding_completed_v' + getCurrentVersion();
+      if (localStorage.getItem(onboardingKey) !== '1') {
+        showOnboardingDialog();
+      }
+    }, 800);  // 延迟 800ms 避免和启动动画抢镜
 
     $btnThemeToggle.addEventListener('click', () => {
       settings.darkMode = !settings.darkMode;
@@ -4095,7 +4100,7 @@
 
   // ===== 首次启动引导（详细版）=====
   // 分步式卡片：欢迎 → 新闻来源 → 自选股 → AI/TTS → 完成
-  // 通过 localStorage.onboarding_completed 标记避免重复弹出
+  // 通过 localStorage.onboarding_completed_v{版本号} 标记，按版本号区分——每个新版本首次运行都会弹一次
   function showOnboardingDialog() {
     const steps = [
       {
@@ -4240,7 +4245,10 @@
 
     function closeOnboarding(markCompleted) {
       if (overlay.parentNode) overlay.remove();
-      if (markCompleted) localStorage.setItem('onboarding_completed', '1');
+      if (markCompleted) {
+        // 标记按版本号区分——每个新版本首次运行都会重新弹
+        localStorage.setItem('onboarding_completed_v' + getCurrentVersion(), '1');
+      }
     }
     // 暴露给步骤内 action 的关闭函数
     window._closeOnboarding = closeOnboarding;
@@ -4332,7 +4340,7 @@
                   </div>
                 </div>
                 <div class="datasource-item-right">
-                  ${configableIds.includes(s.id) ? `<button class="datasource-config-btn" data-source-id="${s.id}" title="配置 ${esc(s.name)} 的 Token/API Key" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;padding:0;"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l0,0l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94l-0.36-2.54c-0.05-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41l-0.36,2.54c-0.59,0.24-1.13,0.57-1.62,0.94l-2.39-0.96c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87c-0.12,0.21-0.08,0.47,0.12,0.61l2.03,1.58l0,0C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l0,0l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.57,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg></button>` : ''}
+                  ${configableIds.includes(s.id) ? `<button class="datasource-config-btn" data-source-id="${s.id}" title="配置 ${esc(s.name)} 的 Token/API Key" aria-label="配置 ${esc(s.name)}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l0,0l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94l-0.36-2.54c-0.05-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41l-0.36,2.54c-0.59,0.24-1.13,0.57-1.62,0.94l-2.39-0.96c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87c-0.12,0.21-0.08,0.47,0.12,0.61l2.03,1.58l0,0C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l0,0l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.57,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg></button>` : ''}
                   <button class="datasource-test-btn" data-source-id="${s.id}">测试</button>
                   <label class="datasource-toggle">
                     <input type="checkbox" ${s.enabled ? 'checked' : ''}>
