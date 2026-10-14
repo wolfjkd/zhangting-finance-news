@@ -449,13 +449,13 @@ class DataSourceManager:
         default_sources = [
             DataSourceConfig(
                 id="akshare_beta", name="涨停聚合（Beta）", type=DataSourceType.API,
-                enabled=True, priority=1,
-                description="基于AKShare聚合：财联社电报、同花顺财经、央视新闻、东方财富个股资讯。独立数据源，不依赖鼓掌财经，支持多源降级切换。",
+                enabled=False, priority=1,
+                description="基于AKShare聚合：财联社电报、同花顺财经、央视新闻、东方财富个股资讯。独立数据源，不依赖鼓掌财经，支持多源降级切换。默认关闭，可在设置面板手动开启。",
                 poll_interval=40
             ),
             DataSourceConfig(
                 id="foreign_news", name="外网资讯", type=DataSourceType.API,
-                enabled=True, priority=2,
+                enabled=False, priority=2,
                 description="汇集9大外网资讯源：Bloomberg（彭博社）、CNBC（财经新闻）、BBC News（国际新闻）、X(Twitter)重要账号（@elonmusk/@OpenAI/@ChineseWSJ等）、Reddit（热门话题）、Google News（新闻聚合）、TechCrunch（科技创业）、Hacker News（科技前沿）、Wired（深度科技），覆盖财经、科技、政策、全球市场等领域（直连优先，代理可选，直连失败自动走代理）",
                 endpoints={
                     "bloomberg": "https://feeds.bloomberg.com",
