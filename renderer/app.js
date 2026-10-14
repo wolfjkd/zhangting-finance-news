@@ -1795,10 +1795,10 @@
     // 立即检查一次
     checkWatchlistAlerts();
     
-    // 每分钟检查一次
+    // 每 2 分钟检查一次（足够及时，CPU 减半；非交易时间 checkWatchlistAlerts 内部直接 return）
     watchlistAlertTimer = setInterval(() => {
       checkWatchlistAlerts();
-    }, 60000);
+    }, 120000);
     
     if (DEBUG_MODE) console.log('[自选股提醒] 监控已启动');
   }
@@ -3252,8 +3252,11 @@
   }
 
   function scheduleCleanup() {
-    cleanupOldHistory();
-    setInterval(cleanupOldHistory, 24 * 60 * 60 * 1000);
+    // 延迟 5 分钟首次启动清理，避开启动高峰；之后每 24 小时一次
+    setTimeout(() => {
+      cleanupOldHistory();
+      setInterval(cleanupOldHistory, 24 * 60 * 60 * 1000);
+    }, 5 * 60 * 1000);
   }
 
   // ===== 新闻详情弹窗 =====
