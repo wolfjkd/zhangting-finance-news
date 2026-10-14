@@ -1112,7 +1112,9 @@ class Api:
             return json.dumps({'error': '分析结果为空'})
         except Exception as e:
             logger.error(f'AI分析失败: {e}')
-            return json.dumps({'error': str(e)})
+            # 安全：不向前端暴露原始异常字符串（可能含 API key 片段、内部路径等敏感信息）
+            # 只返回脱敏的通用错误消息，详细错误记到后端日志
+            return json.dumps({'error': 'AI 分析服务异常，请稍后重试或检查配置'})
 
     # ===== Edge TTS 语音引擎 =====
     def tts_get_voices(self):

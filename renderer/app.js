@@ -1849,10 +1849,10 @@
     if (!window.historyStorage) return;
 
     // 收盘后不执行自选股异动提醒（交易时间：9:25-11:30, 13:00-15:00）
-    const now = new Date();
-    const day = now.getDay();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
+    const dateNow = new Date();
+    const day = dateNow.getDay();
+    const hours = dateNow.getHours();
+    const minutes = dateNow.getMinutes();
     const time = hours * 60 + minutes; // 当天分钟数
     // 周末不检查
     if (day === 0 || day === 6) return;
@@ -1878,7 +1878,7 @@
       const batchResult = await batchGetQuotes(codes);
       if (!batchResult || batchResult.length === 0) return;
       
-      const now = Date.now();
+      const timestampNow = Date.now();
       const defaultThreshold = settings.watchlistAlertThreshold || 5;
       const intervalMs = (settings.watchlistAlertInterval || 5) * 60 * 1000;
       
@@ -1901,7 +1901,7 @@
           if (!state) {
             // 第一次触发，立即提醒
             watchlistAlertState[code] = {
-              lastTime: now,
+              lastTime: timestampNow,
               lastHigh: price,
               lastLow: price
             };
@@ -1914,7 +1914,7 @@
             if (hitNewHigh || hitNewLow) {
               // 创新高或新低，再次提醒
               watchlistAlertState[code] = {
-                lastTime: now,
+                lastTime: timestampNow,
                 lastHigh: hitNewHigh ? price : state.lastHigh,
                 lastLow: hitNewLow ? price : state.lastLow
               };
@@ -2099,7 +2099,13 @@
   }
 
   // ===== 多条件提醒 + 智能阈值 + 盘口异动 =====
-  let _alertConditions = JSON.parse(localStorage.getItem('alert_conditions') || '{"changePercent":5,"volumeRatio":2,"amplitude":8,"triggerMode":"any","cooldown":300}');
+  let _alertConditions;
+  try {
+    _alertConditions = JSON.parse(localStorage.getItem('alert_conditions') || '{"changePercent":5,"volumeRatio":2,"amplitude":8,"triggerMode":"any","cooldown":300}');
+  } catch (e) {
+    console.warn('[alert_conditions] localStorage 数据损坏，使用默认值', e);
+    _alertConditions = {"changePercent":5,"volumeRatio":2,"amplitude":8,"triggerMode":"any","cooldown":300};
+  }
   let _alertLastTrigger = {}; // 记录每只股票上次触发时间
 
   // 计算ATR（平均真实波幅）
@@ -4217,6 +4223,7 @@
     let isPaused = false;           // 是否处于"临时隐藏等待用户返回"状态
     let pauseWatcher = null;        // MutationObserver 实例
     let pauseIntervalId = null;     // 轮询定时器
+    let pauseInitialTimerId = null; // 首次延迟检测定时器
 
     function hideOnboardingTemporarily() {
       if (isPaused) return;
@@ -4257,11 +4264,12 @@
       });
       pauseIntervalId = setInterval(tick, TICK);
       // 首次延迟 200ms 再检测，确保目标面板已经渲染到 DOM
-      setTimeout(tick, 200);
+      pauseInitialTimerId = setTimeout(tick, 200);
 
       function stopWatchers() {
         if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
         if (pauseIntervalId) { clearInterval(pauseIntervalId); pauseIntervalId = null; }
+        if (pauseInitialTimerId) { clearTimeout(pauseInitialTimerId); pauseInitialTimerId = null; }
       }
       // 把 stopWatchers 暴露给 resume 用
       hideOnboardingTemporarily._stopWatchers = stopWatchers;
@@ -4363,6 +4371,7 @@
       // 清理所有 watchers
       if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
       if (pauseIntervalId) { clearInterval(pauseIntervalId); pauseIntervalId = null; }
+      if (pauseInitialTimerId) { clearTimeout(pauseInitialTimerId); pauseInitialTimerId = null; }
       if (hideOnboardingTemporarily._stopWatchers) hideOnboardingTemporarily._stopWatchers();
       if (overlay.parentNode) overlay.remove();
       if (markCompleted) {
