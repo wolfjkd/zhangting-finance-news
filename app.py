@@ -180,7 +180,28 @@ class Api:
         return json.dumps({'status': 'ok'})
 
     def exit_app(self):
-        os._exit(0)
+        """体面退出：先停止数据源轮询线程、做一次 WAL checkpoint，再退出。
+        旧实现 os._exit(0) 会瞬间杀进程，跳过 SQLite WAL checkpoint，极端情况可能丢数据。"""
+        try:
+            # 1. 停止数据源管理器（关闭所有轮询线程）
+            mgr = self._data_source_manager
+            if mgr:
+                try:
+                    mgr.running = False
+                except Exception:
+                    pass
+            # 2. 显式触发一次 WAL checkpoint，把 -wal 文件内容写回主库
+            try:
+                _conn = sqlite3.connect(_DB_PATH, timeout=2)
+                _conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                _conn.close()
+            except Exception as e:
+                logger.warning(f'退出时 WAL checkpoint 失败: {e}')
+        except Exception as e:
+            logger.warning(f'exit_app 清理异常: {e}')
+        finally:
+            # sys.exit 会触发 atexit 钩子，比 os._exit 安全
+            sys.exit(0)
 
     def get_privacy_policy(self):
         try:
@@ -648,12 +669,42 @@ class Api:
             token_match = re.search(r'encryptedToken\s*=\s*"([^"]+)"', html)
             self._token = token_match.group(1) if token_match else None
 
-            config_match = re.search(r'window\.__NEWS_WS_CONFIG__\s*=\s*(\{[^}]+\})', html)
-            if config_match:
-                try:
-                    self._ws_config = json.loads(config_match.group(1))
-                except:
-                    self._ws_config = None
+            # 用括号配对扫描代替旧的 [^}]+ 正则——后者遇到嵌套 JSON 会在第一个内层 } 处截断
+            self._ws_config = None
+            cfg_start = html.find('window.__NEWS_WS_CONFIG__')
+            if cfg_start != -1:
+                # 找到等号后的第一个 { 作为起点
+                brace_start = html.find('{', cfg_start)
+                if brace_start != -1:
+                    depth = 0
+                    in_string = False
+                    escape_next = False
+                    end_idx = -1
+                    for i in range(brace_start, len(html)):
+                        ch = html[i]
+                        if escape_next:
+                            escape_next = False
+                            continue
+                        if ch == '\\':
+                            escape_next = True
+                            continue
+                        if ch == '"':
+                            in_string = not in_string
+                            continue
+                        if in_string:
+                            continue
+                        if ch == '{':
+                            depth += 1
+                        elif ch == '}':
+                            depth -= 1
+                            if depth == 0:
+                                end_idx = i
+                                break
+                    if end_idx != -1:
+                        try:
+                            self._ws_config = json.loads(html[brace_start:end_idx + 1])
+                        except Exception as e:
+                            logger.warning(f'wsConfig JSON 解析失败: {e}')
 
             logger.info('初始页面抓取成功，token=%s, wsConfig=%s', bool(self._token), bool(self._ws_config))
             return json.dumps({
@@ -763,8 +814,11 @@ class Api:
             w = self._window()
             if w:
                 if data:
-                    escaped = data.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n').replace('\r', '')
-                    js = f"window._onBackendEvent('{event}', '{escaped}')"
+                    # 用 json.dumps 生成合法 JS 字符串字面量：
+                    # 自动处理 \、"、\n、\r、\t、U+2028/U+2029（JS 行分隔符）等所有特殊字符，
+                    # 外层再剥掉首尾双引号，配合单引号包裹（避免与内容里的双引号冲突）
+                    js_safe = json.dumps(str(data), ensure_ascii=False)[1:-1]
+                    js = f"window._onBackendEvent('{event}', \"{js_safe}\")"
                 else:
                     js = f"window._onBackendEvent('{event}', '')"
                 w.evaluate_js(js)
@@ -854,6 +908,83 @@ class Api:
         except Exception as e:
             logger.error('获取行情失败 %s: %s', code, e)
             return json.dumps({'status': 'error', 'message': str(e)})
+
+    def batch_get_stock_quotes(self, codes):
+        """批量查询行情，代替前端直连 https://qt.gtimg.cn/。
+        直连有两个问题：① WebView2 直连会被 CORS 拦截；② 暴露数据源和调用路径。
+        这里复用同一个 _http（直连 session，不走系统代理），单批最多 20 个（腾讯限制）。"""
+        try:
+            if not codes or not isinstance(codes, list):
+                return json.dumps({'status': 'error', 'message': 'codes 必须为非空数组'}, ensure_ascii=False)
+
+            # 转 tdx 格式（sh/sz/bj 前缀）
+            def _to_tdx(c):
+                c = str(c).strip()
+                if c.startswith('6'):
+                    return f'sh{c}'
+                if c.startswith(('0', '3')):
+                    return f'sz{c}'
+                if c.startswith(('8', '4')):
+                    return f'bj{c}'
+                return None  # 无法识别
+
+            tdx_map = {}  # tdx_code -> origin_code
+            for code in codes:
+                tdx = _to_tdx(code)
+                if tdx:
+                    tdx_map[tdx] = str(code).strip()
+
+            if not tdx_map:
+                return json.dumps({'status': 'ok', 'quotes': []}, ensure_ascii=False)
+
+            results = []
+            tdx_codes = list(tdx_map.keys())
+            batch_size = 20
+            for i in range(0, len(tdx_codes), batch_size):
+                batch = tdx_codes[i:i + batch_size]
+                try:
+                    url = f'https://qt.gtimg.cn/q={",".join(batch)}'
+                    resp = _http.get(url, timeout=5)
+                    resp.encoding = 'gbk'
+                    text = resp.text.strip()
+                    # 腾讯返回多行 v_xxx="...~..."，每行一只票
+                    for line in text.split('\n'):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        m = re.search(r'v_(\w+)="([^"]+)"', line)
+                        if not m:
+                            continue
+                        fields = m.group(2).split('~')
+                        if len(fields) < 35:
+                            continue
+                        # 用 tdx 前缀对照回原始 code
+                        tdx_code = m.group(1)  # 例如 sh600000
+                        origin = tdx_map.get(tdx_code, tdx_code)
+                        price = float(fields[3]) if fields[3] else 0
+                        yesterday = float(fields[4]) if fields[4] else 0
+                        change = price - yesterday if price and yesterday else 0
+                        change_pct = (change / yesterday * 100) if yesterday > 0 else 0
+                        results.append({
+                            'code': origin,
+                            'name': fields[1],
+                            'price': price,
+                            'yesterdayClose': yesterday,
+                            'change': round(change, 4) if change else 0,
+                            'changePercent': round(change_pct, 2) if change_pct else 0,
+                            'high': float(fields[33]) if fields[33] else 0,
+                            'low': float(fields[34]) if fields[34] else 0,
+                            'open': float(fields[5]) if fields[5] else 0,
+                            'volume': int(float(fields[6])) * 100 if fields[6] else 0,
+                            'amount': float(fields[37]) * 10000 if len(fields) > 37 and fields[37] else 0,
+                        })
+                except Exception as e:
+                    logger.warning('批量行情查询批次失败: %s', e)
+
+            return json.dumps({'status': 'ok', 'quotes': results}, ensure_ascii=False)
+        except Exception as e:
+            logger.error('批量行情查询失败: %s', e)
+            return json.dumps({'status': 'error', 'message': str(e)}, ensure_ascii=False)
 
     def get_announcement_detail(self, art_code):
         try:

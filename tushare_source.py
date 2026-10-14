@@ -15,6 +15,7 @@ import logging
 import os
 import json
 import threading
+from collections import OrderedDict
 from typing import Callable, Dict, List, Optional
 from datetime import datetime, timedelta
 
@@ -104,7 +105,7 @@ class TushareSource:
     ]
 
     def __init__(self, dispatch_callback: Callable[[Dict], None],
-                 seen_ids: set,
+                 seen_ids: 'OrderedDict',
                  source_id: str = "tushare"):
         self._dispatch = dispatch_callback
         self._seen_ids = seen_ids
@@ -385,7 +386,7 @@ class TushareSource:
             dedup_key = title[:100]
             if dedup_key in self._seen_ids:
                 return
-            self._seen_ids.add(dedup_key)
+            self._seen_ids[dedup_key] = True
             self._recent_titles.append(title)
             if len(self._recent_titles) > 100:
                 self._recent_titles = self._recent_titles[-100:]

@@ -25,6 +25,7 @@ import random
 import time
 import logging
 import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional
@@ -352,7 +353,7 @@ class AKShareSource:
     TTS_TIMEOUT = 300  # 5 分钟
 
     def __init__(self, dispatch_callback: Callable[[Dict], None],
-                 seen_ids: set,
+                 seen_ids: 'OrderedDict',
                  source_id: str = "akshare_beta"):
         self._dispatch = dispatch_callback
         self._seen_ids = seen_ids
@@ -592,7 +593,7 @@ class AKShareSource:
                     continue
 
                 # 通过双重去重，加入集合和最近列表
-                self._seen_ids.add(dedup_key)
+                self._seen_ids[dedup_key] = True
                 self._recent_titles.append(title)
                 # 限制最近标题列表长度
                 if len(self._recent_titles) > 100:
@@ -630,12 +631,14 @@ class AKShareSource:
             logger.info("涨停聚合（Beta）·财联社: 入队 %d 条", len(cls_msgs))
 
     def cleanup_seen_ids(self, max_size: int = 500):
-        """清理 seen_ids 和 recent_titles，防止无限增长（线程安全）"""
+        """清理 seen_ids 和 recent_titles，防止无限增长（线程安全）。
+        OrderedDict 按插入顺序淘汰最旧的，避免旧 set 实现随机丢弃导致去重失效。"""
         with self._seen_ids_lock:
             if len(self._seen_ids) > max_size:
-                to_keep = list(self._seen_ids)[-max_size // 2:]
-                self._seen_ids.clear()
-                self._seen_ids.update(to_keep)
+                # 归零化简：弹出最旧的到剩余 max_size//2 条
+                target = max_size // 2
+                while len(self._seen_ids) > target:
+                    self._seen_ids.popitem(last=False)
                 logger.info("涨停聚合（Beta）: seen_ids 清理至 %d 条", len(self._seen_ids))
             # 清理最近标题列表
             if len(self._recent_titles) > 100:

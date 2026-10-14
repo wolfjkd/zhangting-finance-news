@@ -11,6 +11,24 @@
   // ===== 调试开关 =====
   const DEBUG_MODE = false; // 生产环境关闭（方案B动作1：降CPU 1-2%）
 
+  // ===== pywebview API 调用辅助工具 =====
+  // 项目中有 30+ 处反复出现的模式：
+  //   if (window.pywebview && window.pywebview.api && window.pywebview.api.XXX) ...
+  //   const result = await pywebview.api.XXX(...);
+  //   const resp = typeof result === 'string' ? JSON.parse(result) : result;
+  // 抽取为两个小 helper，避免重复模板代码；错误处理仍由调用方决定。
+
+  /** 检查某个后端 API 是否可用（window.pywebview.api 是否存在且该方法已注册） */
+  function apiHas(methodName) {
+    return !!(window.pywebview && window.pywebview.api && typeof window.pywebview.api[methodName] === 'function');
+  }
+
+  /** 把 pywebview 返回值统一解包成对象（pywebview 有时返回字符串、有时返回对象，取决于序列化时机） */
+  function unwrapResult(result) {
+    if (result == null) return null;
+    return typeof result === 'string' ? JSON.parse(result) : result;
+  }
+
   // ===== 状态 =====
   let autoScroll = true;
   let isPinned = false;
@@ -335,12 +353,12 @@
   async function init() {
     // 0. 优先从后端读取设置（打包后 localStorage 不稳定）
     try {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_settings) {
+      if (apiHas('get_settings')) {
         const backendSettings = await pywebview.api.get_settings();
-        console.log('[DEBUG] backendSettings:', backendSettings ? backendSettings.substring(0, 200) : 'null');
+        if (DEBUG_MODE) console.log('[DEBUG] backendSettings:', backendSettings ? backendSettings.substring(0, 200) : 'null');
         if (backendSettings) {
-          const parsed = typeof backendSettings === 'string' ? JSON.parse(backendSettings) : backendSettings;
-          console.log('[DEBUG] parsed settings sources:', parsed.sources);
+          const parsed = unwrapResult(backendSettings);
+          if (DEBUG_MODE) console.log('[DEBUG] parsed settings sources:', parsed.sources);
           if (Object.keys(parsed).length > 0) {
             localStorage.setItem('ztfi-settings', JSON.stringify(parsed));
             settings = loadSettings();
@@ -354,7 +372,7 @@
     // 1. 从 SQLite 加载已读 aid（持久化去重）
     try {
       const persisted = await pywebview.api.get_seen_aids();
-      const aids = typeof persisted === 'string' ? JSON.parse(persisted) : persisted;
+      const aids = unwrapResult(persisted);
       if (Array.isArray(aids)) {
         aids.forEach(aid => seenAids.add(aid));
       }
@@ -375,9 +393,9 @@
     setStatus('connecting', '正在获取数据...');
     try {
       const result = await pywebview.api.fetch_initial();
-      console.log('[DEBUG] fetch_initial result:', result ? result.substring(0, 200) : 'null');
-      const resp = typeof result === 'string' ? JSON.parse(result) : result;
-      console.log('[DEBUG] fetch_initial parsed:', JSON.stringify(resp.status));
+      if (DEBUG_MODE) console.log('[DEBUG] fetch_initial result:', result ? result.substring(0, 200) : 'null');
+      const resp = unwrapResult(result);
+      if (DEBUG_MODE) console.log('[DEBUG] fetch_initial parsed:', JSON.stringify(resp.status));
 
       if (resp.status !== 'ok') {
         setStatus('error', '获取失败: ' + (resp.message || '未知错误'));
@@ -387,7 +405,7 @@
       }
 
       // 解析初始 HTML
-      console.log('[DEBUG] Calling parseAndRenderHTML...');
+      if (DEBUG_MODE) console.log('[DEBUG] Calling parseAndRenderHTML...');
       parseAndRenderHTML(resp.html);
       $loading.classList.remove('show');
 
@@ -462,9 +480,9 @@
     // 检测 Edge TTS 可用性并加载音色列表
     async function checkEdgeTTSAvailability() {
       try {
-        if (!window.pywebview || !pywebview.api || !pywebview.api.tts_get_voices) return;
+        if (!apiHas('tts_get_voices')) return;
         const result = await pywebview.api.tts_get_voices();
-        const data = JSON.parse(result);
+        const data = unwrapResult(result);
         if (data.status !== 'ok' || !data.voices) {
           console.warn('Edge TTS 不可用:', data.message || '未知错误');
           return;
@@ -496,9 +514,9 @@
         ttsVoiceTestBtn.disabled = true;
         ttsVoiceTestBtn.textContent = '合成中...';
         try {
-          if (window.pywebview && window.pywebview.api && window.pywebview.api.tts_synthesize) {
+          if (apiHas('tts_synthesize')) {
             const result = await window.pywebview.api.tts_synthesize(testText, voice, '+0%', '+0%');
-            const data = JSON.parse(result);
+            const data = unwrapResult(result);
             if (data.status === 'ok' && data.audio_data) {
               const audio = new Audio(data.audio_data);
               audio.play().catch(err => console.warn('播放失败:', err));
@@ -1422,7 +1440,7 @@
         
         try {
           const result = await pywebview.api.get_stock_quote(code);
-          const resp = typeof result === 'string' ? JSON.parse(result) : result;
+          const resp = unwrapResult(result);
           
           if (resp.status === 'ok' && resp.quote) {
             await window.historyStorage.addWatchlistStock({
@@ -1617,13 +1635,13 @@
         ctx.fillText('加载分时数据中...', canvas.width / 2, canvas.height / 2);
 
         try {
-          if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_stock_minutes) {
+          if (!apiHas('get_stock_minutes')) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.fillText('后端接口不可用', canvas.width / 2, canvas.height / 2);
             return;
           }
           const result = await window.pywebview.api.get_stock_minutes(code);
-          const data = typeof result === 'string' ? JSON.parse(result) : result;
+          const data = unwrapResult(result);
           if (data.status !== 'ok' || !data.data) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.fillText(data.message || '无分时数据', canvas.width / 2, canvas.height / 2);
@@ -1734,7 +1752,7 @@
   async function showStockQuoteDialog(code) {
     try {
       const result = await pywebview.api.get_stock_quote(code);
-      const resp = typeof result === 'string' ? JSON.parse(result) : result;
+      const resp = unwrapResult(result);
       
       if (resp.status !== 'ok' || !resp.quote) {
         showToast('获取行情失败', { type: 'error' });
@@ -1942,62 +1960,26 @@
 
   async function batchGetQuotes(codes) {
     if (!codes || codes.length === 0) return [];
-    
-    const tdxCodes = codes.map(code => {
-      if (code.startsWith('6')) return `sh${code}`;
-      if (code.startsWith(('0', '3'))) return `sz${code}`;
-      if (code.startsWith(('8', '4'))) return `bj${code}`;
-      return code;
-    });
-    
-    const quotes = [];
-    const batchSize = 20;
-    
-    for (let i = 0; i < tdxCodes.length; i += batchSize) {
-      const batch = tdxCodes.slice(i, i + batchSize);
-      try {
-        const resp = await fetch(`https://qt.gtimg.cn/q=${batch.join(',')}`);
-        const buffer = await resp.arrayBuffer();
-        const decoder = new TextDecoder('gbk');
-        const text = decoder.decode(buffer);
-        
-        const lines = text.trim().split('\n');
-        for (const line of lines) {
-          const match = line.match(/v_\w+="([^"]+)"/);
-          if (match) {
-            const fields = match[1].split('~');
-            if (fields.length >= 35) {
-              const rawCode = fields[2];
-              const code = rawCode.replace(/^(sh|sz|bj)/, '');
-              const price = parseFloat(fields[3]) || 0;
-              const yesterdayClose = parseFloat(fields[4]) || 0;
-              const change = price - yesterdayClose;
-              const changePercent = yesterdayClose > 0 ? (change / yesterdayClose) * 100 : 0;
-              
-              quotes.push({
-                quote: {
-                  code: code,
-                  name: fields[1],
-                  price: price,
-                  yesterdayClose: yesterdayClose,
-                  change: change,
-                  changePercent: changePercent,
-                  high: parseFloat(fields[33]) || 0,
-                  low: parseFloat(fields[34]) || 0,
-                  open: parseFloat(fields[5]) || 0,
-                  volume: parseInt(fields[6]) * 100 || 0,
-                  amount: parseFloat(fields[37]) * 10000 || 0,
-                }
-              });
-            }
-          }
-        }
-      } catch (err) {
-        if (DEBUG_MODE) console.error('[自选股提醒] 批量查询失败:', err);
+
+    // 走后端代理：避免 WebView2 直连外部 API 触发 CORS、暴露调用路径
+    // 后端实现：app.py 的 batch_get_stock_quotes（复用 _http session）
+    try {
+      const api = window.pywebview && window.pywebview.api;
+      if (!api || !api.batch_get_stock_quotes) {
+        if (DEBUG_MODE) console.error('[自选股提醒] 后端 batch_get_stock_quotes 接口不可用');
+        return [];
       }
+      const resp = await api.batch_get_stock_quotes(codes);
+      if (!resp || !resp.status || resp.status !== 'ok' || !Array.isArray(resp.quotes)) {
+        if (DEBUG_MODE) console.error('[自选股提醒] 批量查询失败:', resp && resp.message);
+        return [];
+      }
+      // 包装成 {quote: {...}} 形式以兼容现有调用方
+      return resp.quotes.map(q => ({ quote: q }));
+    } catch (err) {
+      if (DEBUG_MODE) console.error('[自选股提醒] 批量查询异常:', err);
+      return [];
     }
-    
-    return quotes;
   }
 
   function showWatchlistAlertPopup(quote, threshold) {
@@ -2061,42 +2043,8 @@
     if (DEBUG_MODE) console.log(`[自选股提醒] 触发提醒: ${quote.name} ${changePercent.toFixed(2)}%`);
   }
 
-  function playAlertSound() {
-    // 使用 Web Audio API 生成简单的警报音
-    try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.frequency.value = 880; // A5
-      oscillator.type = 'sine';
-      gainNode.gain.value = 0.3;
-      
-      oscillator.start();
-      
-      // 响2次
-      setTimeout(() => {
-        oscillator.stop();
-      }, 200);
-      
-      setTimeout(() => {
-        const osc2 = audioContext.createOscillator();
-        const gain2 = audioContext.createGain();
-        osc2.connect(gain2);
-        gain2.connect(audioContext.destination);
-        osc2.frequency.value = 1047; // C6
-        osc2.type = 'sine';
-        gain2.gain.value = 0.3;
-        osc2.start();
-        setTimeout(() => osc2.stop(), 300);
-      }, 300);
-    } catch (err) {
-      if (DEBUG_MODE) console.warn('播放提醒音失败:', err);
-    }
-  }
+  // 注：playAlertSound 的唯一实现见文件后半部分（关键词命中附近）；
+  // 这里不再重复定义，所有调用点共用同一个函数和同一个 AudioContext 单例。
 
   // ===== 多条件提醒 + 智能阈值 + 盘口异动 =====
   let _alertConditions;
@@ -2111,9 +2059,9 @@
   // 计算ATR（平均真实波幅）
   async function calculateATR(code) {
     try {
-      if (!window.pywebview || !window.pywebview.api) return 0;
+      if (!apiHas('get_stock_history')) return 0;
       const result = await window.pywebview.api.get_stock_history(code, 21);
-      const data = JSON.parse(result);
+      const data = unwrapResult(result);
       if (data.status !== 'ok' || !data.data || data.data.length < 2) return 0;
 
       let trSum = 0;
@@ -2344,7 +2292,7 @@
     try {
       const beforeTime = Math.floor(Date.now() / 1000) - 3600;
       const result = await pywebview.api.load_more(beforeTime);
-      const data = typeof result === 'string' ? JSON.parse(result) : result;
+      const data = unwrapResult(result);
 
       if (data.status === 'ok' && Array.isArray(data.data) && data.data.length > 0) {
         data.data.forEach(item => {
@@ -2532,7 +2480,7 @@
     const text = voiceQueue.shift();
 
     // 根据引擎选择：Edge TTS 优先（如果可用且已选择）
-    if (_ttsEngine === 'edge' && window.pywebview && window.pywebview.api && window.pywebview.api.tts_synthesize) {
+    if (_ttsEngine === 'edge' && apiHas('tts_synthesize')) {
       speakWithEdgeTTS(text).then(ok => {
         if (!ok) {
           // Edge TTS 失败，回退到浏览器内置
@@ -2644,7 +2592,7 @@
     try {
       localStorage.setItem('ztfi-settings', JSON.stringify(settings));
       // 同步保存到 Python 端文件（供启动时读取主题）
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.persist_settings) {
+      if (apiHas('persist_settings')) {
         pywebview.api.persist_settings(JSON.stringify(settings)).catch(() => {});
       }
     } catch (e) {}
@@ -2881,7 +2829,7 @@
       $btnAiTest.disabled = true;
 
       try {
-        if (window.pywebview && window.pywebview.api && window.pywebview.api.ai_analyze) {
+        if (apiHas('ai_analyze')) {
           const result = await pywebview.api.ai_analyze(
             '央行宣布下调存款准备金率', 
             '央行决定下调金融机构存款准备金率0.25个百分点',
@@ -2960,17 +2908,17 @@
 
     // 自绘标题栏窗口按钮（frameless，见 DESIGN_SYSTEM.md A.6）
     document.getElementById('btnMinimize')?.addEventListener('click', () => {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.minimize_window) {
+      if (apiHas('minimize_window')) {
         pywebview.api.minimize_window().catch(() => {});
       }
     });
     document.getElementById('btnMaximize')?.addEventListener('click', () => {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize) {
+      if (apiHas('toggle_maximize')) {
         pywebview.api.toggle_maximize().catch(() => {});
       }
     });
     document.getElementById('btnClose')?.addEventListener('click', () => {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.exit_app) {
+      if (apiHas('exit_app')) {
         pywebview.api.exit_app();
       }
     });
@@ -3015,7 +2963,7 @@
     }
 
     function setWindowTitlebarTheme(isDark) {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.set_theme) {
+      if (apiHas('set_theme')) {
         pywebview.api.set_theme(isDark ? 'dark' : 'light').catch(() => {});
       }
     }
@@ -3025,7 +2973,7 @@
     // pywebview API 就绪后重新应用主题（解决初始化时序问题）
     window.addEventListener('pywebviewready', () => {
       setWindowTitlebarTheme(settings.darkMode);
-      if (settings.isPinned && window.pywebview && window.pywebview.api && window.pywebview.api.toggle_pin) {
+      if (settings.isPinned && apiHas('toggle_pin')) {
         pywebview.api.toggle_pin(true).catch(() => {});
       }
       // 监听窗口大小变化，保存到后端
@@ -3034,7 +2982,7 @@
         windowResizeTimer = setTimeout(() => {
           const width = window.outerWidth;
           const height = window.outerHeight;
-          if (window.pywebview && window.pywebview.api && window.pywebview.api.set_window_size) {
+          if (apiHas('set_window_size')) {
             window.pywebview.api.set_window_size(width, height).catch(() => {});
           }
         }, 1000);
@@ -3226,9 +3174,27 @@
     showKeywordNotification(title, keyword);
   }
 
+  // AudioContext 单例：浏览器对同一页面的 AudioContext 数量有限（通常 6 个左右），
+  // 每次播放都 new 一个且不 close 会让长时间运行的客户端耗尽配额，最终无声。
+  // 用懒加载单例复用同一个 ctx，必要时 resume（Chrome 自动暂停策略）。
+  let _alertAudioCtx = null;
+  function _getAlertAudioCtx() {
+    if (!_alertAudioCtx || _alertAudioCtx.state === 'closed') {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return null;
+      _alertAudioCtx = new Ctor();
+    }
+    // Chrome / Edge 在后台标签或长时间未交互后会自动 suspend，播放前尝试 resume
+    if (_alertAudioCtx.state === 'suspended') {
+      _alertAudioCtx.resume().catch(() => {});
+    }
+    return _alertAudioCtx;
+  }
+
   function playAlertSound() {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _getAlertAudioCtx();
+      if (!ctx) return;
       // 两声短促的蜂鸣
       [0, 0.15].forEach(offset => {
         const osc = ctx.createOscillator();
@@ -3243,7 +3209,7 @@
         osc.stop(ctx.currentTime + offset + 0.15);
       });
     } catch (e) {
-      // fallback: 尝试系统 beep
+      if (DEBUG_MODE) console.warn('播放提醒音失败:', e);
     }
   }
 
@@ -3387,20 +3353,20 @@
     try {
       if (DEBUG_MODE) console.log('[详情] 请求详情, item keys:', Object.keys(item), 'art_code:', item.art_code, 'info_code:', item.info_code);
       let detailContent = '';
-      if (item.art_code && window.pywebview && window.pywebview.api) {
+      if (item.art_code && apiHas('get_announcement_detail')) {
         if (DEBUG_MODE) console.log('[详情] 调用 get_announcement_detail, art_code:', item.art_code);
         const resp = await pywebview.api.get_announcement_detail(item.art_code);
         if (DEBUG_MODE) console.log('[详情] 公告详情返回:', resp);
-        const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
-        if (data.status === 'ok' && data.content) {
+        const data = unwrapResult(resp);
+        if (data && data.status === 'ok' && data.content) {
           detailContent = data.content;
         }
-      } else if (item.info_code && window.pywebview && window.pywebview.api) {
+      } else if (item.info_code && apiHas('get_research_detail')) {
         if (DEBUG_MODE) console.log('[详情] 调用 get_research_detail, info_code:', item.info_code);
         const resp = await pywebview.api.get_research_detail(item.info_code);
         if (DEBUG_MODE) console.log('[详情] 研报详情返回:', resp);
-        const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
-        if (data.status === 'ok' && data.content) {
+        const data = unwrapResult(resp);
+        if (data && data.status === 'ok' && data.content) {
           detailContent = data.content;
         }
       } else {
@@ -3782,7 +3748,7 @@
       init();
     });
     overlay.querySelector('#btnRejectPrivacy').addEventListener('click', () => {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.exit_app) {
+      if (apiHas('exit_app')) {
         pywebview.api.exit_app();
       } else {
         window.close();
@@ -3960,10 +3926,10 @@
     if (typeof pywebview !== 'undefined' && pywebview.api && typeof pywebview.api.fetch_initial === 'function') {
       // 优先从后端读取设置（打包后 localStorage 不稳定）
       try {
-        if (window.pywebview && window.pywebview.api && window.pywebview.api.get_settings) {
+        if (apiHas('get_settings')) {
           const backendSettings = await pywebview.api.get_settings();
           if (backendSettings) {
-            const parsed = typeof backendSettings === 'string' ? JSON.parse(backendSettings) : backendSettings;
+            const parsed = unwrapResult(backendSettings);
             if (Object.keys(parsed).length > 0) {
               localStorage.setItem('ztfi-settings', JSON.stringify(parsed));
               settings = loadSettings();
@@ -4098,7 +4064,7 @@
 
   // frameless 边缘缩放依赖 pywebview js_api（resize_window），
   // 必须等 pywebviewready 注入完成后绑定；在此独立监听，不依赖 init() 是否执行。
-  if (window.pywebview && window.pywebview.api && window.pywebview.api.resize_window) {
+  if (apiHas('resize_window')) {
     try { initFramelessResize(); } catch (e) { console.warn('[resize]', e); }
   } else {
     window.addEventListener('pywebviewready', () => {
@@ -4949,7 +4915,7 @@
     $btnCheckUpdate.disabled = true;
 
     try {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.check_update) {
+      if (apiHas('check_update')) {
         const result = await pywebview.api.check_update();
         const data = JSON.parse(result);
 
@@ -4990,7 +4956,7 @@
     $btnUpdateLater.disabled = true;
 
     try {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.download_update) {
+      if (apiHas('download_update')) {
         const result = await pywebview.api.download_update();
         const data = JSON.parse(result);
         if (data.status === 'ok') {
@@ -5037,7 +5003,7 @@
 
   if ($btnUrgentExit) {
     $btnUrgentExit.addEventListener('click', () => {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.exit_app) {
+      if (apiHas('exit_app')) {
         pywebview.api.exit_app();
       } else {
         window.close();

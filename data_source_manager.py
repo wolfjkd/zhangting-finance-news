@@ -11,6 +11,7 @@ import threading
 import requests
 import logging
 import os
+from collections import OrderedDict
 from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -358,7 +359,8 @@ class DataSourceManager:
 
         self._message_callback: Optional[Callable[[Dict], None]] = None
 
-        self._seen_ids: Dict[str, set] = {}
+        # 用 OrderedDict 作有序集合（Python 3.7+ 保持插入顺序），截断时弹出最旧的，避免 set 无序导致去重失效
+        self._seen_ids: Dict[str, 'OrderedDict'] = {}
 
         self._northbound_last_net: Optional[float] = None
 
@@ -528,9 +530,17 @@ class DataSourceManager:
             self.source_status[source.id] = {
                 "connected": False, "last_update": None, "error": None, "message_count": 0
             }
-            self._seen_ids[source.id] = set()
+            self._seen_ids[source.id] = OrderedDict()
 
         self._load_source_enabled_states()
+
+    @staticmethod
+    def _truncate_seen(seen: 'OrderedDict', max_size: int) -> 'OrderedDict':
+        """有序集合按插入时间淘汰最旧的，保证保留最近 max_size 条。
+        替代旧代码 set(list(seen)[-N:])——set 无序，会随机丢弃元素导致去重失效。"""
+        while len(seen) > max_size:
+            seen.popitem(last=False)  # 弹出最早插入的
+        return seen
 
     def _get_source_config_path(self):
         import os
@@ -710,9 +720,9 @@ class DataSourceManager:
             art_code = row.get("art_code", "")
             if not art_code or art_code in seen:
                 continue
-            seen.add(art_code)
+            seen[art_code] = True
             if len(seen) > 200:
-                seen = set(list(seen)[-200:])
+                seen = self._truncate_seen(seen, 200)
                 self._seen_ids["eastmoney"] = seen
 
             title = row.get("title_ch") or row.get("title") or "无标题公告"
@@ -802,9 +812,9 @@ class DataSourceManager:
             info_code = row.get("infoCode", "")
             if not info_code or info_code in seen:
                 continue
-            seen.add(info_code)
+            seen[info_code] = True
             if len(seen) > 200:
-                seen = set(list(seen)[-200:])
+                seen = self._truncate_seen(seen, 200)
                 self._seen_ids["research"] = seen
 
             title = row.get("title", "无标题研报")
@@ -984,9 +994,9 @@ class DataSourceManager:
             unique_key = f"{sec_code}_{amount}_{net_amount}"
             if unique_key in seen:
                 continue
-            seen.add(unique_key)
+            seen[unique_key] = True
             if len(seen) > 200:
-                seen = set(list(seen)[-200:])
+                seen = self._truncate_seen(seen, 200)
                 self._seen_ids["dragon_tiger"] = seen
 
             amount_yi = amount / 100000000
@@ -1049,9 +1059,9 @@ class DataSourceManager:
             art_code = row.get("art_code", "")
             if not art_code or art_code in seen:
                 continue
-            seen.add(art_code)
+            seen[art_code] = True
             if len(seen) > 200:
-                seen = set(list(seen)[-200:])
+                seen = self._truncate_seen(seen, 200)
                 self._seen_ids["ann_interpret"] = seen
 
             title = row.get("title_ch") or row.get("title") or "无标题公告"
@@ -1250,7 +1260,7 @@ class DataSourceManager:
         else:
             logger.info(f"外网资讯：已检测到代理，直连失败时自动走代理。{_proxy_status_message()}")
         
-        seen = self._seen_ids.get("foreign_news", set())
+        seen = self._seen_ids.get("foreign_news", OrderedDict())
         all_messages = []
         
         try:
@@ -1336,7 +1346,7 @@ class DataSourceManager:
             
             self._seen_ids["foreign_news"] = seen
             if len(seen) > 300:
-                seen = set(list(seen)[-300:])
+                seen = self._truncate_seen(seen, 300)
                 self._seen_ids["foreign_news"] = seen
             
             self.source_status["foreign_news"]["error"] = None
@@ -1349,8 +1359,8 @@ class DataSourceManager:
         if not _is_proxy_available():
             logger.debug("X平台优先轮询：未检测到代理，将尝试直连")
         
-        seen = self._seen_ids.get("foreign_news", set())
-        
+        seen = self._seen_ids.get("foreign_news", OrderedDict())
+
         try:
             logger.info("X平台优先轮询：开始抓取...")
             nitter_msgs = self._fetch_nitter_twitter_news(seen, limit=5)
@@ -1434,7 +1444,7 @@ class DataSourceManager:
                     unique_key = f"reddit_{link}" if link else f"reddit_{title[:50]}"
                     if unique_key in seen:
                         continue
-                    seen.add(unique_key)
+                    seen[unique_key] = True
                     
                     translated_title = self._translate_title_or_discard(title)
                     if not translated_title:
@@ -1545,7 +1555,7 @@ class DataSourceManager:
                     unique_key = f"google_{link}" if link else f"google_{title[:50]}"
                     if unique_key in seen:
                         continue
-                    seen.add(unique_key)
+                    seen[unique_key] = True
                     
                     translated_title = self._translate_title_or_discard(title)
                     if not translated_title:
@@ -1634,7 +1644,7 @@ class DataSourceManager:
                 unique_key = f"techcrunch_{link}" if link else f"techcrunch_{title[:50]}"
                 if unique_key in seen:
                     continue
-                seen.add(unique_key)
+                seen[unique_key] = True
                 
                 translated_title = self._translate_title_or_discard(title)
                 if not translated_title:
@@ -1721,7 +1731,7 @@ class DataSourceManager:
                 unique_key = f"hn_{link}" if link else f"hn_{title[:50]}"
                 if unique_key in seen:
                     continue
-                seen.add(unique_key)
+                seen[unique_key] = True
                 
                 translated_title = self._translate_title_or_discard(title)
                 if not translated_title:
@@ -1813,7 +1823,7 @@ class DataSourceManager:
                     unique_key = f"bbc_{link}" if link else f"bbc_{title[:50]}"
                     if unique_key in seen:
                         continue
-                    seen.add(unique_key)
+                    seen[unique_key] = True
                     
                     translated_title = self._translate_title_or_discard(title)
                     if not translated_title:
@@ -1905,7 +1915,7 @@ class DataSourceManager:
                     unique_key = f"cnbc_{link}" if link else f"cnbc_{title[:50]}"
                     if unique_key in seen:
                         continue
-                    seen.add(unique_key)
+                    seen[unique_key] = True
                     
                     translated_title = self._translate_title_or_discard(title)
                     if not translated_title:
@@ -1991,7 +2001,7 @@ class DataSourceManager:
                 unique_key = f"wired_{link}" if link else f"wired_{title[:50]}"
                 if unique_key in seen:
                     continue
-                seen.add(unique_key)
+                seen[unique_key] = True
                 
                 translated_title = self._translate_title_or_discard(title)
                 if not translated_title:
@@ -2086,7 +2096,7 @@ class DataSourceManager:
                     unique_key = f"bloomberg_{link}" if link else f"bloomberg_{title[:50]}"
                     if unique_key in seen:
                         continue
-                    seen.add(unique_key)
+                    seen[unique_key] = True
                     
                     translated_title = self._translate_title_or_discard(title)
                     if not translated_title:
@@ -2226,7 +2236,7 @@ class DataSourceManager:
                         unique_key = f"nitter_{account}_{link}" if link else f"nitter_{account}_{title[:50]}"
                         if unique_key in seen:
                             continue
-                        seen.add(unique_key)
+                        seen[unique_key] = True
                         
                         translated_title = self._translate_title_or_discard(title)
                         if not translated_title:
@@ -2264,7 +2274,7 @@ class DataSourceManager:
             from akshare_source import AKShareSource
             self._akshare_source = AKShareSource(
                 dispatch_callback=self._dispatch_message,
-                seen_ids=self._seen_ids.get("akshare_beta", set()),
+                seen_ids=self._seen_ids.get("akshare_beta", OrderedDict()),
                 source_id="akshare_beta"
             )
             self._seen_ids["akshare_beta"] = self._akshare_source._seen_ids
@@ -2281,7 +2291,7 @@ class DataSourceManager:
             from tushare_source import TushareSource
             self._tushare_source = TushareSource(
                 dispatch_callback=self._dispatch_message,
-                seen_ids=self._seen_ids.get("tushare", set()),
+                seen_ids=self._seen_ids.get("tushare", OrderedDict()),
                 source_id="tushare"
             )
             self._seen_ids["tushare"] = self._tushare_source._seen_ids
@@ -2298,7 +2308,7 @@ class DataSourceManager:
             from wind_source import WindSource
             self._wind_source = WindSource(
                 dispatch_callback=self._dispatch_message,
-                seen_ids=self._seen_ids.get("wind", set()),
+                seen_ids=self._seen_ids.get("wind", OrderedDict()),
                 source_id="wind"
             )
             self._seen_ids["wind"] = self._wind_source._seen_ids
@@ -2368,12 +2378,12 @@ class DataSourceManager:
                 if not feed.entries:
                     continue
                 messages = []
-                seen = self._seen_ids.get("akshare_beta", set())
+                seen = self._seen_ids.get("akshare_beta", OrderedDict())
                 for entry in feed.entries[:10]:  # 每个源最多10条
                     title = entry.get('title', '').strip()
                     if not title or title in seen:
                         continue
-                    seen.add(title)
+                    seen[title] = True
                     content = entry.get('summary', entry.get('description', ''))[:500]
                     pub_time = ''
                     if hasattr(entry, 'published_parsed') and entry.published_parsed:
