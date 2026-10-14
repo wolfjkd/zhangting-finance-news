@@ -4206,37 +4206,61 @@
     // 当用户关闭那个面板后，引导自动回到当前步骤继续显示。
     let isPaused = false;           // 是否处于"临时隐藏等待用户返回"状态
     let pauseWatcher = null;        // MutationObserver 实例
+    let pauseIntervalId = null;     // 轮询定时器
 
     function hideOnboardingTemporarily() {
       if (isPaused) return;
       isPaused = true;
       overlay.classList.add('onboarding-hidden');
-      // 用 MutationObserver 检测其它面板是否关闭。
-      // 两种面板类型：
-      //   A. 动态创建型（datasource-overlay / watchlist-dialog 等）：从 body 移除
-      //   B. 常驻切换型（settingsOverlay 等）：class 里移除 'show'，或 style.display = 'none'
       if (pauseWatcher) pauseWatcher.disconnect();
-      const checkAndResume = () => {
-        if (!isPaused || !overlay.parentNode) return;
+      if (pauseIntervalId) clearInterval(pauseIntervalId);
+
+      // 状态机：每 300ms 检查一次其它面板是否都关了。
+      // 一旦检测到没有任何阻挡面板，立刻恢复引导。
+      // 上限 5 分钟（超过则强制恢复，避免引导永久消失）。
+      let elapsed = 0;
+      const MAX_WAIT = 5 * 60 * 1000;
+      const TICK = 300;
+
+      const tick = () => {
+        if (!isPaused) return;  // 已被 resume
+        if (!overlay.parentNode) { stopWatchers(); return; }  // 引导已被销毁
+        elapsed += TICK;
+        if (elapsed > MAX_WAIT) {
+          console.warn('[onboarding] 超过最大等待时长，强制恢复');
+          resumeOnboarding();
+          return;
+        }
         const blocking = isAnyOtherBlockingPanelOpen();
-        if (!blocking) resumeOnboarding();
+        if (!blocking) {
+          resumeOnboarding();
+        }
       };
-      pauseWatcher = new MutationObserver(checkAndResume);
+
+      // MutationObserver + 轮询双保险
+      pauseWatcher = new MutationObserver(tick);
       pauseWatcher.observe(document.body, {
         childList: true,
         subtree: false,
         attributes: true,
         attributeFilter: ['class', 'style']
       });
-      // 兜底：分两段检查——
-      //   第 50ms：确保目标面板已渲染到 DOM（避免过早误判为"全部关闭"）
-      //   第 1500ms：真正检测用户是否关掉了面板
-      setTimeout(checkAndResume, 50);
-      setTimeout(checkAndResume, 1500);
+      pauseIntervalId = setInterval(tick, TICK);
+      // 首次延迟 200ms 再检测，确保目标面板已经渲染到 DOM
+      setTimeout(tick, 200);
+
+      function stopWatchers() {
+        if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
+        if (pauseIntervalId) { clearInterval(pauseIntervalId); pauseIntervalId = null; }
+      }
+      // 把 stopWatchers 暴露给 resume 用
+      hideOnboardingTemporarily._stopWatchers = stopWatchers;
     }
 
     // 检查当前是否还有任何阻挡引导的其它面板/对话框开着
-    // 所有已知的弹窗类名都列出来，避免漏判误恢复引导
+    // 关键：必须真正"显示中"的才返回 true。
+    // 有些对话框是常驻 DOM（如 search-dialog / favorites-dialog），平时 display:none 隐藏，
+    // 用 display:flex 显示——这些必须检查 style.display 而不是仅看 className。
     function isAnyOtherBlockingPanelOpen() {
       const allElements = document.body.children;
       for (let i = 0; i < allElements.length; i++) {
@@ -4245,15 +4269,25 @@
         if (!(el instanceof HTMLElement)) continue;
         const cls = el.className || '';
         const id = el.id || '';
-        // 1) 常驻切换型：通过 .show class 显示（如 settingsOverlay）
-        if (cls.includes('overlay') && cls.includes('show')) return true;
-        // 2) 动态创建型：列出所有已知对话框/面板类名
-        //    overlay 系列
-        if (/\b(datasource-overlay|news-detail-overlay|license-dialog)\b/.test(cls)) return true;
-        //    dialog 系列（含 watchlist-dialog / quote-dialog / watchlist-alert-dialog）
-        if (/\b[\w-]*-dialog\b/.test(cls)) return true;
-        // 3) 通过 style.display 控制的常驻对话框（如 favoritesDialog 用 display:flex 显示）
-        if (id === 'favoritesDialog' && el.style.display && el.style.display !== 'none') return true;
+        if (!cls) continue;
+
+        // 是否在视觉上"显示中"——综合 offsetParent 和 style.display
+        // offsetParent 为 null 通常意味着 display:none 或祖先隐藏
+        const isVisible = el.offsetParent !== null ||
+                          (el.style.display && el.style.display !== 'none' && el.style.display !== '');
+
+        // 1) 常驻切换型（settingsOverlay 等）：通过 .show class 显示
+        //    必须同时满足 (overlay + show) 两个 class 才算显示
+        if (/\boverlay\b/.test(cls) && /\bshow\b/.test(cls)) return true;
+        // 2) 动态创建型对话框（watchlist-dialog / quote-dialog / license-dialog / datasource-overlay）
+        //    这类都是 createElement 后 appendChild 显示，remove() 后从 DOM 移除。
+        //    所以只要它还在 body 子节点里，就一定是显示中。
+        if (/(watchlist-dialog|quote-dialog|watchlist-alert-dialog|license-dialog|datasource-overlay|news-detail-overlay|multi-condition-popup|orderbook-alert|context-menu|watchlist-move-menu|toast|kw-alert-notification)\b/.test(cls)) {
+          // 但要排除常驻 DOM 的 search-dialog / favorites-dialog（它们靠 display 控制）
+          if (id !== 'searchDialog' && id !== 'favoritesDialog') return true;
+        }
+        // 3) 通过 style.display 控制的常驻对话框
+        if (isVisible && (id === 'favoritesDialog' || id === 'searchDialog')) return true;
       }
       return false;
     }
@@ -4262,7 +4296,7 @@
       if (!isPaused) return;
       isPaused = false;
       overlay.classList.remove('onboarding-hidden');
-      if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
+      if (hideOnboardingTemporarily._stopWatchers) hideOnboardingTemporarily._stopWatchers();
     }
 
     function render() {
@@ -4316,7 +4350,10 @@
     }
 
     function closeOnboarding(markCompleted) {
+      // 清理所有 watchers
       if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
+      if (pauseIntervalId) { clearInterval(pauseIntervalId); pauseIntervalId = null; }
+      if (hideOnboardingTemporarily._stopWatchers) hideOnboardingTemporarily._stopWatchers();
       if (overlay.parentNode) overlay.remove();
       if (markCompleted) {
         // 仅当用户走完全部步骤点"开始使用"、或主动点"跳过"时才标记完成。
