@@ -503,12 +503,12 @@
               audio.play().catch(err => console.warn('播放失败:', err));
             } else {
               console.warn('Edge TTS 合成失败:', data.message);
-              alert('Edge TTS 合成失败：' + (data.message || '未知错误'));
+              showToast('Edge TTS 合成失败：' + (data.message || '未知错误'), { type: 'error' });
             }
           }
         } catch (e) {
           console.warn('Edge TTS 试听失败:', e);
-          alert('Edge TTS 试听失败：' + e.message);
+          showToast('Edge TTS 试听失败：' + e.message, { type: 'error' });
         } finally {
           ttsVoiceTestBtn.disabled = false;
           ttsVoiceTestBtn.textContent = '试听';
@@ -1406,7 +1406,7 @@
         const groupId = select.value;
         
         if (!/^\d{6}$/.test(code)) {
-          alert('请输入6位股票代码');
+          showToast('请输入6位股票代码', { type: 'warning' });
           return;
         }
         
@@ -1425,11 +1425,11 @@
             dialog.remove();
             showWatchlistDialog();
           } else {
-            alert('未找到该股票，请检查代码');
+            showToast('未找到该股票，请检查代码', { type: 'warning' });
           }
         } catch (err) {
           console.error('添加自选股失败:', err);
-          alert('添加失败: ' + err.message);
+          showToast('添加失败: ' + err.message, { type: 'error' });
         }
       });
       
@@ -1727,7 +1727,7 @@
       const resp = typeof result === 'string' ? JSON.parse(result) : result;
       
       if (resp.status !== 'ok' || !resp.quote) {
-        alert('获取行情失败');
+        showToast('获取行情失败', { type: 'error' });
         return;
       }
       
@@ -1792,7 +1792,7 @@
       
     } catch (err) {
       console.error('显示行情失败:', err);
-      alert('获取行情失败: ' + err.message);
+      showToast('获取行情失败: ' + err.message, { type: 'error' });
     }
   }
   
@@ -2852,7 +2852,10 @@
 
     $btnAiTest.addEventListener('click', async () => {
       if (!settings.aiEnabled || !settings.aiApiKey) {
-        alert('请先启用AI分析并配置API密钥');
+        showToast('请先启用 AI 分析并配置 API 密钥', {
+          type: 'warning',
+          action: { label: '去配置', callback: () => window.openSettingsAtSection('ai') }
+        });
         return;
       }
 
@@ -2872,15 +2875,17 @@
           );
           const parsed = JSON.parse(result);
           if (parsed.error) {
-            alert(`测试失败: ${parsed.error}`);
+            showToast('AI 测试失败：' + parsed.error, { type: 'error', duration: 5000 });
           } else {
-            alert(`测试成功！\n分类: ${parsed.category}\n优先级: ${parsed.priority}\n情感: ${parsed.sentiment}\n摘要: ${parsed.summary}`);
+            const detail = `分类: ${parsed.category} | 优先级: ${parsed.priority} | 情感: ${parsed.sentiment} | 摘要: ${parsed.summary}`;
+            showToast('AI 测试成功！' + detail, { type: 'success', duration: 6000 });
+            console.log('[AI 测试详细结果]', parsed);
           }
         } else {
-          alert('AI分析API不可用');
+          showToast('AI 分析 API 不可用', { type: 'error' });
         }
       } catch (e) {
-        alert(`测试失败: ${e.message}`);
+        showToast('AI 测试失败：' + e.message, { type: 'error' });
       } finally {
         $btnAiTest.textContent = originalText;
         $btnAiTest.disabled = false;
@@ -3956,7 +3961,7 @@
       e.preventDefault();
       const report = getStatsReport();
       console.log('[统计报告]', JSON.stringify(report, null, 2));
-      alert('统计报告已输出到控制台\n按 F12 查看');
+      showToast('统计报告已输出到控制台，按 F12 查看', { type: 'info', duration: 4000 });
     }
   });
 
@@ -4128,13 +4133,13 @@
   // 数据源管理对话框
   async function showDataSourceDialog() {
     if (!window.pywebview || !window.pywebview.api) {
-      alert('数据源管理需要 pywebview 后端支持，请稍后重试');
+      showToast('数据源管理需要 pywebview 后端支持，请稍后重试', { type: 'warning' });
       return;
     }
     try {
       const resp = await pywebview.api.get_data_sources();
       const data = JSON.parse(resp);
-      if (data.status !== 'ok') { alert('获取数据源失败'); return; }
+      if (data.status !== 'ok') { showToast('获取数据源失败', { type: 'error' }); return; }
       const sources = data.sources || [];
       const dialog = document.createElement('div');
       dialog.className = 'datasource-overlay';
@@ -4159,7 +4164,7 @@
                   </div>
                 </div>
                 <div class="datasource-item-right">
-                  ${configableIds.includes(s.id) ? `<button class="datasource-config-btn" data-source-id="${s.id}">配置</button>` : ''}
+                  ${configableIds.includes(s.id) ? `<button class="datasource-config-btn" data-source-id="${s.id}" title="配置 ${esc(s.name)} 的 Token/API Key" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;padding:0;"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l0,0l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94l-0.36-2.54c-0.05-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41l-0.36,2.54c-0.59,0.24-1.13,0.57-1.62,0.94l-2.39-0.96c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87c-0.12,0.21-0.08,0.47,0.12,0.61l2.03,1.58l0,0C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l0,0l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.57,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg></button>` : ''}
                   <button class="datasource-test-btn" data-source-id="${s.id}">测试</button>
                   <label class="datasource-toggle">
                     <input type="checkbox" ${s.enabled ? 'checked' : ''}>
@@ -4228,7 +4233,7 @@
           else if (sourceId === 'wind') showWindConfigDialog();
         });
       });
-    } catch (e) { alert('数据源管理加载失败: ' + e.message); }
+    } catch (e) { showToast('数据源管理加载失败: ' + e.message, { type: 'error' }); }
   }
 
   // ===== Tushare 配置弹窗 =====
@@ -4294,7 +4299,7 @@
     // 保存 Token
     dialog.querySelector('#tushare-save-btn').addEventListener('click', async () => {
       const token = dialog.querySelector('#tushare-token-input').value.trim();
-      if (!token) { alert('请输入 Token'); return; }
+      if (!token) { showToast('请输入 Token', { type: 'warning' }); return; }
       try {
         const resp = await pywebview.api.save_tushare_token(token);
         const d = JSON.parse(resp);
@@ -4309,9 +4314,9 @@
           }
           dialog.querySelector('#tushare-token-input').value = '';
         } else {
-          alert('保存失败');
+          showToast('保存失败', { type: 'error' });
         }
-      } catch (err) { alert('保存失败: ' + err.message); }
+      } catch (err) { showToast('保存失败: ' + err.message, { type: 'error' }); }
     });
     // 检测接口权限
     dialog.querySelector('#tushare-detect-btn').addEventListener('click', async () => {
@@ -4484,7 +4489,7 @@
     // 保存 API Key
     dialog.querySelector('#wind-save-key-btn').addEventListener('click', async () => {
       const key = dialog.querySelector('#wind-apikey-input').value.trim();
-      if (!key) { alert('请输入 API Key'); return; }
+      if (!key) { showToast('请输入 API Key', { type: 'warning' }); return; }
       try {
         const resp = await pywebview.api.save_wind_api_key(key);
         const d = JSON.parse(resp);
@@ -4497,8 +4502,8 @@
             dialog.querySelector('#wind-apikey-hint').textContent = '当前 Key: ' + cfgD.config.api_key_masked;
           }
           dialog.querySelector('#wind-apikey-input').value = '';
-        } else { alert('保存失败'); }
-      } catch (err) { alert('保存失败: ' + err.message); }
+        } else { showToast('保存失败', { type: 'error' }); }
+      } catch (err) { showToast('保存失败: ' + err.message, { type: 'error' }); }
     });
     // 保存模块配置
     dialog.querySelector('#wind-save-modules-btn').addEventListener('click', async () => {
@@ -4530,9 +4535,9 @@
         const resp = await pywebview.api.save_wind_modules(JSON.stringify(modules));
         const d = JSON.parse(resp);
         if (d.status === 'ok') {
-          alert('模块配置已保存');
-        } else { alert('保存失败'); }
-      } catch (err) { alert('保存失败: ' + err.message); }
+          showToast('模块配置已保存', { type: 'success' });
+        } else { showToast('保存失败', { type: 'error' }); }
+      } catch (err) { showToast('保存失败: ' + err.message, { type: 'error' }); }
     });
     // 刷新额度
     dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', async () => {
@@ -4550,7 +4555,7 @@
             dialog.querySelector('#wind-refresh-quota-btn').click();
           });
         }
-      } catch (err) { alert('刷新失败: ' + err.message); }
+      } catch (err) { showToast('刷新失败: ' + err.message, { type: 'error' }); }
     });
     // 测试连接
     dialog.querySelector('#wind-test-btn').addEventListener('click', async () => {
@@ -4640,21 +4645,22 @@
             showUpdateDialog(data);
           }
         } else if (data.status === 'latest') {
-          alert('✅ 当前版本已是最新版本（' + (data.current_version || '') + '）');
+          showToast('✅ 当前版本已是最新版本（' + (data.current_version || '') + '）', { type: 'success' });
         } else {
           // 错误提示更明确
           const msg = data.message || '未知错误';
           if (msg.includes('网络连接') || msg.includes('无法连接') || msg.includes('timeout')) {
-            alert('❌ 检查更新失败：无法连接 GitHub\n\n请确认：\n1. 网络连接正常\n2. 代理工具（Clash/v2ray）已启动\n3. 代理端口可访问\n\n技术详情：' + msg);
+            showToast('检查更新失败：无法连接 GitHub，请检查网络/代理', { type: 'error', duration: 6000 });
+            console.log('[更新检查失败详情]', msg);
           } else {
-            alert('❌ 检查更新失败：' + msg);
+            showToast('检查更新失败：' + msg, { type: 'error' });
           }
         }
       } else {
-        alert('更新检查功能不可用');
+        showToast('更新检查功能不可用', { type: 'warning' });
       }
     } catch (e) {
-      alert('检查更新异常: ' + e.message);
+      showToast('检查更新异常: ' + e.message, { type: 'error' });
     } finally {
       $btnCheckUpdate.textContent = originalText;
       $btnCheckUpdate.disabled = false;
@@ -4673,15 +4679,15 @@
         const result = await pywebview.api.download_update();
         const data = JSON.parse(result);
         if (data.status === 'ok') {
-          alert(data.message);
+          showToast(data.message, { type: 'success', duration: 5000 });
         } else {
-          alert('下载失败: ' + (data.message || '未知错误'));
+          showToast('下载失败：' + (data.message || '未知错误'), { type: 'error' });
         }
       } else {
-        alert('更新下载API不可用');
+        showToast('更新下载 API 不可用', { type: 'error' });
       }
     } catch (e) {
-      alert('下载更新失败: ' + e.message);
+      showToast('下载更新失败：' + e.message, { type: 'error' });
     } finally {
       $btnUpdateNow.disabled = false;
       $btnUpdateLater.disabled = false;
