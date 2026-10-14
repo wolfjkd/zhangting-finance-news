@@ -560,6 +560,10 @@
         _ttsSilentEnabled = e.target.checked;
         localStorage.setItem('tts_silent_enabled', _ttsSilentEnabled);
         if (silentPeriodsRow) silentPeriodsRow.style.display = _ttsSilentEnabled ? 'flex' : 'none';
+        // 开启定时静音后若当前处于静音时段，立即停止正在播报的语音
+        if (_ttsSilentEnabled && isInSilentPeriod()) {
+          stopVoice();
+        }
       });
     }
     // 恢复静音时段
@@ -596,6 +600,10 @@
       if (s2 && e2) periods.push({ start: s2, end: e2 });
       _ttsSilentPeriods = periods;
       localStorage.setItem('tts_silent_periods', JSON.stringify(periods));
+      // 修改时段后若当前处于静音时段，立即停止正在播报的语音
+      if (_ttsSilentEnabled && isInSilentPeriod()) {
+        stopVoice();
+      }
     }
     saveSilentPeriods();
 
@@ -2374,6 +2382,12 @@
       const result = await window.pywebview.api.tts_synthesize(text, _ttsVoice, rate, '+0%');
       // 检查令牌：如果在异步等待期间被 stopVoice 了，放弃播放
       if (myToken !== _ttsRequestToken) return true; // 返回 true 避免回退到 web
+      // 定时静音期间：放弃播放，并清空队列（覆盖合成期间进入静音时段的场景）
+      if (isInSilentPeriod()) {
+        voiceQueue = [];
+        speaking = false;
+        return true;
+      }
       const data = JSON.parse(result);
       if (data.status === 'ok' && data.audio_data) {
         // 再次检查令牌
@@ -2453,9 +2467,11 @@
       voiceQueue = [speakText];
       processVoiceQueue();
     } else {
-      if (voiceQueue.length < 20) {
-        voiceQueue.push(speakText);
+      // 队列上限 10 条，满时丢弃最旧消息，保留最新消息，防止集中推送语音积压
+      if (voiceQueue.length >= 10) {
+        voiceQueue.shift();
       }
+      voiceQueue.push(speakText);
       if (!speaking) {
         processVoiceQueue();
       }
@@ -2464,6 +2480,12 @@
 
   function processVoiceQueue() {
     if (voiceQueue.length === 0) {
+      speaking = false;
+      return;
+    }
+    // 定时静音期间：清空队列，不播报（覆盖静音时段开始前已排队的语音）
+    if (isInSilentPeriod()) {
+      voiceQueue = [];
       speaking = false;
       return;
     }
@@ -2619,6 +2641,10 @@
       if ($ttsEngineRow) $ttsEngineRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
       // 根据当前 TTS 引擎显示对应音色行
       updateTtsVoiceRowVisibility();
+      // 关闭语音播报时，立即停止正在播放/排队的语音（含 Edge TTS 异步请求）
+      if (!settings.voiceEnabled) {
+        stopVoice();
+      }
       saveSettings();
     });
 
