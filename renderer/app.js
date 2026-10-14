@@ -9,7 +9,7 @@
   'use strict';
 
   // ===== 调试开关 =====
-  const DEBUG_MODE = true; // 生产环境设为 false
+  const DEBUG_MODE = false; // 生产环境关闭（方案B动作1：降CPU 1-2%）
 
   // ===== 状态 =====
   let autoScroll = true;
