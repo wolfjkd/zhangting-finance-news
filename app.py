@@ -53,6 +53,8 @@ _DB_PATH = os.path.join(_LOG_DIR, 'seen_aid.db')
 
 def _init_seen_db():
     conn = sqlite3.connect(_DB_PATH)
+    conn.execute('PRAGMA journal_mode=WAL')   # 写入不阻塞读取（方案B动作4）
+    conn.execute('PRAGMA synchronous=NORMAL') # 平衡安全与速度
     conn.execute('CREATE TABLE IF NOT EXISTS seen_aid (aid TEXT PRIMARY KEY, ts INTEGER)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ts ON seen_aid(ts)')
     conn.commit()
