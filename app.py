@@ -180,28 +180,20 @@ class Api:
         return json.dumps({'status': 'ok'})
 
     def exit_app(self):
-        """体面退出：先停止数据源轮询线程、做一次 WAL checkpoint，再退出。
-        旧实现 os._exit(0) 会瞬间杀进程，跳过 SQLite WAL checkpoint，极端情况可能丢数据。"""
+        """关闭窗口并退出应用。
+        调用 window.destroy() 让 pywebview 主循环 webview.start() 返回，
+        然后在主线程中执行清理（WAL checkpoint）和进程退出。
+        注意：sys.exit(0) 在 pywebview 的 RPC 调用线程里会被异常处理层吞掉，
+        必须用 window.destroy() 触发主循环返回，然后在主线程做退出。"""
         try:
-            # 1. 停止数据源管理器（关闭所有轮询线程）
-            mgr = self._data_source_manager
-            if mgr:
-                try:
-                    mgr.running = False
-                except Exception:
-                    pass
-            # 2. 显式触发一次 WAL checkpoint，把 -wal 文件内容写回主库
-            try:
-                _conn = sqlite3.connect(_DB_PATH, timeout=2)
-                _conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-                _conn.close()
-            except Exception as e:
-                logger.warning(f'退出时 WAL checkpoint 失败: {e}')
+            w = self._window()
+            if w:
+                # 触发窗口关闭，webview.start() 会随之返回
+                w.destroy()
+            else:
+                logger.warning('exit_app: 窗口未就绪，无法 destroy')
         except Exception as e:
-            logger.warning(f'exit_app 清理异常: {e}')
-        finally:
-            # sys.exit 会触发 atexit 钩子，比 os._exit 安全
-            sys.exit(0)
+            logger.error(f'exit_app destroy 失败: {e}')
 
     def get_privacy_policy(self):
         try:
@@ -1563,6 +1555,34 @@ def main():
         logger.error('数据源管理器自动初始化失败: %s', e)
 
     webview.start(debug=False)
+
+    # webview.start() 返回 = 窗口已关闭（用户点 X 或调用 exit_app 触发 destroy）
+    # 在主线程做体面清理（此时不在 RPC 线程里，sys.exit/os._exit 都能正常工作）
+    logger.info('窗口已关闭，开始退出清理...')
+    try:
+        # 1. 停止数据源管理器（关闭所有轮询线程）
+        try:
+            from data_source_manager import data_source_manager
+            data_source_manager.running = False
+        except Exception as e:
+            logger.warning(f'停止数据源管理器失败: {e}')
+
+        # 2. 显式触发一次 WAL checkpoint，把 -wal 文件内容写回主库
+        try:
+            _conn = sqlite3.connect(_DB_PATH, timeout=2)
+            _conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            _conn.close()
+        except Exception as e:
+            logger.warning(f'退出时 WAL checkpoint 失败: {e}')
+
+        # 3. 触发 atexit 钩子（如有）
+        import atexit
+        atexit._run_exitfuncs()
+    except Exception as e:
+        logger.error(f'退出清理失败: {e}')
+    finally:
+        logger.info('应用退出')
+        os._exit(0)
 
 
 if __name__ == '__main__':
