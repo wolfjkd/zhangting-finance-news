@@ -1,4 +1,4 @@
-pywebview>=4.0
+pywebview>=5.0    # 5.x+ 对 WebView2 内存管理有显著优化（当前实测 6.2.1）
 requests>=2.28
 websocket-client>=1.5
 cryptography>=41.0

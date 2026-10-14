@@ -208,6 +208,80 @@ def _refresh_proxy_session():
     return _proxy_info
 
 
+def _get_with_fallback(url, params=None, timeout=15, **kwargs):
+    """外网 GET 请求：先直连，失败/非200后走代理（不强制代理）"""
+    try:
+        resp = _session.get(url, params=params, timeout=min(timeout, 8), **kwargs)
+        if resp.status_code == 200:
+            return resp
+    except Exception:
+        pass
+    return _proxy_session.get(url, params=params, timeout=timeout, **kwargs)
+
+
+def _post_with_fallback(url, json=None, timeout=15, **kwargs):
+    """外网 POST 请求：先直连，失败/非200后走代理（不强制代理）"""
+    try:
+        resp = _session.post(url, json=json, timeout=min(timeout, 8), **kwargs)
+        if resp.status_code == 200:
+            return resp
+    except Exception:
+        pass
+    return _proxy_session.post(url, json=json, timeout=timeout, **kwargs)
+
+
+# ===== 外网资讯 A 股相关性过滤（范围 + 质量精简） =====
+# 大前提：外网资讯必须与 A 股市场强相关。
+# 相关类型：上市公司 / 科技公司 / 新兴技术 / 中国产业链 / 汇率 / 国内政治解读。
+# 匹配规则见各源 _match_keyword：≤4 字符按单词边界匹配，>4 字符按子串匹配。
+FOREIGN_NEWS_INCLUDE_KEYWORDS = [
+    # --- 中国市场 / 公司 / 汇率 ---
+    "China", "Chinese", "Beijing", "Shanghai", "Shenzhen", "Hong Kong",
+    "yuan", "RMB", "renminbi", "CNY", "CNH", "exchange rate", "currency",
+    "A-share", "CSI 300", "Shanghai Composite", "Chinese stocks", "China market", "Hang Seng",
+    "Huawei", "Alibaba", "Tencent", "BYD", "Xiaomi", "JD.com", "Meituan", "PDD",
+    "NIO", "Li Auto", "XPeng", "CATL", "SMIC", "DJI", "TikTok", "Douyin",
+    "Geely", "Great Wall Motor", "WuXi", "Contemporary Amperex",
+    # --- 科技公司 / 新兴技术（映射 A 股概念股） ---
+    "AI", "artificial intelligence", "machine learning", "large language model", "LLM", "ChatGPT", "GPU",
+    "semiconductor", "chip", "chips", "foundry", "TSMC", "ASML", "lithography", "wafer", "HBM", "memory chip",
+    "NVIDIA", "Intel", "AMD", "Apple", "iPhone", "Microsoft", "Google", "Samsung", "ARM", "Qualcomm",
+    "electric vehicle", "EV", "NEV", "battery", "lithium", "solid-state battery",
+    "autonomous driving", "self-driving", "robotaxi", "robot", "robotics", "humanoid robot",
+    "quantum computing", "6G", "satellite", "aerospace", "space",
+    "solar", "photovoltaic", "wind power", "energy storage", "hydrogen", "nuclear",
+    "rare earth", "critical minerals", "copper", "lithium",
+    "defense", "defence", "military", "fighter jet", "warship",
+    "cybersecurity",
+    "Tesla", "SpaceX", "Starlink",
+    # --- 宏观 / 金融 / 政策（影响 A 股） ---
+    "interest rate", "Federal Reserve", "Fed", "central bank", "monetary policy",
+    "inflation", "rate cut", "rate hike",
+    "trade war", "tariff", "export controls", "sanctions", "export", "import", "trade deal",
+    "IPO", "stock market", "earnings", "M&A", "acquisition", "merger", "listing",
+    "supply chain", "manufacturing", "factory", "production",
+    "regulation", "policy", "government", "stimulus", "fiscal", "subsidy",
+    "GDP", "economic growth", "recession", "slowdown",
+]
+
+FOREIGN_NEWS_EXCLUDE_KEYWORDS = [
+    # 加密货币（与 A 股无关）
+    "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT", "dogecoin",
+    # 体育 / 娱乐 / 生活方式
+    "sports", "football", "basketball", "soccer", "tennis", "golf", "NFL", "NBA", "World Cup", "Olympics",
+    "game", "gaming", "video game", "movie", "film", "music", "celebrity", "entertainment", "hollywood",
+    "food", "cooking", "restaurant", "travel", "vacation", "fashion", "beauty", "wedding",
+    # 医疗健康（非 A 股医药主线的一般健康资讯）
+    "healthcare", "medicine", "vaccine", "COVID", "pandemic",
+    # 纯美国内政（不含中国/贸易语境）
+    "election", "midterm", "impeachment",
+    # 个人 / 低质内容
+    "I joined", "I learned", "I built", "I made", "my blog", "my website",
+    "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
+    "essay", "opinion", "personal",
+]
+
+
 def _is_proxy_available():
     """检测代理是否可用（Clash/Mihomo/v2ray/系统代理/环境变量等）。"""
     logger.info("代理检测：开始检测...")
@@ -309,6 +383,7 @@ class DataSourceManager:
         self._DELAY_PUSH_SOURCES = {"google_news", "reddit", "twitter_x", "techcrunch"}
         self._MIN_DELAY_INTERVAL = 10
         self._MAX_DELAY_INTERVAL = 20
+        self._DELAY_PUSH_MAX_QUEUE = 15
 
         self._init_default_sources()
 
@@ -374,14 +449,14 @@ class DataSourceManager:
         default_sources = [
             DataSourceConfig(
                 id="akshare_beta", name="涨停聚合（Beta）", type=DataSourceType.API,
-                enabled=True, priority=1,
-                description="基于AKShare聚合：财联社电报、同花顺财经、央视新闻、东方财富个股资讯。独立数据源，不依赖鼓掌财经，支持多源降级切换。",
+                enabled=False, priority=1,
+                description="基于AKShare聚合：财联社电报、同花顺财经、央视新闻、东方财富个股资讯。独立数据源，不依赖鼓掌财经，支持多源降级切换。默认关闭，可在设置面板手动开启。",
                 poll_interval=40
             ),
             DataSourceConfig(
                 id="foreign_news", name="外网资讯", type=DataSourceType.API,
-                enabled=True, priority=2,
-                description="汇集9大外网资讯源：Bloomberg（彭博社）、CNBC（财经新闻）、BBC News（国际新闻）、X(Twitter)重要账号（@elonmusk/@OpenAI/@ChineseWSJ等）、Reddit（热门话题）、Google News（新闻聚合）、TechCrunch（科技创业）、Hacker News（科技前沿）、Wired（深度科技），覆盖财经、科技、政策、全球市场等领域（需自备代理）",
+                enabled=False, priority=2,
+                description="汇集9大外网资讯源：Bloomberg（彭博社）、CNBC（财经新闻）、BBC News（国际新闻）、X(Twitter)重要账号（@elonmusk/@OpenAI/@ChineseWSJ等）、Reddit（热门话题）、Google News（新闻聚合）、TechCrunch（科技创业）、Hacker News（科技前沿）、Wired（深度科技），覆盖财经、科技、政策、全球市场等领域（直连优先，代理可选，直连失败自动走代理）",
                 endpoints={
                     "bloomberg": "https://feeds.bloomberg.com",
                     "cnbc": "https://www.cnbc.com",
@@ -1068,6 +1143,18 @@ class DataSourceManager:
         status['failures'] = 0
         status['cooldown_until'] = 0
 
+    @staticmethod
+    def _contains_chinese(text: str) -> bool:
+        """判断文本是否包含中文字符"""
+        return any('\u4e00' <= ch <= '\u9fff' for ch in text)
+
+    def _translate_title_or_discard(self, title: str):
+        """翻译标题；翻译失败（结果仍为英文）返回 None，调用方应丢弃该消息"""
+        translated = self._translate_to_chinese(title)
+        if translated and self._contains_chinese(translated):
+            return translated
+        return None
+
     def _translate_to_chinese(self, text: str) -> str:
         if not text or not isinstance(text, str):
             return text
@@ -1112,7 +1199,7 @@ class DataSourceManager:
             "dt": "t",
             "q": text[:2000]
         }
-        resp = _proxy_session.get(url, params=params, timeout=15)
+        resp = _get_with_fallback(url, params=params, timeout=15)
         if resp.status_code == 200:
             result = resp.json()
             if isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
@@ -1125,7 +1212,7 @@ class DataSourceManager:
     def _translate_mymemory(self, text: str) -> str:
         url = "https://api.mymemory.translated.net/get"
         params = {"q": text[:2000], "langpair": "en|zh-CN"}
-        resp = _proxy_session.get(url, params=params, timeout=10)
+        resp = _get_with_fallback(url, params=params, timeout=10)
         if resp.status_code == 200:
             result = resp.json()
             if 'responseData' in result and result['responseData']:
@@ -1144,7 +1231,7 @@ class DataSourceManager:
             try:
                 url = f"{base_url}/translate"
                 data = {"q": text[:2000], "source": "en", "target": "zh"}
-                resp = _proxy_session.post(url, json=data, timeout=10)
+                resp = _post_with_fallback(url, json=data, timeout=10)
                 if resp.status_code == 200:
                     result = resp.json()
                     translated = result.get('translatedText', '')
@@ -1156,12 +1243,12 @@ class DataSourceManager:
 
     # ===== 外网资讯综合函数 =====
     def _fetch_foreign_news(self):
-        """获取外网资讯（并行抓取+即时推送）"""
+        """获取外网资讯（并行抓取+即时推送，直连优先、代理兜底）"""
         logger.info("外网资讯：开始抓取...")
         if not _is_proxy_available():
-            self.source_status["foreign_news"]["error"] = _proxy_status_message()
-            logger.info(f"外网资讯：代理不可用，跳过获取。状态：{_proxy_status_message()}")
-            return
+            logger.info(f"外网资讯：未检测到代理，将尝试直连。{_proxy_status_message()}")
+        else:
+            logger.info(f"外网资讯：已检测到代理，直连失败时自动走代理。{_proxy_status_message()}")
         
         seen = self._seen_ids.get("foreign_news", set())
         all_messages = []
@@ -1258,9 +1345,9 @@ class DataSourceManager:
             self.source_status["foreign_news"]["error"] = str(e)
 
     def _fetch_x_priority_news(self):
-        """X平台独立轮询（30秒间隔，高优先级）"""
+        """X平台独立轮询（30秒间隔，高优先级，直连优先、代理兜底）"""
         if not _is_proxy_available():
-            return
+            logger.debug("X平台优先轮询：未检测到代理，将尝试直连")
         
         seen = self._seen_ids.get("foreign_news", set())
         
@@ -1284,43 +1371,9 @@ class DataSourceManager:
         
         seventy_two_hours_ago = time.time() - 72 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "stock", "market", "economy",
-            "trade war", "tariff", "export", "import",
-            "supply chain", "manufacturing", "factory",
-            "regulation", "policy", "law", "bill", "government",
-            "Biden", "Trump", "congress", "senate", "white house",
-            "inflation", "interest rate", "Federal Reserve", "Fed",
-            "central bank", "monetary policy",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "funding", "investment", "valuation",
-            "electric vehicle", "EV", "battery",
-            "breakthrough", "innovation",
-            "self-driving", "autonomous", "robotics", "automation",
-            "quantum computing", "quantum AI"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "memes", "meme", "gambling", "casino", "sports", "football", "basketball",
-            "game", "gaming", "stream", "twitch", "youtube", "tiktok", "social media",
-            "celebrity", "entertainment", "movie", "music", "TV",
-            "food", "cooking", "restaurant", "travel", "vacation",
-            "healthcare", "medicine", "vaccine", "COVID", "pandemic",
-            "I joined", "I learned", "I built", "I made", "my blog", "my website",
-            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -1333,10 +1386,10 @@ class DataSourceManager:
         
         subreddits = ["technology", "worldnews", "business", "stocks", "science"]
         
-        for sub in subreddits[:5]:
+        for sub in subreddits[:3]:
             try:
                 url = f"https://www.reddit.com/r/{sub}/hot.rss"
-                resp = _proxy_session.get(url, timeout=15)
+                resp = _get_with_fallback(url, timeout=15)
                 if resp.status_code != 200:
                     continue
                 
@@ -1344,7 +1397,7 @@ class DataSourceManager:
                 root = ET.fromstring(resp.text)
                 entries = root.findall('.//{http://www.w3.org/2005/Atom}entry')
                 
-                for entry in entries[:15]:
+                for entry in entries[:10]:
                     title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
                     link_elem = entry.find('{http://www.w3.org/2005/Atom}link')
                     updated_elem = entry.find('{http://www.w3.org/2005/Atom}updated')
@@ -1383,7 +1436,9 @@ class DataSourceManager:
                         continue
                     seen.add(unique_key)
                     
-                    translated_title = self._translate_to_chinese(title)
+                    translated_title = self._translate_title_or_discard(title)
+                    if not translated_title:
+                        continue
                     
                     messages.append({
                         "aid": _make_aid("foreign_news", unique_key),
@@ -1428,39 +1483,9 @@ class DataSourceManager:
             "supply chain manufacturing"
         ]
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "stock", "market", "economy",
-            "trade war", "tariff", "export", "import",
-            "supply chain", "manufacturing", "factory",
-            "regulation", "policy", "law", "bill", "government",
-            "Biden", "Trump", "congress", "senate", "white house",
-            "inflation", "interest rate", "Federal Reserve", "Fed",
-            "central bank", "monetary policy",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "funding", "investment", "valuation",
-            "electric vehicle", "EV", "battery",
-            "breakthrough", "innovation",
-            "quantum computing", "quantum AI"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "sports", "football", "basketball", "game", "gaming", "movie", "music",
-            "celebrity", "entertainment", "food", "travel", "healthcare", "COVID", "pandemic",
-            "I joined", "I learned", "I built", "I made", "my blog", "my website",
-            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -1473,11 +1498,11 @@ class DataSourceManager:
         
         seventy_two_hours_ago = time.time() - 72 * 3600
 
-        for keyword in search_keywords[:10]:
+        for keyword in search_keywords[:5]:
             try:
                 url = f"https://news.google.com/rss/search?q={requests.utils.quote(keyword)}&tbm=nws&tbs=qdr:d"
                 params = {'hl': 'en-US'}
-                resp = _proxy_session.get(url, params=params, timeout=15)
+                resp = _get_with_fallback(url, params=params, timeout=15)
                 if resp.status_code != 200:
                     continue
                 
@@ -1485,7 +1510,7 @@ class DataSourceManager:
                 root = ET.fromstring(resp.text)
                 
                 items = root.findall('.//item')
-                for item in items[:10]:
+                for item in items[:5]:
                     title_elem = item.find('title')
                     link_elem = item.find('link')
                     pub_date_elem = item.find('pubDate')
@@ -1522,7 +1547,9 @@ class DataSourceManager:
                         continue
                     seen.add(unique_key)
                     
-                    translated_title = self._translate_to_chinese(title)
+                    translated_title = self._translate_title_or_discard(title)
+                    if not translated_title:
+                        continue
                     
                     messages.append({
                         "aid": _make_aid("foreign_news", unique_key),
@@ -1546,39 +1573,9 @@ class DataSourceManager:
         
         seventy_two_hours_ago = time.time() - 72 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "funding", "investment", "valuation",
-            "supply chain", "manufacturing", "factory",
-            "breakthrough", "innovation",
-            "robotics", "automation",
-            "self-driving", "autonomous", "EV", "electric vehicle", "battery",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "quantum computing", "quantum AI"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "game", "gaming", "mobile game", "video game",
-            "social media", "twitter", "facebook", "instagram", "tiktok",
-            "celebrity", "entertainment", "movie", "music",
-            "food", "cooking", "travel", "vacation",
-            "health", "healthcare", "medicine", "COVID", "pandemic",
-            "sports", "football", "basketball",
-            "podcast", "video", "youtube", "twitch", "stream",
-            "I joined", "I learned", "I built", "I made", "my blog", "my website",
-            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -1591,7 +1588,7 @@ class DataSourceManager:
         
         try:
             url = "https://techcrunch.com/feed/"
-            resp = _proxy_session.get(url, timeout=15)
+            resp = _get_with_fallback(url, timeout=15)
             resp.encoding = 'utf-8'
             if resp.status_code != 200:
                 return messages
@@ -1600,7 +1597,7 @@ class DataSourceManager:
             root = ET.fromstring(resp.text)
             
             items = root.findall('.//item')
-            for item in items[:10]:
+            for item in items[:6]:
                 title_elem = item.find('title')
                 link_elem = item.find('link')
                 pub_date_elem = item.find('pubDate')
@@ -1639,7 +1636,9 @@ class DataSourceManager:
                     continue
                 seen.add(unique_key)
                 
-                translated_title = self._translate_to_chinese(title)
+                translated_title = self._translate_title_or_discard(title)
+                if not translated_title:
+                    continue
                 translated_desc = self._translate_to_chinese(description)
                 
                 messages.append({
@@ -1664,42 +1663,9 @@ class DataSourceManager:
         
         seventy_two_hours_ago = time.time() - 72 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac", "iOS",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "funding", "investment", "valuation",
-            "cybersecurity", "security breach", "data leak",
-            "quantum computing", "quantum AI",
-            "regulation", "policy", "law", "bill", "government",
-            "trade war", "tariff", "export", "import",
-            "supply chain", "manufacturing", "factory",
-            "electric vehicle", "EV", "battery",
-            "inflation", "interest rate", "Federal Reserve", "Fed",
-            "central bank", "monetary policy",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "breakthrough", "innovation", "advance", "cutting-edge",
-            "self-driving", "autonomous", "robotics", "automation"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "game", "gaming", "movie", "music", "TV",
-            "celebrity", "entertainment", "food", "travel",
-            "Show HN", "Ask HN", "I joined", "I learned", "I built", "I made",
-            "my blog", "my website", "my portfolio", "my project", "my startup",
-            "blog post", "tutorial", "guide", "how to", "getting started",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb",
-            "podcast", "video", "youtube", "twitch", "stream",
-            "health", "medicine", "COVID", "pandemic",
-            "sports", "football", "basketball", "baseball"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -1712,7 +1678,7 @@ class DataSourceManager:
         
         try:
             url = "https://hnrss.org/frontpage"
-            resp = _proxy_session.get(url, timeout=15)
+            resp = _get_with_fallback(url, timeout=15)
             if resp.status_code != 200:
                 return messages
             
@@ -1720,7 +1686,7 @@ class DataSourceManager:
             root = ET.fromstring(resp.text)
             items = root.findall('.//item')
             
-            for item in items[:20]:
+            for item in items[:10]:
                 title_elem = item.find('title')
                 link_elem = item.find('link')
                 pub_date_elem = item.find('pubDate')
@@ -1757,7 +1723,9 @@ class DataSourceManager:
                     continue
                 seen.add(unique_key)
                 
-                translated_title = self._translate_to_chinese(title)
+                translated_title = self._translate_title_or_discard(title)
+                if not translated_title:
+                    continue
                 
                 messages.append({
                     "aid": _make_aid("foreign_news", unique_key),
@@ -1778,43 +1746,13 @@ class DataSourceManager:
     def _fetch_bbc_news(self, seen):
         """获取BBC News科技财经新闻"""
         messages = []
+        limit = 8
         
         seventy_two_hours_ago = time.time() - 72 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "stock", "market", "economy",
-            "trade war", "tariff", "export", "import",
-            "supply chain", "manufacturing", "factory",
-            "regulation", "policy", "law", "bill", "government",
-            "inflation", "interest rate", "Federal Reserve", "Fed",
-            "central bank", "monetary policy",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "funding", "investment", "valuation",
-            "electric vehicle", "EV", "battery",
-            "breakthrough", "innovation",
-            "quantum computing", "quantum AI"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "sports", "football", "basketball",
-            "game", "gaming", "movie", "music",
-            "celebrity", "entertainment", "food", "travel",
-            "healthcare", "medicine", "COVID", "pandemic",
-            "I joined", "I learned", "I built", "I made", "my blog", "my website",
-            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -1832,7 +1770,7 @@ class DataSourceManager:
         
         for url in feeds:
             try:
-                resp = _proxy_session.get(url, timeout=15)
+                resp = _get_with_fallback(url, timeout=15)
                 if resp.status_code != 200:
                     continue
                 
@@ -1877,7 +1815,9 @@ class DataSourceManager:
                         continue
                     seen.add(unique_key)
                     
-                    translated_title = self._translate_to_chinese(title)
+                    translated_title = self._translate_title_or_discard(title)
+                    if not translated_title:
+                        continue
                     
                     messages.append({
                         "aid": _make_aid("foreign_news", unique_key),
@@ -1898,43 +1838,13 @@ class DataSourceManager:
     def _fetch_cnbc_news(self, seen):
         """获取CNBC财经科技新闻"""
         messages = []
+        limit = 8
         
         seventy_two_hours_ago = time.time() - 72 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "stock", "market", "economy",
-            "trade war", "tariff", "export", "import",
-            "supply chain", "manufacturing", "factory",
-            "regulation", "policy", "law", "bill", "government",
-            "inflation", "interest rate", "Federal Reserve", "Fed",
-            "central bank", "monetary policy",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "funding", "investment", "valuation",
-            "electric vehicle", "EV", "battery",
-            "breakthrough", "innovation",
-            "quantum computing", "quantum AI"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "sports", "football", "basketball",
-            "game", "gaming", "movie", "music",
-            "celebrity", "entertainment", "food", "travel",
-            "healthcare", "medicine", "COVID", "pandemic",
-            "I joined", "I learned", "I built", "I made", "my blog", "my website",
-            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -1952,7 +1862,7 @@ class DataSourceManager:
         
         for url in feeds:
             try:
-                resp = _proxy_session.get(url, timeout=15)
+                resp = _get_with_fallback(url, timeout=15)
                 if resp.status_code != 200:
                     continue
                 
@@ -1997,7 +1907,9 @@ class DataSourceManager:
                         continue
                     seen.add(unique_key)
                     
-                    translated_title = self._translate_to_chinese(title)
+                    translated_title = self._translate_title_or_discard(title)
+                    if not translated_title:
+                        continue
                     
                     messages.append({
                         "aid": _make_aid("foreign_news", unique_key),
@@ -2021,34 +1933,9 @@ class DataSourceManager:
         
         seventy_two_hours_ago = time.time() - 72 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "funding", "investment", "valuation",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "electric vehicle", "EV", "battery",
-            "breakthrough", "innovation",
-            "quantum computing", "quantum AI"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "sports", "football", "basketball",
-            "game", "gaming", "movie", "music",
-            "celebrity", "entertainment", "food", "travel",
-            "healthcare", "medicine", "COVID", "pandemic",
-            "I joined", "I learned", "I built", "I made", "my blog", "my website",
-            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -2061,7 +1948,7 @@ class DataSourceManager:
         
         try:
             url = "https://www.wired.com/feed/rss"
-            resp = _proxy_session.get(url, timeout=15)
+            resp = _get_with_fallback(url, timeout=15)
             if resp.status_code != 200:
                 return messages
             
@@ -2069,7 +1956,7 @@ class DataSourceManager:
             root = ET.fromstring(resp.text)
             items = root.findall('.//item')
             
-            for item in items[:20]:
+            for item in items[:8]:
                 title_elem = item.find('title')
                 link_elem = item.find('link')
                 pub_date_elem = item.find('pubDate')
@@ -2106,8 +1993,10 @@ class DataSourceManager:
                     continue
                 seen.add(unique_key)
                 
-                translated_title = self._translate_to_chinese(title)
-                
+                translated_title = self._translate_title_or_discard(title)
+                if not translated_title:
+                    continue
+
                 messages.append({
                     "aid": _make_aid("foreign_news", unique_key),
                     "title": f"[Wired] {translated_title}",
@@ -2127,47 +2016,13 @@ class DataSourceManager:
     def _fetch_bloomberg_news(self, seen):
         """获取Bloomberg彭博社财经科技新闻（金融行业标杆资讯平台）"""
         messages = []
+        limit = 8
         
         seventy_two_hours_ago = time.time() - 72 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "stock", "market", "economy",
-            "trade war", "tariff", "export", "import",
-            "supply chain", "manufacturing", "factory",
-            "regulation", "policy", "law", "bill", "government",
-            "inflation", "interest rate", "Federal Reserve", "Fed",
-            "central bank", "monetary policy",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "funding", "investment", "valuation",
-            "electric vehicle", "EV", "battery",
-            "breakthrough", "innovation",
-            "quantum computing", "quantum AI",
-            "bond", "currency", "exchange rate", "dollar", "yuan", "renminbi",
-            "commodity", "oil", "gold", "copper",
-            "bank", "finance", "financial", "wealth", "asset", "capital"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "sports", "football", "basketball",
-            "game", "gaming", "movie", "music",
-            "celebrity", "entertainment", "food", "travel",
-            "healthcare", "medicine", "COVID", "pandemic",
-            "politics", "election", "vote", "campaign", "poll",
-            "I joined", "I learned", "I built", "I made", "my blog", "my website",
-            "my portfolio", "my project", "blog post", "tutorial", "guide", "how to",
-            "essay", "opinion", "personal", "indieweb", "IndieWeb"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -2186,7 +2041,7 @@ class DataSourceManager:
         
         for url in feeds:
             try:
-                resp = _proxy_session.get(url, timeout=15)
+                resp = _get_with_fallback(url, timeout=15)
                 if resp.status_code != 200:
                     continue
                 
@@ -2233,7 +2088,9 @@ class DataSourceManager:
                         continue
                     seen.add(unique_key)
                     
-                    translated_title = self._translate_to_chinese(title)
+                    translated_title = self._translate_title_or_discard(title)
+                    if not translated_title:
+                        continue
                     translated_desc = self._translate_to_chinese(description) if description else ""
                     
                     messages.append({
@@ -2252,46 +2109,15 @@ class DataSourceManager:
         
         return messages
 
-    def _fetch_nitter_twitter_news(self, seen, limit=15):
+    def _fetch_nitter_twitter_news(self, seen, limit=8):
         """通过Nitter获取X(Twitter)平台重要账号的最新推文（多实例轮换+智能选择，降低延迟）"""
         messages = []
         
         twenty_four_hours_ago = time.time() - 24 * 3600
         
-        include_keywords = [
-            "AI", "artificial intelligence", "machine learning", "deep learning",
-            "semiconductor", "chip", "GPU", "NVIDIA", "Intel", "AMD",
-            "China", "Chinese", "Beijing", "Shanghai", "Hong Kong", "Shenzhen",
-            "Huawei", "Alibaba", "Tencent", "BYD", "JD",
-            "Apple", "iPhone", "Mac",
-            "Microsoft", "Windows", "Azure",
-            "Google", "Android",
-            "TSMC", "ARM", "Qualcomm", "Samsung",
-            "IPO", "stock", "market", "economy",
-            "trade war", "tariff", "export", "import",
-            "supply chain", "manufacturing", "factory",
-            "regulation", "policy", "law", "bill", "government",
-            "inflation", "interest rate", "Federal Reserve", "Fed",
-            "central bank", "monetary policy",
-            "cybersecurity", "security breach", "data leak",
-            "acquisition", "merger", "M&A",
-            "earnings", "profit", "revenue",
-            "funding", "investment", "valuation",
-            "electric vehicle", "EV", "battery",
-            "breakthrough", "innovation",
-            "quantum computing", "quantum AI",
-            "Tesla", "SpaceX", "Starlink",
-            "launch", "announcement", "release", "news", "update", "report"
-        ]
+        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
         
-        exclude_keywords = [
-            "crypto", "cryptocurrency", "bitcoin", "ethereum", "blockchain", "NFT",
-            "sports", "football", "basketball",
-            "game", "gaming", "movie", "music",
-            "food", "cooking", "restaurant", "travel", "vacation",
-            "my blog", "my website", "my portfolio", "my project",
-            "blog post", "tutorial", "guide", "how to", "getting started"
-        ]
+        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
         
         import re
         
@@ -2349,7 +2175,7 @@ class DataSourceManager:
             for account, nickname in twitter_accounts.items():
                 try:
                     url = f"{instance}/{account}/rss"
-                    resp = _proxy_session.get(url, timeout=15)
+                    resp = _get_with_fallback(url, timeout=15)
                     if resp.status_code != 200:
                         self._nitter_instance_stats[instance]["fail"] += 1
                         continue
@@ -2360,7 +2186,7 @@ class DataSourceManager:
                     root = ET.fromstring(resp.text)
                     items = root.findall('.//item')
                     
-                    for item in items[:10]:
+                    for item in items[:limit]:
                         title_elem = item.find('title')
                         link_elem = item.find('link')
                         pub_date_elem = item.find('pubDate')
@@ -2402,7 +2228,9 @@ class DataSourceManager:
                             continue
                         seen.add(unique_key)
                         
-                        translated_title = self._translate_to_chinese(title)
+                        translated_title = self._translate_title_or_discard(title)
+                        if not translated_title:
+                            continue
                         translated_desc = self._translate_to_chinese(description) if description else ""
                         
                         message_data = {
@@ -2421,6 +2249,8 @@ class DataSourceManager:
                             message_data["images"] = images[:3]
                         
                         messages.append(message_data)
+                        if len(messages) >= 20:
+                            return messages
                 except Exception as e:
                     self._nitter_instance_stats[instance]["fail"] += 1
                     logger.warning(f"获取X@{account}失败: {e}")
@@ -2671,8 +2501,11 @@ class DataSourceManager:
             self._delay_push_thread = None
 
     def _enqueue_delay_message(self, message: Dict):
-        """将消息加入延时推送队列"""
+        """将消息加入延时推送队列（队列满时丢弃最旧消息，防止集中推送积压）"""
         with self._delay_push_lock:
+            if len(self._delay_push_queue) >= self._DELAY_PUSH_MAX_QUEUE:
+                dropped = self._delay_push_queue.pop(0)
+                logger.debug("延时推送队列已满，丢弃最旧消息: %s", dropped.get("title", "")[:40])
             self._delay_push_queue.append(message)
             logger.debug("消息加入延时推送队列，当前队列长度: %d", len(self._delay_push_queue))
 
@@ -2754,6 +2587,51 @@ class DataSourceManager:
         source = self.sources[source_id]
         if source.type == DataSourceType.WEBSOCKET:
             return {"success": True, "message": "WebSocket 数据源由主程序管理", "latency": 0}
+
+        if source_id == "akshare_beta":
+            # 并发测试 5 个常驻子源，任一成功即判定连接正常（多源降级设计）
+            t0 = time.time()
+            try:
+                from akshare_source import (
+                    _fetch_cls_telegraph, _fetch_ths_news, _fetch_sina_news,
+                    _fetch_em_news, _fetch_wallstreetcn,
+                )
+            except Exception as e:
+                latency = int((time.time() - t0) * 1000)
+                return {"success": False, "message": f"akshare_source 导入失败: {e}", "latency": latency}
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            sub_sources = [
+                ("财联社", _fetch_cls_telegraph),
+                ("同花顺", _fetch_ths_news),
+                ("新浪财经", _fetch_sina_news),
+                ("东方财富", _fetch_em_news),
+                ("华尔街见闻", _fetch_wallstreetcn),
+            ]
+            ok_names = []
+            total = 0
+            with ThreadPoolExecutor(max_workers=len(sub_sources)) as executor:
+                future_map = {executor.submit(fn): name for name, fn in sub_sources}
+                try:
+                    for future in as_completed(future_map, timeout=15):
+                        try:
+                            msgs = future.result()
+                            if msgs:
+                                ok_names.append(future_map[future])
+                                total += len(msgs)
+                        except Exception:
+                            pass
+                except TimeoutError:
+                    for f in future_map:
+                        f.cancel()
+            latency = int((time.time() - t0) * 1000)
+            if ok_names:
+                failed = [n for n, _ in sub_sources if n not in ok_names]
+                message = f"连接成功（{len(ok_names)}/{len(sub_sources)} 子源可用，共 {total} 条）"
+                if failed:
+                    message += f"，失败: {'、'.join(failed)}"
+                return {"success": True, "message": message, "latency": latency}
+            return {"success": False, "message": "所有子源均获取失败", "latency": latency}
 
         if source_id == "eastmoney":
             url = source.endpoints["announcements"]
@@ -2846,20 +2724,13 @@ class DataSourceManager:
                 return {"success": False, "message": f"测试失败: {e}", "latency": latency}
 
         if source_id == "foreign_news":
-            # 1) 检测代理（Clash/Mihomo/v2rayN/系统代理/环境变量等）
+            # 直连优先、代理兜底（不强制代理）
             t0 = time.time()
-            if not _is_proxy_available():
-                latency = int((time.time() - t0) * 1000)
-                return {
-                    "success": False,
-                    "message": _proxy_status_message(),
-                    "latency": latency,
-                }
             proxy_msg = _proxy_status_message()
-            # 2) 经代理真实请求外网端点（Reddit 或 TechCrunch，任一成功即可）
+            # 真实请求外网端点（Reddit 或 TechCrunch，任一成功即可）
             errors = []
             try:
-                resp = _proxy_session.get(
+                resp = _get_with_fallback(
                     "https://www.reddit.com/r/technology/hot.json",
                     params={"limit": 1},
                     timeout=12,
@@ -2877,7 +2748,7 @@ class DataSourceManager:
                 errors.append(f"Reddit: {e}")
 
             try:
-                resp = _proxy_session.get(
+                resp = _get_with_fallback(
                     source.endpoints.get("techcrunch", "https://techcrunch.com/feed/"),
                     timeout=12,
                 )
@@ -2896,7 +2767,7 @@ class DataSourceManager:
             detail = "；".join(errors[:3]) if errors else "未知错误"
             return {
                 "success": False,
-                "message": f"代理可用，但外网请求失败：{detail}。{proxy_msg}",
+                "message": f"外网请求失败：{detail}。{proxy_msg}",
                 "latency": latency,
             }
 

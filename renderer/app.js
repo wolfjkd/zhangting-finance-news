@@ -9,7 +9,7 @@
   'use strict';
 
   // ===== 调试开关 =====
-  const DEBUG_MODE = true; // 生产环境设为 false
+  const DEBUG_MODE = false; // 生产环境关闭（方案B动作1：降CPU 1-2%）
 
   // ===== 状态 =====
   let autoScroll = true;
@@ -185,6 +185,14 @@
   window.aiAnalyzer = {
     async analyze(title, content) {
       if (!settings.aiEnabled || !settings.aiApiKey) {
+        // 不再静默失败：弹引导提示，带"去配置"按钮一键跳到设置面板的 AI 区
+        showToast('AI 解读需要先配置 API 密钥', {
+          type: 'warning',
+          action: {
+            label: '去配置',
+            callback: () => openSettingsAtSection('ai')
+          }
+        });
         return null;
       }
       try {
@@ -495,12 +503,12 @@
               audio.play().catch(err => console.warn('播放失败:', err));
             } else {
               console.warn('Edge TTS 合成失败:', data.message);
-              alert('Edge TTS 合成失败：' + (data.message || '未知错误'));
+              showToast('Edge TTS 合成失败：' + (data.message || '未知错误'), { type: 'error' });
             }
           }
         } catch (e) {
           console.warn('Edge TTS 试听失败:', e);
-          alert('Edge TTS 试听失败：' + e.message);
+          showToast('Edge TTS 试听失败：' + e.message, { type: 'error' });
         } finally {
           ttsVoiceTestBtn.disabled = false;
           ttsVoiceTestBtn.textContent = '试听';
@@ -560,6 +568,10 @@
         _ttsSilentEnabled = e.target.checked;
         localStorage.setItem('tts_silent_enabled', _ttsSilentEnabled);
         if (silentPeriodsRow) silentPeriodsRow.style.display = _ttsSilentEnabled ? 'flex' : 'none';
+        // 开启定时静音后若当前处于静音时段，立即停止正在播报的语音
+        if (_ttsSilentEnabled && isInSilentPeriod()) {
+          stopVoice();
+        }
       });
     }
     // 恢复静音时段
@@ -596,6 +608,10 @@
       if (s2 && e2) periods.push({ start: s2, end: e2 });
       _ttsSilentPeriods = periods;
       localStorage.setItem('tts_silent_periods', JSON.stringify(periods));
+      // 修改时段后若当前处于静音时段，立即停止正在播报的语音
+      if (_ttsSilentEnabled && isInSilentPeriod()) {
+        stopVoice();
+      }
     }
     saveSilentPeriods();
 
@@ -896,9 +912,13 @@
     const isDetailSource = source === '东方财富' || source === '券商研报';
     const titleClickable = isDetailSource ? 'clickable' : '';
 
-    // AI区域HTML
+    // AI区域HTML（未配置 API 密钥时按钮灰显 + 点击仍可弹引导）
+    const aiReady = !!(settings.aiEnabled && settings.aiApiKey);
+    const aiBtnStyle = aiReady
+      ? ''
+      : 'style="opacity:0.45;" title="未配置 API 密钥，点击去配置"';
     let aiAreaHTML = `<div class="ai-area">
-      <button class="btn-ai-interpret" data-aid="${item.aid}">AI解读</button>
+      <button class="btn-ai-interpret ${aiReady ? '' : 'btn-ai-not-ready'}" data-aid="${item.aid}" ${aiBtnStyle}>AI解读</button>
     </div>`;
 
     let html = `
@@ -993,6 +1013,17 @@
       }
       aiBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        // 未配置 API 密钥时点按钮直接弹引导，不进入分析流程
+        if (aiBtn.classList.contains('btn-ai-not-ready')) {
+          showToast('AI 解读需要先配置 API 密钥', {
+            type: 'warning',
+            action: {
+              label: '去配置',
+              callback: () => window.openSettingsAtSection('ai')
+            }
+          });
+          return;
+        }
         triggerAiAnalysis(item, div);
       });
     }
@@ -1375,7 +1406,7 @@
         const groupId = select.value;
         
         if (!/^\d{6}$/.test(code)) {
-          alert('请输入6位股票代码');
+          showToast('请输入6位股票代码', { type: 'warning' });
           return;
         }
         
@@ -1394,11 +1425,11 @@
             dialog.remove();
             showWatchlistDialog();
           } else {
-            alert('未找到该股票，请检查代码');
+            showToast('未找到该股票，请检查代码', { type: 'warning' });
           }
         } catch (err) {
           console.error('添加自选股失败:', err);
-          alert('添加失败: ' + err.message);
+          showToast('添加失败: ' + err.message, { type: 'error' });
         }
       });
       
@@ -1696,7 +1727,7 @@
       const resp = typeof result === 'string' ? JSON.parse(result) : result;
       
       if (resp.status !== 'ok' || !resp.quote) {
-        alert('获取行情失败');
+        showToast('获取行情失败', { type: 'error' });
         return;
       }
       
@@ -1761,7 +1792,7 @@
       
     } catch (err) {
       console.error('显示行情失败:', err);
-      alert('获取行情失败: ' + err.message);
+      showToast('获取行情失败: ' + err.message, { type: 'error' });
     }
   }
   
@@ -1787,10 +1818,10 @@
     // 立即检查一次
     checkWatchlistAlerts();
     
-    // 每分钟检查一次
+    // 每 2 分钟检查一次（足够及时，CPU 减半；非交易时间 checkWatchlistAlerts 内部直接 return）
     watchlistAlertTimer = setInterval(() => {
       checkWatchlistAlerts();
-    }, 60000);
+    }, 120000);
     
     if (DEBUG_MODE) console.log('[自选股提醒] 监控已启动');
   }
@@ -2374,6 +2405,12 @@
       const result = await window.pywebview.api.tts_synthesize(text, _ttsVoice, rate, '+0%');
       // 检查令牌：如果在异步等待期间被 stopVoice 了，放弃播放
       if (myToken !== _ttsRequestToken) return true; // 返回 true 避免回退到 web
+      // 定时静音期间：放弃播放，并清空队列（覆盖合成期间进入静音时段的场景）
+      if (isInSilentPeriod()) {
+        voiceQueue = [];
+        speaking = false;
+        return true;
+      }
       const data = JSON.parse(result);
       if (data.status === 'ok' && data.audio_data) {
         // 再次检查令牌
@@ -2453,9 +2490,11 @@
       voiceQueue = [speakText];
       processVoiceQueue();
     } else {
-      if (voiceQueue.length < 20) {
-        voiceQueue.push(speakText);
+      // 队列上限 10 条，满时丢弃最旧消息，保留最新消息，防止集中推送语音积压
+      if (voiceQueue.length >= 10) {
+        voiceQueue.shift();
       }
+      voiceQueue.push(speakText);
       if (!speaking) {
         processVoiceQueue();
       }
@@ -2464,6 +2503,12 @@
 
   function processVoiceQueue() {
     if (voiceQueue.length === 0) {
+      speaking = false;
+      return;
+    }
+    // 定时静音期间：清空队列，不播报（覆盖静音时段开始前已排队的语音）
+    if (isInSilentPeriod()) {
+      voiceQueue = [];
       speaking = false;
       return;
     }
@@ -2570,6 +2615,7 @@
       darkMode: false,
       privacyAccepted: false,
       privacyAcceptedVersion: '',
+      onboardingCompletedVersion: '',  // 引导完成标记（跟版本绑定，由 settings.json 持久化）
     };
   }
 
@@ -2619,6 +2665,10 @@
       if ($ttsEngineRow) $ttsEngineRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
       // 根据当前 TTS 引擎显示对应音色行
       updateTtsVoiceRowVisibility();
+      // 关闭语音播报时，立即停止正在播放/排队的语音（含 Edge TTS 异步请求）
+      if (!settings.voiceEnabled) {
+        stopVoice();
+      }
       saveSettings();
     });
 
@@ -2803,7 +2853,10 @@
 
     $btnAiTest.addEventListener('click', async () => {
       if (!settings.aiEnabled || !settings.aiApiKey) {
-        alert('请先启用AI分析并配置API密钥');
+        showToast('请先启用 AI 分析并配置 API 密钥', {
+          type: 'warning',
+          action: { label: '去配置', callback: () => window.openSettingsAtSection('ai') }
+        });
         return;
       }
 
@@ -2823,15 +2876,17 @@
           );
           const parsed = JSON.parse(result);
           if (parsed.error) {
-            alert(`测试失败: ${parsed.error}`);
+            showToast('AI 测试失败：' + parsed.error, { type: 'error', duration: 5000 });
           } else {
-            alert(`测试成功！\n分类: ${parsed.category}\n优先级: ${parsed.priority}\n情感: ${parsed.sentiment}\n摘要: ${parsed.summary}`);
+            const detail = `分类: ${parsed.category} | 优先级: ${parsed.priority} | 情感: ${parsed.sentiment} | 摘要: ${parsed.summary}`;
+            showToast('AI 测试成功！' + detail, { type: 'success', duration: 6000 });
+            console.log('[AI 测试详细结果]', parsed);
           }
         } else {
-          alert('AI分析API不可用');
+          showToast('AI 分析 API 不可用', { type: 'error' });
         }
       } catch (e) {
-        alert(`测试失败: ${e.message}`);
+        showToast('AI 测试失败：' + e.message, { type: 'error' });
       } finally {
         $btnAiTest.textContent = originalText;
         $btnAiTest.disabled = false;
@@ -2842,6 +2897,36 @@
     $btnSettings.addEventListener('click', () => {
       $settingsOverlay.classList.add('show');
     });
+
+    // 打开设置面板并定位到指定区域（'ai' | 'tushare' | 'wind' | 'datasource'）
+    // 用于 toast 的"去配置"按钮一键直达
+    function openSettingsAtSection(section) {
+      $settingsOverlay.classList.add('show');
+      // 等面板渲染完再滚动/聚焦
+      setTimeout(() => {
+        try {
+          if (section === 'ai') {
+            // 滚到 AI 配置区并勾选启用
+            const aiRow = document.getElementById('aiEnabledRow') || document.getElementById('aiApiKeyRow');
+            if (aiRow) aiRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const aiEnabled = document.getElementById('aiEnabled');
+            if (aiEnabled && !aiEnabled.checked) aiEnabled.focus();
+          } else if (section === 'datasource' || section === 'tushare' || section === 'wind') {
+            // 打开数据源管理弹窗
+            showDataSourceDialog();
+            if (section === 'tushare' || section === 'wind') {
+              // 数据源弹窗打开后再打开对应 Token 配置
+              setTimeout(() => {
+                const cfgBtn = document.querySelector(`.datasource-config-btn[data-source-id="${section}"]`);
+                if (cfgBtn) cfgBtn.click();
+              }, 300);
+            }
+          }
+        } catch (e) { console.warn('openSettingsAtSection error:', e); }
+      }, 100);
+    }
+    // 暴露给其他模块使用（如 toast action）
+    window.openSettingsAtSection = openSettingsAtSection;
 
     $btnWatchlist.addEventListener('click', () => {
       showWatchlistDialog();
@@ -2939,6 +3024,20 @@
         }, 1000);
       });
     });
+
+    // 首次启动引导（按版本号判断——每个新版本首次运行都弹一次）
+    // 必须放在 init() 同步执行路径上，不能放进 pywebviewready 监听器——
+    // 因为免责声明接受后才调用 init()，此时 pywebviewready 事件早已触发，
+    // 新注册的监听器不会再执行，会导致引导永远弹不出。
+    // 注意：判定标记存到 settings.onboardingCompletedVersion（由后端 settings.json
+    // 持久化），不依赖 localStorage——pywebview/WebView2 的 localStorage 在源代码
+    // 调试模式下可能每次启动都被重置，导致"每次都弹"。
+    setTimeout(() => {
+      const currentVer = getCurrentVersion();
+      if (settings.onboardingCompletedVersion !== currentVer) {
+        showOnboardingDialog();
+      }
+    }, 800);  // 延迟 800ms 避免和启动动画抢镜
 
     $btnThemeToggle.addEventListener('click', () => {
       settings.darkMode = !settings.darkMode;
@@ -3226,8 +3325,11 @@
   }
 
   function scheduleCleanup() {
-    cleanupOldHistory();
-    setInterval(cleanupOldHistory, 24 * 60 * 60 * 1000);
+    // 延迟 5 分钟首次启动清理，避开启动高峰；之后每 24 小时一次
+    setTimeout(() => {
+      cleanupOldHistory();
+      setInterval(cleanupOldHistory, 24 * 60 * 60 * 1000);
+    }, 5 * 60 * 1000);
   }
 
   // ===== 新闻详情弹窗 =====
@@ -3408,15 +3510,60 @@
   }
 
   // ===== 工具函数 =====
-  function showToast(message) {
+  // toast 类型样式（success/error/warning/info）
+  const TOAST_TYPES = {
+    success: { bg: 'rgba(46, 125, 50, 0.92)', icon: '✓' },
+    error:   { bg: 'rgba(211, 47, 47, 0.92)',  icon: '✗' },
+    warning: { bg: 'rgba(237, 144, 33, 0.92)', icon: '!' },
+    info:    { bg: 'rgba(0, 0, 0, 0.78)',       icon: '' }
+  };
+
+  /**
+   * 显示 toast 提示（支持可选的动作按钮和类型）
+   * @param {string} message - 提示文本
+   * @param {object} [opts] - 选项
+   *   - type: 'success' | 'error' | 'warning' | 'info'（默认 info）
+   *   - duration: 显示毫秒数（默认 2500，有 action 时自动延长到 6000）
+   *   - action: { label, callback } 可选动作按钮（如"去配置"）
+   */
+  function showToast(message, opts) {
+    opts = opts || {};
+    const type = opts.type && TOAST_TYPES[opts.type] ? opts.type : 'info';
+    const typeInfo = TOAST_TYPES[type];
+    const hasAction = opts.action && typeof opts.action.callback === 'function';
+    const duration = opts.duration || (hasAction ? 6000 : 2500);
+
     const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
+    toast.className = 'toast toast-' + type;
+    toast.style.background = typeInfo.bg;
+
+    // 内容区
+    const textSpan = document.createElement('span');
+    textSpan.textContent = (typeInfo.icon ? typeInfo.icon + ' ' : '') + message;
+    toast.appendChild(textSpan);
+
+    // 动作按钮
+    if (hasAction) {
+      const actionBtn = document.createElement('button');
+      actionBtn.className = 'toast-action-btn';
+      actionBtn.textContent = opts.action.label;
+      actionBtn.addEventListener('click', () => {
+        try { opts.action.callback(); } catch (e) { console.warn('toast action error:', e); }
+        dismiss();
+      });
+      toast.appendChild(actionBtn);
+    }
+
     document.body.appendChild(toast);
-    setTimeout(() => {
+
+    let dismissTimer = null;
+    function dismiss() {
+      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+      if (!toast.parentNode) return;
       toast.classList.add('fade-out');
       setTimeout(() => toast.remove(), 300);
-    }, 2000);
+    }
+    dismissTimer = setTimeout(dismiss, duration);
   }
 
   function formatTime(ctime) {
@@ -3829,7 +3976,7 @@
       e.preventDefault();
       const report = getStatsReport();
       console.log('[统计报告]', JSON.stringify(report, null, 2));
-      alert('统计报告已输出到控制台\n按 F12 查看');
+      showToast('统计报告已输出到控制台，按 F12 查看', { type: 'info', duration: 4000 });
     }
   });
 
@@ -3955,18 +4102,340 @@
     }
   }
 
+  // ===== 首次启动引导（详细版）=====
+  // 分步式卡片：欢迎 → 新闻来源 → 自选股 → AI/TTS → 完成
+  // 通过 localStorage.onboarding_completed_v{版本号} 标记，按版本号区分——每个新版本首次运行都会弹一次
+  function showOnboardingDialog() {
+    const steps = [
+      {
+        title: '欢迎使用涨停财经聚合播报',
+        icon: '🎉',
+        content: `
+          <p style="font-size:14px;line-height:1.7;margin-bottom:12px;">
+            这是一个 A 股财经新闻聚合桌面端，实时推送 15+ 主流财经源的资讯电报。
+          </p>
+          <p style="font-size:13px;color:var(--text-soft);line-height:1.6;">
+            接下来用 3 分钟带你了解核心功能。随时可在"关于"里重新打开本引导。
+          </p>
+        `
+      },
+      {
+        title: '① 新闻来源已默认开启',
+        icon: '📰',
+        content: `
+          <p style="font-size:13px;line-height:1.7;margin-bottom:10px;">
+            默认已为你开启<strong>传统聚合</strong>数据源——聚合了财联社、新浪财经、
+            东方财富、同花顺、华尔街见闻、格隆汇等 15 家主流财经媒体的实时电报。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            想要更多源？进入<strong>设置 → 数据源管理</strong>，可按需开启东方财富公告、
+            券商研报、北向资金、龙虎榜、外网资讯等（需要 Token 的源会引导你配置）。
+          </p>
+        `,
+        action: { label: '查看数据源', callback: () => { showDataSourceDialog(); } }
+      },
+      {
+        title: '② 添加你的自选股',
+        icon: '⭐',
+        content: `
+          <p style="font-size:13px;line-height:1.7;margin-bottom:10px;">
+            点击底部的<strong>自选股图标</strong>（五角星按钮），输入 6 位股票代码即可添加。
+            支持按分组管理（如：底仓、观察、短线）。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            添加后，<strong>交易时间段</strong>（9:25-11:30 / 13:00-15:00）会在价格异动时
+            弹提醒，非交易时段不打扰你。
+          </p>
+        `,
+        action: { label: '打开自选股', callback: () => { $btnWatchlist.click(); } }
+      },
+      {
+        title: '③ AI 解读 & 语音播报（可选）',
+        icon: '🤖',
+        content: `
+          <p style="font-size:13px;line-height:1.7;margin-bottom:10px;">
+            每条新闻右侧的<strong>"AI 解读"按钮</strong>会用大模型分析利好/利空/中性，
+            并给出摘要——<em>需要先配置 API 密钥才能用</em>。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;margin-bottom:10px;">
+            <strong>语音播报</strong>（TTS）支持浏览器内置或 Edge TTS 高质量音色，
+            内置无需配置；Edge TTS 也是免费的。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            两者都在<strong>设置 → AI 分析 / 语音播报</strong>里配置。
+          </p>
+        `,
+        action: { label: '去配置 AI', callback: () => { window.openSettingsAtSection('ai'); } }
+      },
+      {
+        title: '④ 还有这些贴心功能',
+        icon: '✨',
+        content: `
+          <ul style="font-size:13px;line-height:1.9;padding-left:18px;margin:0;">
+            <li><strong>主题切换</strong>：亮色/暗色，跟随系统或手动切换</li>
+            <li><strong>窗口置顶</strong>：盯盘时压在其他窗口上方</li>
+            <li><strong>自动滚动</strong>：新消息自动滚到可视区</li>
+            <li><strong>收藏 & 搜索</strong>：重要消息一键收藏，历史可搜索</li>
+            <li><strong>关键词高亮</strong>：设置面板里配置自定义关键词</li>
+            <li><strong>T+0 复盘</strong>：内置底仓股盘后分析工具</li>
+          </ul>
+        `
+      },
+      {
+        title: '准备就绪，开始使用',
+        icon: '🚀',
+        content: `
+          <p style="font-size:14px;line-height:1.7;margin-bottom:12px;">
+            一切就绪！默认新闻源已经为你开启，几秒内就会看到第一条电报。
+          </p>
+          <p style="font-size:12px;color:var(--text-soft);line-height:1.6;">
+            有问题可在<strong>关于 → 检查更新</strong>里查看版本，或访问 GitHub 仓库提 issue。
+          </p>
+        `
+      }
+    ];
+
+    let currentStep = 0;
+    const overlay = document.createElement('div');
+    overlay.className = 'onboarding-overlay';
+    overlay.id = 'onboardingDialog';
+
+    // ===== 临时隐藏/恢复机制（支持"去配置后回到当前步骤继续引导"）=====
+    // 用户点动作按钮（查看数据源/打开自选股/去配置 AI）时，引导不销毁，
+    // 只临时隐藏（加 onboarding-hidden class），并打开对应面板；
+    // 当用户关闭那个面板后，引导自动回到当前步骤继续显示。
+    let isPaused = false;           // 是否处于"临时隐藏等待用户返回"状态
+    let pauseWatcher = null;        // MutationObserver 实例
+    let pauseIntervalId = null;     // 轮询定时器
+
+    function hideOnboardingTemporarily() {
+      if (isPaused) return;
+      isPaused = true;
+      overlay.classList.add('onboarding-hidden');
+      if (pauseWatcher) pauseWatcher.disconnect();
+      if (pauseIntervalId) clearInterval(pauseIntervalId);
+
+      // 状态机：每 300ms 检查一次其它面板是否都关了。
+      // 一旦检测到没有任何阻挡面板，立刻恢复引导。
+      // 上限 5 分钟（超过则强制恢复，避免引导永久消失）。
+      let elapsed = 0;
+      const MAX_WAIT = 5 * 60 * 1000;
+      const TICK = 300;
+
+      const tick = () => {
+        if (!isPaused) return;  // 已被 resume
+        if (!overlay.parentNode) { stopWatchers(); return; }  // 引导已被销毁
+        elapsed += TICK;
+        if (elapsed > MAX_WAIT) {
+          console.warn('[onboarding] 超过最大等待时长，强制恢复');
+          resumeOnboarding();
+          return;
+        }
+        const blocking = isAnyOtherBlockingPanelOpen();
+        if (!blocking) {
+          resumeOnboarding();
+        }
+      };
+
+      // MutationObserver + 轮询双保险
+      pauseWatcher = new MutationObserver(tick);
+      pauseWatcher.observe(document.body, {
+        childList: true,
+        subtree: false,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+      });
+      pauseIntervalId = setInterval(tick, TICK);
+      // 首次延迟 200ms 再检测，确保目标面板已经渲染到 DOM
+      setTimeout(tick, 200);
+
+      function stopWatchers() {
+        if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
+        if (pauseIntervalId) { clearInterval(pauseIntervalId); pauseIntervalId = null; }
+      }
+      // 把 stopWatchers 暴露给 resume 用
+      hideOnboardingTemporarily._stopWatchers = stopWatchers;
+    }
+
+    // 检查当前是否还有任何阻挡引导的其它面板/对话框开着
+    // 关键：必须真正"显示中"的才返回 true。
+    // 有些对话框是常驻 DOM（如 search-dialog / favorites-dialog），平时 display:none 隐藏，
+    // 用 display:flex 显示——这些必须检查 style.display 而不是仅看 className。
+    function isAnyOtherBlockingPanelOpen() {
+      const allElements = document.body.children;
+      for (let i = 0; i < allElements.length; i++) {
+        const el = allElements[i];
+        if (el === overlay) continue;            // 跳过引导自身
+        if (!(el instanceof HTMLElement)) continue;
+        const cls = el.className || '';
+        const id = el.id || '';
+        if (!cls) continue;
+
+        // 是否在视觉上"显示中"——综合 offsetParent 和 style.display
+        // offsetParent 为 null 通常意味着 display:none 或祖先隐藏
+        const isVisible = el.offsetParent !== null ||
+                          (el.style.display && el.style.display !== 'none' && el.style.display !== '');
+
+        // 1) 常驻切换型（settingsOverlay 等）：通过 .show class 显示
+        //    必须同时满足 (overlay + show) 两个 class 才算显示
+        if (/\boverlay\b/.test(cls) && /\bshow\b/.test(cls)) return true;
+        // 2) 动态创建型对话框（watchlist-dialog / quote-dialog / license-dialog / datasource-overlay）
+        //    这类都是 createElement 后 appendChild 显示，remove() 后从 DOM 移除。
+        //    所以只要它还在 body 子节点里，就一定是显示中。
+        if (/(watchlist-dialog|quote-dialog|watchlist-alert-dialog|license-dialog|datasource-overlay|news-detail-overlay|multi-condition-popup|orderbook-alert|context-menu|watchlist-move-menu|toast|kw-alert-notification)\b/.test(cls)) {
+          // 但要排除常驻 DOM 的 search-dialog / favorites-dialog（它们靠 display 控制）
+          if (id !== 'searchDialog' && id !== 'favoritesDialog') return true;
+        }
+        // 3) 通过 style.display 控制的常驻对话框
+        if (isVisible && (id === 'favoritesDialog' || id === 'searchDialog')) return true;
+      }
+      return false;
+    }
+
+    function resumeOnboarding() {
+      if (!isPaused) return;
+      isPaused = false;
+      overlay.classList.remove('onboarding-hidden');
+      if (hideOnboardingTemporarily._stopWatchers) hideOnboardingTemporarily._stopWatchers();
+    }
+
+    function render() {
+      const s = steps[currentStep];
+      const isLast = currentStep === steps.length - 1;
+      const hasAction = s.action;
+      overlay.innerHTML = `
+        <div class="onboarding-panel">
+          <div class="onboarding-header">
+            <span class="onboarding-icon">${s.icon}</span>
+            <span class="onboarding-title">${s.title}</span>
+            <button class="onboarding-skip" title="${isLast ? '完成' : '跳过引导'}">${isLast ? '✓' : '跳过'}</button>
+          </div>
+          <div class="onboarding-body">${s.content}</div>
+          <div class="onboarding-footer">
+            <div class="onboarding-progress">${currentStep + 1} / ${steps.length}</div>
+            <div class="onboarding-actions">
+              ${currentStep > 0 ? '<button class="onboarding-prev">上一步</button>' : ''}
+              ${hasAction ? `<button class="onboarding-action">${s.action.label}</button>` : ''}
+              <button class="onboarding-next ${isLast ? 'primary' : ''}">${isLast ? '开始使用' : '下一步'}</button>
+            </div>
+          </div>
+        </div>
+      `;
+      bindEvents();
+    }
+
+    function bindEvents() {
+      // 跳过/完成 —— 用户主动跳过，标记完成避免下次再弹（视为用户放弃引导）
+      overlay.querySelector('.onboarding-skip').addEventListener('click', () => {
+        closeOnboarding(true);
+      });
+      // 上一步
+      const prev = overlay.querySelector('.onboarding-prev');
+      if (prev) prev.addEventListener('click', () => { currentStep--; render(); });
+      // 动作按钮（如"查看数据源"/"打开自选股"/"去配置 AI"）
+      // 关键改动：先打开目标面板，再隐藏引导——确保目标面板先进入 DOM，
+      // 避免兜底检测误判为"所有面板都关了"导致引导立刻回来
+      const actionBtn = overlay.querySelector('.onboarding-action');
+      if (actionBtn) actionBtn.addEventListener('click', () => {
+        const cb = steps[currentStep].action.callback;
+        try { cb(); } catch (e) { console.warn('onboarding action error:', e); }
+        // 用 requestAnimationFrame 等 callback 创建的面板渲染到 DOM 后再隐藏引导
+        requestAnimationFrame(() => hideOnboardingTemporarily());
+      });
+      // 下一步/完成 —— 只有走到最后一步点"开始使用"才标记完成
+      overlay.querySelector('.onboarding-next').addEventListener('click', () => {
+        if (currentStep < steps.length - 1) { currentStep++; render(); }
+        else { closeOnboarding(true); }
+      });
+    }
+
+    function closeOnboarding(markCompleted) {
+      // 清理所有 watchers
+      if (pauseWatcher) { pauseWatcher.disconnect(); pauseWatcher = null; }
+      if (pauseIntervalId) { clearInterval(pauseIntervalId); pauseIntervalId = null; }
+      if (hideOnboardingTemporarily._stopWatchers) hideOnboardingTemporarily._stopWatchers();
+      if (overlay.parentNode) overlay.remove();
+      if (markCompleted) {
+        // 仅当用户走完全部步骤点"开始使用"、或主动点"跳过"时才标记完成。
+        // 标记按版本号区分——同一版本只弹一次，下次升级到新版本才会重新弹。
+        // 关键：存到 settings.onboardingCompletedVersion，由后端 settings.json 持久化，
+        // 而不是 localStorage（pywebview 在调试模式下 localStorage 可能每次启动被清空）
+        settings.onboardingCompletedVersion = getCurrentVersion();
+        saveSettings();
+        // 同时清理旧的 localStorage 标记（向前兼容旧版本）
+        try {
+          localStorage.removeItem('onboarding_completed');
+          localStorage.removeItem('onboarding_completed_v' + getCurrentVersion());
+        } catch (e) {}
+      }
+    }
+    // 暴露给步骤内 action 的关闭函数（保留兼容性，但现在 action 一般用 hide 而不是 close）
+    window._closeOnboarding = closeOnboarding;
+    window.closeOnboarding = closeOnboarding;
+    window.hideOnboardingTemporarily = hideOnboardingTemporarily;
+    window.resumeOnboarding = resumeOnboarding;
+
+    document.body.appendChild(overlay);
+    render();
+  }
+
+
+
+
+
   // ===== 对话框功能（原 ui-enhancements.js）=====
+
+  /**
+   * 数据源开启前置依赖检查
+   * @returns {object|null} 返回 {message, action} 表示不满足依赖；返回 null 表示通过
+   * 注意：tushare/wind 的 Token 检查是异步的（要读配置文件），但 UI 层开关是同步事件——
+   * 这里只做本地缓存检查（settings 内的标记），后端实际连接失败会有日志兜底。
+   * akshare_beta 的模块检测是纯前端无法做的（akshare 装在 Python 环境），
+   * 所以这里只覆盖 tushare/wind 的 Token 配置检查。
+   */
+  function checkSourceDependency(sourceId) {
+    // 读取缓存的 Token 配置状态（由后端定期同步到 settings 对象）
+    // 这里用 localStorage 兜底，避免首次开启就需要等后端
+    if (sourceId === 'tushare') {
+      const tokenReady = localStorage.getItem('tushare_token_configured') === '1';
+      if (!tokenReady) {
+        return {
+          message: 'Tushare 需要 Token 才能工作，请先配置',
+          action: {
+            label: '去配置 Token',
+            callback: () => showTushareConfigDialog()
+          }
+        };
+      }
+    }
+    if (sourceId === 'wind') {
+      const keyReady = localStorage.getItem('wind_apikey_configured') === '1';
+      if (!keyReady) {
+        return {
+          message: 'Wind 需要 API Key 才能工作，请先配置',
+          action: {
+            label: '去配置 API Key',
+            callback: () => showWindConfigDialog()
+          }
+        };
+      }
+    }
+    // akshare_beta: 纯前端无法检测 Python 模块，跳过——用户开启后如果没消息，
+    // 可以通过"测试"按钮定位（已有功能）
+    // 其他源（eastmoney/research/northbound 等）：无外部依赖，直接放行
+    return null;
+  }
 
   // 数据源管理对话框
   async function showDataSourceDialog() {
     if (!window.pywebview || !window.pywebview.api) {
-      alert('数据源管理需要 pywebview 后端支持，请稍后重试');
+      showToast('数据源管理需要 pywebview 后端支持，请稍后重试', { type: 'warning' });
       return;
     }
     try {
       const resp = await pywebview.api.get_data_sources();
       const data = JSON.parse(resp);
-      if (data.status !== 'ok') { alert('获取数据源失败'); return; }
+      if (data.status !== 'ok') { showToast('获取数据源失败', { type: 'error' }); return; }
       const sources = data.sources || [];
       const dialog = document.createElement('div');
       dialog.className = 'datasource-overlay';
@@ -3991,7 +4460,7 @@
                   </div>
                 </div>
                 <div class="datasource-item-right">
-                  ${configableIds.includes(s.id) ? `<button class="datasource-config-btn" data-source-id="${s.id}">配置</button>` : ''}
+                  ${configableIds.includes(s.id) ? `<button class="datasource-config-btn" data-source-id="${s.id}" title="配置 ${esc(s.name)} 的 Token/API Key" aria-label="配置 ${esc(s.name)}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l0,0l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94l-0.36-2.54c-0.05-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41l-0.36,2.54c-0.59,0.24-1.13,0.57-1.62,0.94l-2.39-0.96c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87c-0.12,0.21-0.08,0.47,0.12,0.61l2.03,1.58l0,0C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l0,0l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.57,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.2,0.07-0.47-0.12-0.61L19.14,12.94L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg></button>` : ''}
                   <button class="datasource-test-btn" data-source-id="${s.id}">测试</button>
                   <label class="datasource-toggle">
                     <input type="checkbox" ${s.enabled ? 'checked' : ''}>
@@ -4012,11 +4481,30 @@
           const item = e.target.closest('.datasource-item');
           const sourceId = item.dataset.sourceId;
           const enabled = e.target.checked;
+
+          // 前置检测：开启需要 Token/模块的源时，检查依赖是否就绪
+          if (enabled) {
+            const checkResult = checkSourceDependency(sourceId);
+            if (checkResult) {  // 返回非空表示不满足
+              showToast(checkResult.message, {
+                type: 'warning',
+                action: checkResult.action
+              });
+              e.target.checked = false;  // 回滚开关
+              item.querySelector('.datasource-status-dot').className = 'datasource-status-dot dot-off';
+              return;
+            }
+          }
+
           try {
             const apiMethod = enabled ? 'enable_data_source' : 'disable_data_source';
             await pywebview.api[apiMethod](sourceId);
             item.querySelector('.datasource-status-dot').className = `datasource-status-dot ${enabled ? 'dot-on' : 'dot-off'}`;
-          } catch (err) { alert('操作失败: ' + err.message); e.target.checked = !enabled; }
+            showToast(enabled ? '数据源已启用' : '数据源已关闭', { type: enabled ? 'success' : 'info', duration: 1500 });
+          } catch (err) {
+            showToast('操作失败: ' + err.message, { type: 'error' });
+            e.target.checked = !enabled;
+          }
         });
       });
       dialog.querySelectorAll('.datasource-test-btn').forEach(btn => {
@@ -4041,7 +4529,7 @@
           else if (sourceId === 'wind') showWindConfigDialog();
         });
       });
-    } catch (e) { alert('数据源管理加载失败: ' + e.message); }
+    } catch (e) { showToast('数据源管理加载失败: ' + e.message, { type: 'error' }); }
   }
 
   // ===== Tushare 配置弹窗 =====
@@ -4051,7 +4539,13 @@
     try {
       const resp = await pywebview.api.get_tushare_config();
       currentData = JSON.parse(resp);
-    } catch (e) { alert('加载 Tushare 配置失败: ' + e.message); return; }
+      // 同步 Token 已配置标记供前置检测
+      if (currentData.status === 'ok' && currentData.has_token) {
+        localStorage.setItem('tushare_token_configured', '1');
+      } else {
+        localStorage.removeItem('tushare_token_configured');
+      }
+    } catch (e) { showToast('加载 Tushare 配置失败: ' + e.message, { type: 'error' }); return; }
 
     const dialog = document.createElement('div');
     dialog.className = 'datasource-overlay';
@@ -4101,12 +4595,13 @@
     // 保存 Token
     dialog.querySelector('#tushare-save-btn').addEventListener('click', async () => {
       const token = dialog.querySelector('#tushare-token-input').value.trim();
-      if (!token) { alert('请输入 Token'); return; }
+      if (!token) { showToast('请输入 Token', { type: 'warning' }); return; }
       try {
         const resp = await pywebview.api.save_tushare_token(token);
         const d = JSON.parse(resp);
         if (d.status === 'ok') {
-          alert('Token 保存成功');
+          localStorage.setItem('tushare_token_configured', '1');  // 同步标记供前置检测
+          showToast('Tushare Token 保存成功', { type: 'success' });
           // 刷新显示
           const cfgResp = await pywebview.api.get_tushare_config();
           const cfg = JSON.parse(cfgResp);
@@ -4115,9 +4610,9 @@
           }
           dialog.querySelector('#tushare-token-input').value = '';
         } else {
-          alert('保存失败');
+          showToast('保存失败', { type: 'error' });
         }
-      } catch (err) { alert('保存失败: ' + err.message); }
+      } catch (err) { showToast('保存失败: ' + err.message, { type: 'error' }); }
     });
     // 检测接口权限
     dialog.querySelector('#tushare-detect-btn').addEventListener('click', async () => {
@@ -4154,8 +4649,14 @@
       const resp = await pywebview.api.get_wind_config();
       const d = JSON.parse(resp);
       if (d.status === 'ok') cfg = d.config;
-      else { alert('加载 Wind 配置失败: ' + (d.message || '')); return; }
-    } catch (e) { alert('加载 Wind 配置失败: ' + e.message); return; }
+      else { showToast('加载 Wind 配置失败: ' + (d.message || ''), { type: 'error' }); return; }
+      // 同步 API Key 已配置标记供前置检测
+      if (cfg && cfg.api_key_masked) {
+        localStorage.setItem('wind_apikey_configured', '1');
+      } else {
+        localStorage.removeItem('wind_apikey_configured');
+      }
+    } catch (e) { showToast('加载 Wind 配置失败: ' + e.message, { type: 'error' }); return; }
 
     const modules = cfg.modules || {};
     const news = modules.news || {};
@@ -4284,20 +4785,21 @@
     // 保存 API Key
     dialog.querySelector('#wind-save-key-btn').addEventListener('click', async () => {
       const key = dialog.querySelector('#wind-apikey-input').value.trim();
-      if (!key) { alert('请输入 API Key'); return; }
+      if (!key) { showToast('请输入 API Key', { type: 'warning' }); return; }
       try {
         const resp = await pywebview.api.save_wind_api_key(key);
         const d = JSON.parse(resp);
         if (d.status === 'ok') {
-          alert('API Key 保存成功');
+          localStorage.setItem('wind_apikey_configured', '1');  // 同步标记供前置检测
+          showToast('Wind API Key 保存成功', { type: 'success' });
           const cfgResp = await pywebview.api.get_wind_config();
           const cfgD = JSON.parse(cfgResp);
           if (cfgD.status === 'ok') {
             dialog.querySelector('#wind-apikey-hint').textContent = '当前 Key: ' + cfgD.config.api_key_masked;
           }
           dialog.querySelector('#wind-apikey-input').value = '';
-        } else { alert('保存失败'); }
-      } catch (err) { alert('保存失败: ' + err.message); }
+        } else { showToast('保存失败', { type: 'error' }); }
+      } catch (err) { showToast('保存失败: ' + err.message, { type: 'error' }); }
     });
     // 保存模块配置
     dialog.querySelector('#wind-save-modules-btn').addEventListener('click', async () => {
@@ -4329,9 +4831,9 @@
         const resp = await pywebview.api.save_wind_modules(JSON.stringify(modules));
         const d = JSON.parse(resp);
         if (d.status === 'ok') {
-          alert('模块配置已保存');
-        } else { alert('保存失败'); }
-      } catch (err) { alert('保存失败: ' + err.message); }
+          showToast('模块配置已保存', { type: 'success' });
+        } else { showToast('保存失败', { type: 'error' }); }
+      } catch (err) { showToast('保存失败: ' + err.message, { type: 'error' }); }
     });
     // 刷新额度
     dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', async () => {
@@ -4349,7 +4851,7 @@
             dialog.querySelector('#wind-refresh-quota-btn').click();
           });
         }
-      } catch (err) { alert('刷新失败: ' + err.message); }
+      } catch (err) { showToast('刷新失败: ' + err.message, { type: 'error' }); }
     });
     // 测试连接
     dialog.querySelector('#wind-test-btn').addEventListener('click', async () => {
@@ -4439,21 +4941,22 @@
             showUpdateDialog(data);
           }
         } else if (data.status === 'latest') {
-          alert('✅ 当前版本已是最新版本（' + (data.current_version || '') + '）');
+          showToast('✅ 当前版本已是最新版本（' + (data.current_version || '') + '）', { type: 'success' });
         } else {
           // 错误提示更明确
           const msg = data.message || '未知错误';
           if (msg.includes('网络连接') || msg.includes('无法连接') || msg.includes('timeout')) {
-            alert('❌ 检查更新失败：无法连接 GitHub\n\n请确认：\n1. 网络连接正常\n2. 代理工具（Clash/v2ray）已启动\n3. 代理端口可访问\n\n技术详情：' + msg);
+            showToast('检查更新失败：无法连接 GitHub，请检查网络/代理', { type: 'error', duration: 6000 });
+            console.log('[更新检查失败详情]', msg);
           } else {
-            alert('❌ 检查更新失败：' + msg);
+            showToast('检查更新失败：' + msg, { type: 'error' });
           }
         }
       } else {
-        alert('更新检查功能不可用');
+        showToast('更新检查功能不可用', { type: 'warning' });
       }
     } catch (e) {
-      alert('检查更新异常: ' + e.message);
+      showToast('检查更新异常: ' + e.message, { type: 'error' });
     } finally {
       $btnCheckUpdate.textContent = originalText;
       $btnCheckUpdate.disabled = false;
@@ -4472,15 +4975,15 @@
         const result = await pywebview.api.download_update();
         const data = JSON.parse(result);
         if (data.status === 'ok') {
-          alert(data.message);
+          showToast(data.message, { type: 'success', duration: 5000 });
         } else {
-          alert('下载失败: ' + (data.message || '未知错误'));
+          showToast('下载失败：' + (data.message || '未知错误'), { type: 'error' });
         }
       } else {
-        alert('更新下载API不可用');
+        showToast('更新下载 API 不可用', { type: 'error' });
       }
     } catch (e) {
-      alert('下载更新失败: ' + e.message);
+      showToast('下载更新失败：' + e.message, { type: 'error' });
     } finally {
       $btnUpdateNow.disabled = false;
       $btnUpdateLater.disabled = false;

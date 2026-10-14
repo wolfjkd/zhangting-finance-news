@@ -535,6 +535,30 @@ body.dark-mode .toolbar-right {
   animation: toastOut 0.3s ease-out forwards;
 }
 
+/* toast 动作按钮（"去配置"等） */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 90vw;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.toast-action-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.toast-action-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(-50%) translateY(20px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -1657,20 +1681,38 @@ body.dark-mode .toolbar-right {
 }
 
 /* ===== 数据源配置弹窗（Tushare/Wind）===== */
+/* 齿轮图标按钮（SVG），覆盖旧"配置"文字按钮样式 */
 .datasource-config-btn {
-  padding: 3px 10px;
-  border: 1px solid var(--accent);
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border: 1px solid var(--border) !important;
   border-radius: var(--radius);
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
+  background: var(--bg) !important;
+  color: var(--text-secondary) !important;
   cursor: pointer;
-  white-space: nowrap;
   transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.datasource-config-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
 }
 
 .datasource-config-btn:hover {
-  opacity: 0.85;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: var(--bg-secondary) !important;
+}
+
+.datasource-config-btn:active svg {
+  transform: rotate(60deg);
+  transition: transform 0.3s;
 }
 
 .datasource-config-btn:disabled {
@@ -3254,3 +3296,107 @@ body.dark-mode .toolbar-right {
     max-height: 80vh;
     overflow-y: auto;
 }
+
+/* ===== 首次启动引导对话框 ===== */
+.onboarding-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: onboardingFadeIn 0.25s ease-out;
+}
+/* 临时隐藏态：用户点了动作按钮（查看数据源等）去操作其它面板时，
+   引导不销毁、保留当前步骤，等用户关闭那个面板后自动恢复显示 */
+.onboarding-overlay.onboarding-hidden {
+  display: none !important;
+}
+@keyframes onboardingFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.onboarding-panel {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.3);
+  width: 90%;
+  max-width: 440px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: onboardingPanelIn 0.3s ease-out;
+}
+@keyframes onboardingPanelIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.onboarding-header {
+  display: flex;
+  align-items: center;
+  padding: 18px 20px 12px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.onboarding-icon { font-size: 22px; line-height: 1; }
+.onboarding-title { font-size: 16px; font-weight: 600; flex: 1; }
+.onboarding-skip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.onboarding-skip:hover { background: var(--hover); color: var(--text); }
+.onboarding-body {
+  padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.onboarding-body p, .onboarding-body ul { color: var(--text); }
+.onboarding-body em { color: var(--accent); font-style: normal; font-weight: 500; }
+.onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--hover);
+}
+.onboarding-progress {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+.onboarding-actions { display: flex; gap: 8px; }
+.onboarding-actions button {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  transition: all 0.15s;
+}
+.onboarding-actions button:hover { background: var(--hover); }
+.onboarding-actions button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.onboarding-actions button.primary:hover { opacity: 0.9; }
+.onboarding-actions button.onboarding-action {
+  background: rgba(255, 167, 38, 0.15);
+  border-color: rgba(255, 167, 38, 0.5);
+  color: #ffa726;
+}
+

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>涨停财经聚合播报 v4.1.0版（开源版）</title>
+  <title>涨停财经聚合播报 v4.2.0版（开源版）</title>
   <link rel="stylesheet" href="style.css">
   <script src="modules/minute-chart.js"></script>
 </head>
@@ -20,7 +20,7 @@
         <circle cx="9.5" cy="3.7" r="0.8" fill="#D73A49"/>
         <path d="M5 10.5 Q7 11 9 10" stroke="#FFFFFF" stroke-width="0.7" stroke-linecap="round" fill="none" opacity="0.8"/>
       </svg>
-      <span class="titlebar-title">涨停财经聚合播报 v4.1.0</span>
+      <span class="titlebar-title">涨停财经聚合播报 v4.2.0</span>
     </div>
     <!-- 中间可拖拽填充区：扩展拖拽范围到接近右侧按钮，但不侵入按钮区 -->
     <div class="titlebar-filler pywebview-drag-region"></div>
@@ -147,6 +147,78 @@
         </button>
       </div>
 
+      <!-- 语音播报（置顶：语音播报设置 + 定时静音） -->
+      <div class="settings-section">
+        <div class="settings-section-title">语音播报</div>
+        <div class="setting-row">
+          <span class="setting-label">开启语音播报</span>
+          <label class="toggle">
+            <input type="checkbox" id="voiceEnabled">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row" id="ttsEngineRow" style="display:none;">
+          <span class="setting-label">TTS 引擎</span>
+          <select id="ttsEngineSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            <option value="web">浏览器内置</option>
+            <option value="edge">Edge TTS（高质量）</option>
+          </select>
+        </div>
+        <div class="voice-row" id="voiceSettings" style="display:none;">
+          <select class="voice-select" id="voiceSelect"></select>
+          <button class="voice-test-btn" id="voiceTest">试听</button>
+        </div>
+        <div class="setting-row" id="ttsVoiceRow" style="display:none;">
+          <span class="setting-label">Edge 音色</span>
+          <select id="ttsVoiceSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);min-width:160px;">
+            <option value="zh-CN-YunyangNeural">云扬（男）- 新闻播报</option>
+            <option value="zh-CN-YunjianNeural">云健（男）- 沉稳大气</option>
+            <option value="zh-CN-YunxiaNeural">云夏（男）- 年轻活力</option>
+            <option value="zh-CN-XiaoxiaoNeural">晓晓（女）- 温柔清晰</option>
+            <option value="zh-CN-XiaoyiNeural">晓伊（女）- 活泼俏皮</option>
+            <option value="zh-CN-liaoning-XiaobeiNeural">晓北（女·东北口音）</option>
+            <option value="zh-CN-shaanxi-XiaoniNeural">晓妮（女·陕西口音）</option>
+          </select>
+          <button class="voice-test-btn" id="ttsVoiceTest" style="margin-left:4px;">试听</button>
+        </div>
+        <div class="setting-row" id="voiceSpeedRow" style="display:none;">
+          <span class="setting-label">播报语速</span>
+          <select class="voice-select" id="voiceRate" style="width:80px;">
+            <option value="1">正常</option>
+            <option value="1.5" selected>偏快</option>
+            <option value="2">快</option>
+          </select>
+        </div>
+        <div class="setting-row" id="voiceInterruptModeRow" style="display:none;">
+          <span class="setting-label">播报模式</span>
+          <select class="voice-select" id="voiceInterruptMode" style="width:140px;">
+            <option value="complete">完整播报</option>
+            <option value="immediate">即时中断</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">定时静音</span>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;">
+            <input type="checkbox" id="ttsSilentEnabled" style="width:auto;"> 启用
+          </label>
+        </div>
+        <div class="setting-row" id="ttsSilentPeriodsRow" style="display:none;">
+          <span class="setting-label">静音时段</span>
+          <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;gap:4px;align-items:center;">
+              <input type="time" id="ttsSilentStart1" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+              <span style="font-size:12px;">至</span>
+              <input type="time" id="ttsSilentEnd1" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            </div>
+            <div style="display:flex;gap:4px;align-items:center;">
+              <input type="time" id="ttsSilentStart2" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+              <span style="font-size:12px;">至</span>
+              <input type="time" id="ttsSilentEnd2" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 消息来源筛选 -->
       <div class="settings-section">
         <div class="settings-section-title">消息来源</div>
@@ -154,8 +226,6 @@
           <!-- 由 JS 动态生成 -->
         </div>
       </div>
-
-      <!-- 语音播报（已合并到 Edge TTS 栏目） -->
 
       <!-- 消息去重 -->
       <div class="settings-section">
@@ -316,78 +386,6 @@
         </div>
       </div>
 
-      <!-- 语音播报（合并栏目：原语音播报 + Edge TTS） -->
-      <div class="settings-section">
-        <div class="settings-section-title">语音播报</div>
-        <div class="setting-row">
-          <span class="setting-label">开启语音播报</span>
-          <label class="toggle">
-            <input type="checkbox" id="voiceEnabled">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-row" id="ttsEngineRow" style="display:none;">
-          <span class="setting-label">TTS 引擎</span>
-          <select id="ttsEngineSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-            <option value="web">浏览器内置</option>
-            <option value="edge">Edge TTS（高质量）</option>
-          </select>
-        </div>
-        <div class="voice-row" id="voiceSettings" style="display:none;">
-          <select class="voice-select" id="voiceSelect"></select>
-          <button class="voice-test-btn" id="voiceTest">试听</button>
-        </div>
-        <div class="setting-row" id="ttsVoiceRow" style="display:none;">
-          <span class="setting-label">Edge 音色</span>
-          <select id="ttsVoiceSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);min-width:160px;">
-            <option value="zh-CN-YunyangNeural">云扬（男）- 新闻播报</option>
-            <option value="zh-CN-YunjianNeural">云健（男）- 沉稳大气</option>
-            <option value="zh-CN-YunxiaNeural">云夏（男）- 年轻活力</option>
-            <option value="zh-CN-XiaoxiaoNeural">晓晓（女）- 温柔清晰</option>
-            <option value="zh-CN-XiaoyiNeural">晓伊（女）- 活泼俏皮</option>
-            <option value="zh-CN-liaoning-XiaobeiNeural">晓北（女·东北口音）</option>
-            <option value="zh-CN-shaanxi-XiaoniNeural">晓妮（女·陕西口音）</option>
-          </select>
-          <button class="voice-test-btn" id="ttsVoiceTest" style="margin-left:4px;">试听</button>
-        </div>
-        <div class="setting-row" id="voiceSpeedRow" style="display:none;">
-          <span class="setting-label">播报语速</span>
-          <select class="voice-select" id="voiceRate" style="width:80px;">
-            <option value="1">正常</option>
-            <option value="1.5" selected>偏快</option>
-            <option value="2">快</option>
-          </select>
-        </div>
-        <div class="setting-row" id="voiceInterruptModeRow" style="display:none;">
-          <span class="setting-label">播报模式</span>
-          <select class="voice-select" id="voiceInterruptMode" style="width:140px;">
-            <option value="complete">完整播报</option>
-            <option value="immediate">即时中断</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">定时静音</span>
-          <label style="display:flex;align-items:center;gap:4px;font-size:13px;">
-            <input type="checkbox" id="ttsSilentEnabled" style="width:auto;"> 启用
-          </label>
-        </div>
-        <div class="setting-row" id="ttsSilentPeriodsRow" style="display:none;">
-          <span class="setting-label">静音时段</span>
-          <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
-            <div style="display:flex;gap:4px;align-items:center;">
-              <input type="time" id="ttsSilentStart1" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-              <span style="font-size:12px;">至</span>
-              <input type="time" id="ttsSilentEnd1" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-            </div>
-            <div style="display:flex;gap:4px;align-items:center;">
-              <input type="time" id="ttsSilentStart2" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-              <span style="font-size:12px;">至</span>
-              <input type="time" id="ttsSilentEnd2" style="font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- 主题皮肤：5 个预设 + 亮/暗切换 -->
       <div class="settings-section">
         <div class="settings-section-title">主题皮肤</div>
@@ -457,7 +455,7 @@
         <div class="settings-section-title">关于</div>
         <div class="setting-row">
           <span class="setting-label">版本</span>
-          <span style="font-size:13px; color:#666;">v4.1.0（开源版）</span>
+          <span style="font-size:13px; color:#666;">v4.2.0（开源版）</span>
         </div>
         <div class="setting-row">
           <span class="setting-label">项目主页</span>
@@ -486,7 +484,7 @@
     <div class="update-content">
       <div class="update-info">
         <div class="update-version">
-          <span class="update-current">当前版本: v4.1.0</span>
+          <span class="update-current">当前版本: v4.2.0</span>
           <span class="update-arrow">→</span>
           <span class="update-latest">最新版本: <span id="updateLatestVersion"></span></span>
         </div>
