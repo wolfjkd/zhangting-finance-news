@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v4.2.0] - 2026-10-14
+
+本次版本包含两批改动：**方案 B 资源优化**（性能）+ **用户体验增强批次**（功能）。
+
+### Added（新功能）
+- **首次启动引导**：新用户首次打开自动弹出 6 步分步式引导卡片（欢迎→新闻来源→自选股→AI/TTS→其他功能→完成），带 emoji 图标和"去配置/查看/打开"等一键跳转动作按钮，支持上一步/下一步/跳过，完成后通过 `localStorage.onboarding_completed` 标记避免重复弹出
+- **AI 解读配置引导**：未配置 API 密钥时点击"AI 解读"按钮不再静默失败，改为弹出 toast 带"去配置"按钮一键跳转到设置面板 AI 区；按钮半透明灰显 + tooltip 提示"未配置"
+- **数据源开启前置检测**：开启 Tushare/Wind 数据源时检测 Token/API Key 是否已配置，未配置则弹引导 toast + 自动回滚开关状态，避免用户开了源却收不到消息的困惑
+- **toast 系统扩展**：showToast 支持 4 种类型（success 绿/error 红/warning 橙/info 黑）和可选动作按钮（`{label, callback}`），带动作时自动延长显示时间到 6 秒
+- **设置面板区域直达**：新增 `openSettingsAtSection(section)` 辅助函数，支持 ai/tushare/wind/datasource 四区一键直达，暴露到 `window` 供 toast action 使用
+
+### Changed
+- **默认数据源精简**：默认启用源从 3 个（akshare_beta、foreign_news、ztfi）精简为仅 1 个（传统聚合 ztfi，基于鼓掌财经 WebSocket），其他源用户可在设置面板按需开启，新用户首次启动不再自动启动多个后台轮询线程
+- **DEBUG_MODE 关闭**：生产环境 `DEBUG_MODE = true → false`，关闭所有 `if (DEBUG_MODE) console.log(...)` 分支
+- **定时器频率降低**：自选股提醒检查频率从每 60 秒调整为每 120 秒（`checkWatchlistAlerts` 内已有交易时间判断，非盘中直接 return，降频不影响体验）；历史清理定时器改为延迟 5 分钟首次启动避开启动高峰
+- **SQLite 启用 WAL 模式**：`_init_seen_db()` 增加 `PRAGMA journal_mode=WAL` + `PRAGMA synchronous=NORMAL`，写入去重 aid 不再阻塞 UI 读取
+- **pywebview 依赖下限升级**：requirements.txt `pywebview>=4.0` → `>=5.0`（当前实测已装 6.2.1，本次只提升声明下限反映实际依赖）
+- **数据源配置入口优化**：数据源管理面板 Tushare/Wind 的"配置"文字按钮替换为齿轮 SVG 图标，悬停 tooltip 提示"配置 XXX 的 Token/API Key"，视觉更直观
+
+### Performance
+- **alert 全清零**：项目内 39 处浏览器原生 `alert()` 全部替换为非阻塞的主题统一 toast，告别阻塞主线程的系统弹窗；保留 `confirm()` 用于删除分组/移除自选股等危险操作（按约定）
+- **资源优化目标**：RAM 目标 120MB→90MB，CPU 目标 5-8%→2-4%（WebView2 本身 ~80MB 占用是 pywebview 架构固有开销，方案 B 不动）
+
+### Fixed
+- **AI 解读静默失败**：修复新用户没配 API 密钥点击"AI 解读"按钮无任何反应的 UX bug（老板点名问题）
+- **数据源开关无前置引导**：修复开启需要 Token/模块的源后静默失败的问题
+
+### 验收数据
+- alert: 39 → 0
+- confirm: 保留 2 处（危险操作）
+- showToast: 5 → 51 处
+- 默认启用数据源: 3 → 1
+
 ## [v4.1.0] - 2026-08-28
 
 ### Added

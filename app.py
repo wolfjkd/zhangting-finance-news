@@ -1386,7 +1386,7 @@ def main():
     api.migrate_config_if_needed()
 
     window = webview.create_window(
-        '涨停财经聚合播报 v4.1.0版',
+        '涨停财经聚合播报 v4.2.0版',
         url=get_html_path(),
         width=default_width,
         height=default_height,
