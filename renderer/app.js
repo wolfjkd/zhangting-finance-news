@@ -4084,6 +4084,47 @@
 
   // ===== 对话框功能（原 ui-enhancements.js）=====
 
+  /**
+   * 数据源开启前置依赖检查
+   * @returns {object|null} 返回 {message, action} 表示不满足依赖；返回 null 表示通过
+   * 注意：tushare/wind 的 Token 检查是异步的（要读配置文件），但 UI 层开关是同步事件——
+   * 这里只做本地缓存检查（settings 内的标记），后端实际连接失败会有日志兜底。
+   * akshare_beta 的模块检测是纯前端无法做的（akshare 装在 Python 环境），
+   * 所以这里只覆盖 tushare/wind 的 Token 配置检查。
+   */
+  function checkSourceDependency(sourceId) {
+    // 读取缓存的 Token 配置状态（由后端定期同步到 settings 对象）
+    // 这里用 localStorage 兜底，避免首次开启就需要等后端
+    if (sourceId === 'tushare') {
+      const tokenReady = localStorage.getItem('tushare_token_configured') === '1';
+      if (!tokenReady) {
+        return {
+          message: 'Tushare 需要 Token 才能工作，请先配置',
+          action: {
+            label: '去配置 Token',
+            callback: () => showTushareConfigDialog()
+          }
+        };
+      }
+    }
+    if (sourceId === 'wind') {
+      const keyReady = localStorage.getItem('wind_apikey_configured') === '1';
+      if (!keyReady) {
+        return {
+          message: 'Wind 需要 API Key 才能工作，请先配置',
+          action: {
+            label: '去配置 API Key',
+            callback: () => showWindConfigDialog()
+          }
+        };
+      }
+    }
+    // akshare_beta: 纯前端无法检测 Python 模块，跳过——用户开启后如果没消息，
+    // 可以通过"测试"按钮定位（已有功能）
+    // 其他源（eastmoney/research/northbound 等）：无外部依赖，直接放行
+    return null;
+  }
+
   // 数据源管理对话框
   async function showDataSourceDialog() {
     if (!window.pywebview || !window.pywebview.api) {
@@ -4139,11 +4180,30 @@
           const item = e.target.closest('.datasource-item');
           const sourceId = item.dataset.sourceId;
           const enabled = e.target.checked;
+
+          // 前置检测：开启需要 Token/模块的源时，检查依赖是否就绪
+          if (enabled) {
+            const checkResult = checkSourceDependency(sourceId);
+            if (checkResult) {  // 返回非空表示不满足
+              showToast(checkResult.message, {
+                type: 'warning',
+                action: checkResult.action
+              });
+              e.target.checked = false;  // 回滚开关
+              item.querySelector('.datasource-status-dot').className = 'datasource-status-dot dot-off';
+              return;
+            }
+          }
+
           try {
             const apiMethod = enabled ? 'enable_data_source' : 'disable_data_source';
             await pywebview.api[apiMethod](sourceId);
             item.querySelector('.datasource-status-dot').className = `datasource-status-dot ${enabled ? 'dot-on' : 'dot-off'}`;
-          } catch (err) { alert('操作失败: ' + err.message); e.target.checked = !enabled; }
+            showToast(enabled ? '数据源已启用' : '数据源已关闭', { type: enabled ? 'success' : 'info', duration: 1500 });
+          } catch (err) {
+            showToast('操作失败: ' + err.message, { type: 'error' });
+            e.target.checked = !enabled;
+          }
         });
       });
       dialog.querySelectorAll('.datasource-test-btn').forEach(btn => {
@@ -4178,7 +4238,13 @@
     try {
       const resp = await pywebview.api.get_tushare_config();
       currentData = JSON.parse(resp);
-    } catch (e) { alert('加载 Tushare 配置失败: ' + e.message); return; }
+      // 同步 Token 已配置标记供前置检测
+      if (currentData.status === 'ok' && currentData.has_token) {
+        localStorage.setItem('tushare_token_configured', '1');
+      } else {
+        localStorage.removeItem('tushare_token_configured');
+      }
+    } catch (e) { showToast('加载 Tushare 配置失败: ' + e.message, { type: 'error' }); return; }
 
     const dialog = document.createElement('div');
     dialog.className = 'datasource-overlay';
@@ -4233,7 +4299,8 @@
         const resp = await pywebview.api.save_tushare_token(token);
         const d = JSON.parse(resp);
         if (d.status === 'ok') {
-          alert('Token 保存成功');
+          localStorage.setItem('tushare_token_configured', '1');  // 同步标记供前置检测
+          showToast('Tushare Token 保存成功', { type: 'success' });
           // 刷新显示
           const cfgResp = await pywebview.api.get_tushare_config();
           const cfg = JSON.parse(cfgResp);
@@ -4281,8 +4348,14 @@
       const resp = await pywebview.api.get_wind_config();
       const d = JSON.parse(resp);
       if (d.status === 'ok') cfg = d.config;
-      else { alert('加载 Wind 配置失败: ' + (d.message || '')); return; }
-    } catch (e) { alert('加载 Wind 配置失败: ' + e.message); return; }
+      else { showToast('加载 Wind 配置失败: ' + (d.message || ''), { type: 'error' }); return; }
+      // 同步 API Key 已配置标记供前置检测
+      if (cfg && cfg.api_key_masked) {
+        localStorage.setItem('wind_apikey_configured', '1');
+      } else {
+        localStorage.removeItem('wind_apikey_configured');
+      }
+    } catch (e) { showToast('加载 Wind 配置失败: ' + e.message, { type: 'error' }); return; }
 
     const modules = cfg.modules || {};
     const news = modules.news || {};
@@ -4416,7 +4489,8 @@
         const resp = await pywebview.api.save_wind_api_key(key);
         const d = JSON.parse(resp);
         if (d.status === 'ok') {
-          alert('API Key 保存成功');
+          localStorage.setItem('wind_apikey_configured', '1');  // 同步标记供前置检测
+          showToast('Wind API Key 保存成功', { type: 'success' });
           const cfgResp = await pywebview.api.get_wind_config();
           const cfgD = JSON.parse(cfgResp);
           if (cfgD.status === 'ok') {
