@@ -224,10 +224,36 @@ git push origin :refs/tags/v3.5.0
 gh release create v3.5.0 \
   --title "v3.5.0: 资金流与游资追踪" \
   --notes "Release Notes 内容..." \
-  dist/项目名_v3.5.0.exe
+  dist/project-name_v3.5.0.exe
 
 # 单独上传附件
-gh release upload v3.5.0 dist/项目名_v3.5.0.exe
+gh release upload v3.5.0 dist/project-name_v3.5.0.exe
+```
+
+### 6.3 ⚠️ Release 附件名必须用 ASCII（GitHub 平台硬限制）
+
+**坑**：GitHub 服务端会强制重命名含非 ASCII 字符的附件名，剥离所有中文字符。
+例如 `涨停财经聚合播报_v4.2.0.exe` 上传后会变成 `_v4.2.0.exe`（中文全没，只剩下划线），
+PATCH `/releases/assets/{id}` 改名也无法绕过（服务端再次强制重命名）。
+多个独立项目（zhangting-finance-news 全部历史版本、leexiaohui1997/knowledgebase、
+genpao-browser 等）都踩过同一个坑。GitHub 官方 API 文档明确说明：
+"GitHub renames asset filenames that have special characters, non-alphanumeric characters,
+and leading or trailing periods."
+
+**正确做法**：
+1. 本地构建产物保留中文文件名（用户下载后在电脑里仍是中文名）。
+2. **上传到 GitHub Release 前，先 `cp` 一份 ASCII 命名副本**（推荐用拼音英文，如
+   `zhangting-finance_v4.2.0.exe`，既 ASCII 安全又保留项目识别度）。
+3. 用 ASCII 副本执行 `gh release upload`。
+4. 上传后用 `gh release view --json assets` 核对字节数与本地原件一致（内容无损）。
+5. **Release Notes 用中文标注产品全名**（"涨停财经聚合播报"），弥补附件名丢失的识别度。
+
+```bash
+# 正确示例：先制造 ASCII 副本再上传
+cp "dist/涨停财经聚合播报_v4.2.0.exe" "dist/zhangting-finance_v4.2.0.exe"
+gh release upload v4.2.0 "dist/zhangting-finance_v4.2.0.exe"
+gh release view v4.2.0 --json assets --jq '.assets[] | {name, size}'  # 核对字节数
+rm "dist/zhangting-finance_v4.2.0.exe"  # 清理临时副本
 ```
 
 ---
@@ -308,7 +334,7 @@ gh release upload v3.5.0 dist/项目名_v3.5.0.exe
 | 8 | 创建 Git Tag | `git tag vX.X.X` | 四、Git Tag |
 | 9 | Push Tag | `git push origin vX.X.X` | 四、Git Tag |
 | 10 | 创建 GitHub Release | `gh release create vX.X.X --title "vX.X.X: 概括" --notes "Release Notes..."` | 六、GitHub Release |
-| 11 | 上传 exe 文件（如需要） | `gh release upload vX.X.X dist/项目名_vX.X.X.exe` | 六、GitHub Release |
+| 11 | 上传 exe 文件（如需要） | **附件名必须 ASCII**（见 §6.3）：先 `cp` 一份拼音英文副本再 `gh release upload vX.X.X dist/拼音名_vX.X.X.exe` | 六、GitHub Release |
 | 12 | 更新版本基线表 | 更新本规则第十节的项目版本基线 | 十、当前项目版本基线 |
 
 ### 8.3 Push 前自检清单
