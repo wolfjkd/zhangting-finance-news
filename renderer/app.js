@@ -183,16 +183,20 @@
 
   // ===== AI分析器 =====
   window.aiAnalyzer = {
-    async analyze(title, content) {
+    async analyze(title, content, opts) {
+      opts = opts || {};
+      const isAuto = opts.isAuto === true;
       if (!settings.aiEnabled || !settings.aiApiKey) {
-        // 不再静默失败：弹引导提示，带"去配置"按钮一键跳到设置面板的 AI 区
-        showToast('AI 解读需要先配置 API 密钥', {
-          type: 'warning',
-          action: {
-            label: '去配置',
-            callback: () => openSettingsAtSection('ai')
-          }
-        });
+        // 只在用户主动点击的场景弹引导提示；自动触发场景静默 return 避免打扰
+        if (!isAuto) {
+          showToast('AI 解读需要先配置 API 密钥', {
+            type: 'warning',
+            action: {
+              label: '去配置',
+              callback: () => openSettingsAtSection('ai')
+            }
+          });
+        }
         return null;
       }
       try {
@@ -274,8 +278,8 @@
       aiBtn.disabled = true;
     }
 
-    // 执行分析
-    const result = await window.aiAnalyzer.analyze(item.title, item.content);
+    // 执行分析（透传 isAuto 标志，让 analyze 在未配置时不弹 toast 避免自动触发打扰）
+    const result = await window.aiAnalyzer.analyze(item.title, item.content, { isAuto: isAuto });
 
     if (result) {
       item.aiResult = result;
@@ -1029,12 +1033,18 @@
     }
 
     // 检查是否应该自动触发AI分析
+    // 关键：必须先检查 AI 是否启用 + API Key 是否配置，
+    // 否则没配 key 的用户会被"重要"级新闻随机触发后弹 toast 打扰
     if (window.newsClassifier && window.aiAnalyzer) {
-      const text = (item.title || '') + ' ' + (item.content || '');
-      if (item.classification && window.newsClassifier.shouldAutoTriggerAI(item.classification, text)) {
-        // 检查是否已有分析结果
-        if (!item.aiResult) {
-          triggerAiAnalysis(item, div, true);
+      if (!settings.aiEnabled || !settings.aiApiKey) {
+        // AI 未启用或未配置——不自动触发，跳过后续分类判定
+      } else {
+        const text = (item.title || '') + ' ' + (item.content || '');
+        if (item.classification && window.newsClassifier.shouldAutoTriggerAI(item.classification, text)) {
+          // 检查是否已有分析结果
+          if (!item.aiResult) {
+            triggerAiAnalysis(item, div, true);
+          }
         }
       }
     }
