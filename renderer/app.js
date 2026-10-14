@@ -185,6 +185,14 @@
   window.aiAnalyzer = {
     async analyze(title, content) {
       if (!settings.aiEnabled || !settings.aiApiKey) {
+        // 不再静默失败：弹引导提示，带"去配置"按钮一键跳到设置面板的 AI 区
+        showToast('AI 解读需要先配置 API 密钥', {
+          type: 'warning',
+          action: {
+            label: '去配置',
+            callback: () => openSettingsAtSection('ai')
+          }
+        });
         return null;
       }
       try {
@@ -904,9 +912,13 @@
     const isDetailSource = source === '东方财富' || source === '券商研报';
     const titleClickable = isDetailSource ? 'clickable' : '';
 
-    // AI区域HTML
+    // AI区域HTML（未配置 API 密钥时按钮灰显 + 点击仍可弹引导）
+    const aiReady = !!(settings.aiEnabled && settings.aiApiKey);
+    const aiBtnStyle = aiReady
+      ? ''
+      : 'style="opacity:0.45;" title="未配置 API 密钥，点击去配置"';
     let aiAreaHTML = `<div class="ai-area">
-      <button class="btn-ai-interpret" data-aid="${item.aid}">AI解读</button>
+      <button class="btn-ai-interpret ${aiReady ? '' : 'btn-ai-not-ready'}" data-aid="${item.aid}" ${aiBtnStyle}>AI解读</button>
     </div>`;
 
     let html = `
@@ -1001,6 +1013,17 @@
       }
       aiBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        // 未配置 API 密钥时点按钮直接弹引导，不进入分析流程
+        if (aiBtn.classList.contains('btn-ai-not-ready')) {
+          showToast('AI 解读需要先配置 API 密钥', {
+            type: 'warning',
+            action: {
+              label: '去配置',
+              callback: () => window.openSettingsAtSection('ai')
+            }
+          });
+          return;
+        }
         triggerAiAnalysis(item, div);
       });
     }
@@ -2869,6 +2892,36 @@
       $settingsOverlay.classList.add('show');
     });
 
+    // 打开设置面板并定位到指定区域（'ai' | 'tushare' | 'wind' | 'datasource'）
+    // 用于 toast 的"去配置"按钮一键直达
+    function openSettingsAtSection(section) {
+      $settingsOverlay.classList.add('show');
+      // 等面板渲染完再滚动/聚焦
+      setTimeout(() => {
+        try {
+          if (section === 'ai') {
+            // 滚到 AI 配置区并勾选启用
+            const aiRow = document.getElementById('aiEnabledRow') || document.getElementById('aiApiKeyRow');
+            if (aiRow) aiRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const aiEnabled = document.getElementById('aiEnabled');
+            if (aiEnabled && !aiEnabled.checked) aiEnabled.focus();
+          } else if (section === 'datasource' || section === 'tushare' || section === 'wind') {
+            // 打开数据源管理弹窗
+            showDataSourceDialog();
+            if (section === 'tushare' || section === 'wind') {
+              // 数据源弹窗打开后再打开对应 Token 配置
+              setTimeout(() => {
+                const cfgBtn = document.querySelector(`.datasource-config-btn[data-source-id="${section}"]`);
+                if (cfgBtn) cfgBtn.click();
+              }, 300);
+            }
+          }
+        } catch (e) { console.warn('openSettingsAtSection error:', e); }
+      }, 100);
+    }
+    // 暴露给其他模块使用（如 toast action）
+    window.openSettingsAtSection = openSettingsAtSection;
+
     $btnWatchlist.addEventListener('click', () => {
       showWatchlistDialog();
     });
@@ -3437,15 +3490,60 @@
   }
 
   // ===== 工具函数 =====
-  function showToast(message) {
+  // toast 类型样式（success/error/warning/info）
+  const TOAST_TYPES = {
+    success: { bg: 'rgba(46, 125, 50, 0.92)', icon: '✓' },
+    error:   { bg: 'rgba(211, 47, 47, 0.92)',  icon: '✗' },
+    warning: { bg: 'rgba(237, 144, 33, 0.92)', icon: '!' },
+    info:    { bg: 'rgba(0, 0, 0, 0.78)',       icon: '' }
+  };
+
+  /**
+   * 显示 toast 提示（支持可选的动作按钮和类型）
+   * @param {string} message - 提示文本
+   * @param {object} [opts] - 选项
+   *   - type: 'success' | 'error' | 'warning' | 'info'（默认 info）
+   *   - duration: 显示毫秒数（默认 2500，有 action 时自动延长到 6000）
+   *   - action: { label, callback } 可选动作按钮（如"去配置"）
+   */
+  function showToast(message, opts) {
+    opts = opts || {};
+    const type = opts.type && TOAST_TYPES[opts.type] ? opts.type : 'info';
+    const typeInfo = TOAST_TYPES[type];
+    const hasAction = opts.action && typeof opts.action.callback === 'function';
+    const duration = opts.duration || (hasAction ? 6000 : 2500);
+
     const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
+    toast.className = 'toast toast-' + type;
+    toast.style.background = typeInfo.bg;
+
+    // 内容区
+    const textSpan = document.createElement('span');
+    textSpan.textContent = (typeInfo.icon ? typeInfo.icon + ' ' : '') + message;
+    toast.appendChild(textSpan);
+
+    // 动作按钮
+    if (hasAction) {
+      const actionBtn = document.createElement('button');
+      actionBtn.className = 'toast-action-btn';
+      actionBtn.textContent = opts.action.label;
+      actionBtn.addEventListener('click', () => {
+        try { opts.action.callback(); } catch (e) { console.warn('toast action error:', e); }
+        dismiss();
+      });
+      toast.appendChild(actionBtn);
+    }
+
     document.body.appendChild(toast);
-    setTimeout(() => {
+
+    let dismissTimer = null;
+    function dismiss() {
+      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+      if (!toast.parentNode) return;
       toast.classList.add('fade-out');
       setTimeout(() => toast.remove(), 300);
-    }, 2000);
+    }
+    dismissTimer = setTimeout(dismiss, duration);
   }
 
   function formatTime(ctime) {
