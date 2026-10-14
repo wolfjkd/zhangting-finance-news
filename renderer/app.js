@@ -2615,6 +2615,7 @@
       darkMode: false,
       privacyAccepted: false,
       privacyAcceptedVersion: '',
+      onboardingCompletedVersion: '',  // 引导完成标记（跟版本绑定，由 settings.json 持久化）
     };
   }
 
@@ -3028,9 +3029,12 @@
     // 必须放在 init() 同步执行路径上，不能放进 pywebviewready 监听器——
     // 因为免责声明接受后才调用 init()，此时 pywebviewready 事件早已触发，
     // 新注册的监听器不会再执行，会导致引导永远弹不出。
+    // 注意：判定标记存到 settings.onboardingCompletedVersion（由后端 settings.json
+    // 持久化），不依赖 localStorage——pywebview/WebView2 的 localStorage 在源代码
+    // 调试模式下可能每次启动都被重置，导致"每次都弹"。
     setTimeout(() => {
-      const onboardingKey = 'onboarding_completed_v' + getCurrentVersion();
-      if (localStorage.getItem(onboardingKey) !== '1') {
+      const currentVer = getCurrentVersion();
+      if (settings.onboardingCompletedVersion !== currentVer) {
         showOnboardingDialog();
       }
     }, 800);  // 延迟 800ms 避免和启动动画抢镜
@@ -4207,10 +4211,10 @@
       if (isPaused) return;
       isPaused = true;
       overlay.classList.add('onboarding-hidden');
-      // 用轮询 + MutationObserver 双保险检测其它面板是否关闭。
+      // 用 MutationObserver 检测其它面板是否关闭。
       // 两种面板类型：
-      //   A. 动态创建型（datasource-overlay 等）：从 body 移除
-      //   B. 常驻切换型（settingsOverlay 等）：class 里移除 'show'
+      //   A. 动态创建型（datasource-overlay / watchlist-dialog 等）：从 body 移除
+      //   B. 常驻切换型（settingsOverlay 等）：class 里移除 'show'，或 style.display = 'none'
       if (pauseWatcher) pauseWatcher.disconnect();
       const checkAndResume = () => {
         if (!isPaused || !overlay.parentNode) return;
@@ -4222,13 +4226,17 @@
         childList: true,
         subtree: false,
         attributes: true,
-        attributeFilter: ['class']
+        attributeFilter: ['class', 'style']
       });
-      // 兜底：500ms 后再检查一次（避免 observer 时序漏掉某些边界场景）
-      setTimeout(checkAndResume, 500);
+      // 兜底：分两段检查——
+      //   第 50ms：确保目标面板已渲染到 DOM（避免过早误判为"全部关闭"）
+      //   第 1500ms：真正检测用户是否关掉了面板
+      setTimeout(checkAndResume, 50);
+      setTimeout(checkAndResume, 1500);
     }
 
     // 检查当前是否还有任何阻挡引导的其它面板/对话框开着
+    // 所有已知的弹窗类名都列出来，避免漏判误恢复引导
     function isAnyOtherBlockingPanelOpen() {
       const allElements = document.body.children;
       for (let i = 0; i < allElements.length; i++) {
@@ -4236,10 +4244,16 @@
         if (el === overlay) continue;            // 跳过引导自身
         if (!(el instanceof HTMLElement)) continue;
         const cls = el.className || '';
-        // 1) 常驻切换型：设置面板等通过 .show 显示
+        const id = el.id || '';
+        // 1) 常驻切换型：通过 .show class 显示（如 settingsOverlay）
         if (cls.includes('overlay') && cls.includes('show')) return true;
-        // 2) 动态创建型：datasource-overlay / watchlist-overlay / search-overlay / favorites-overlay
-        if (/\b(datasource-overlay|watchlist-overlay|search-overlay|favorites-overlay)\b/.test(cls)) return true;
+        // 2) 动态创建型：列出所有已知对话框/面板类名
+        //    overlay 系列
+        if (/\b(datasource-overlay|news-detail-overlay|license-dialog)\b/.test(cls)) return true;
+        //    dialog 系列（含 watchlist-dialog / quote-dialog / watchlist-alert-dialog）
+        if (/\b[\w-]*-dialog\b/.test(cls)) return true;
+        // 3) 通过 style.display 控制的常驻对话框（如 favoritesDialog 用 display:flex 显示）
+        if (id === 'favoritesDialog' && el.style.display && el.style.display !== 'none') return true;
       }
       return false;
     }
@@ -4285,13 +4299,14 @@
       const prev = overlay.querySelector('.onboarding-prev');
       if (prev) prev.addEventListener('click', () => { currentStep--; render(); });
       // 动作按钮（如"查看数据源"/"打开自选股"/"去配置 AI"）
-      // 关键改动：不标记完成、不销毁引导——只临时隐藏，执行 callback 打开对应面板，
-      // 等用户关闭那个面板后引导自动回到当前步骤继续
+      // 关键改动：先打开目标面板，再隐藏引导——确保目标面板先进入 DOM，
+      // 避免兜底检测误判为"所有面板都关了"导致引导立刻回来
       const actionBtn = overlay.querySelector('.onboarding-action');
       if (actionBtn) actionBtn.addEventListener('click', () => {
         const cb = steps[currentStep].action.callback;
-        hideOnboardingTemporarily();
         try { cb(); } catch (e) { console.warn('onboarding action error:', e); }
+        // 用 requestAnimationFrame 等 callback 创建的面板渲染到 DOM 后再隐藏引导
+        requestAnimationFrame(() => hideOnboardingTemporarily());
       });
       // 下一步/完成 —— 只有走到最后一步点"开始使用"才标记完成
       overlay.querySelector('.onboarding-next').addEventListener('click', () => {
@@ -4306,7 +4321,15 @@
       if (markCompleted) {
         // 仅当用户走完全部步骤点"开始使用"、或主动点"跳过"时才标记完成。
         // 标记按版本号区分——同一版本只弹一次，下次升级到新版本才会重新弹。
-        localStorage.setItem('onboarding_completed_v' + getCurrentVersion(), '1');
+        // 关键：存到 settings.onboardingCompletedVersion，由后端 settings.json 持久化，
+        // 而不是 localStorage（pywebview 在调试模式下 localStorage 可能每次启动被清空）
+        settings.onboardingCompletedVersion = getCurrentVersion();
+        saveSettings();
+        // 同时清理旧的 localStorage 标记（向前兼容旧版本）
+        try {
+          localStorage.removeItem('onboarding_completed');
+          localStorage.removeItem('onboarding_completed_v' + getCurrentVersion());
+        } catch (e) {}
       }
     }
     // 暴露给步骤内 action 的关闭函数（保留兼容性，但现在 action 一般用 hide 而不是 close）
