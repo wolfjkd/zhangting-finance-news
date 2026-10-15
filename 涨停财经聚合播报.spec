@@ -16,6 +16,7 @@ a = Analysis(
         ('renderer/modules/settings-store.js', 'renderer/modules'),
         ('renderer/modules/voice-service.js', 'renderer/modules'),
         ('renderer/modules/news-list.js', 'renderer/modules'),
+        ('renderer/modules/dialogs-legal.js', 'renderer/modules'),
         ('renderer/modules/news-classifier.js', 'renderer/modules'),
         ('renderer/modules/history-storage.js', 'renderer/modules'),
         ('renderer/modules/minute-chart.js', 'renderer/modules'),
