@@ -65,7 +65,7 @@
     checkFavoriteStatus: window.ztfi.favoritesSearch.checkFavoriteStatus,
     toggleFavorite: window.ztfi.favoritesSearch.toggleFavorite,
     showNewsDetail: window.ztfi.newsDetail.showNewsDetail,
-    updateAiArea, triggerAiAnalysis, markWatchlistMatch,
+    updateAiArea: window.ztfi.aiService.updateAiArea, triggerAiAnalysis: window.ztfi.aiService.triggerAiAnalysis, markWatchlistMatch,
     showToast, shouldAnnounce, enqueueVoice,
   });
   // ===== 语音播报服务（modules/voice-service.js）=====
@@ -158,6 +158,23 @@
     saveSettings: () => saveSettings(),
     debugMode: DEBUG_MODE,
   });
+  // ===== AI 解读服务（实现见 modules/ai-service.js）=====
+  // 注入 host：每次取最新 settings + toast
+  window.ztfi.aiService.attach({
+    getSettings: () => settings,
+    showToast: (msg, opts) => showToast(msg, opts),
+  });
+  // ===== UI 工具服务（实现见 modules/ui-utils.js）=====
+  // 注入 host：计数 getter + 共享集合引用（seenAids/newAidBuffer/recentItems 必须是同一对象）+ 虚拟滚动上限
+  window.ztfi.ui.attach({
+    getNewsCount: () => newsCount,
+    getHiddenCount: () => hiddenCount,
+    seenAids,
+    newAidBuffer,
+    recentItems,
+    maxDomItems: MAX_DOM_ITEMS,
+    maxRecent: MAX_RECENT,
+  });
 
 
   // ===== DOM（modules/dom.js 集中登记，加载顺序在 app.js 之前）=====
@@ -192,162 +209,7 @@
     document.documentElement.style.setProperty('--font-scale', scale);
   }
 
-  // ===== AI分析相关变量 =====
-  const AI_RATE_LIMIT = 3; // 每分钟最多3条
-  const AI_CACHE_PREFIX = 'ai_result_';
-  let aiAnalysisQueue = []; // 待分析队列
-  let aiAnalysisCount = 0; // 本分钟分析数量
-  let aiAnalysisLastReset = Date.now(); // 上次重置时间
-
-  // ===== AI分析器 =====
-  window.aiAnalyzer = {
-    async analyze(title, content, opts) {
-      opts = opts || {};
-      const isAuto = opts.isAuto === true;
-      if (!settings.aiEnabled || !settings.aiApiKey) {
-        // 只在用户主动点击的场景弹引导提示；自动触发场景静默 return 避免打扰
-        if (!isAuto) {
-          showToast('AI 解读需要先配置 API 密钥', {
-            type: 'warning',
-            action: {
-              label: '去配置',
-              callback: () => window.openSettingsAtSection('ai')
-            }
-          });
-        }
-        return null;
-      }
-      try {
-        const result = await pywebview.api.ai_analyze(
-          title,
-          content,
-          'custom',
-          settings.aiApiKey,
-          settings.aiApiUrl || '',
-          settings.aiModelName || ''
-        );
-        const parsed = JSON.parse(result);
-        if (parsed.error) {
-          console.error('AI分析失败:', parsed.error);
-          return null;
-        }
-        return parsed;
-      } catch (e) {
-        console.error('AI分析异常:', e);
-        return null;
-      }
-    }
-  };
-
-  // ===== AI分析结果缓存 =====
-  function getAiCache(aid) {
-    try {
-      const key = AI_CACHE_PREFIX + aid;
-      return localStorage.getItem(key);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function setAiCache(aid, result) {
-    try {
-      const key = AI_CACHE_PREFIX + aid;
-      localStorage.setItem(key, JSON.stringify(result));
-    } catch (e) {}
-  }
-
-  // ===== 触发AI分析 =====
-  async function triggerAiAnalysis(item, div, isAuto = false) {
-    const aid = item.aid;
-
-    // 检查缓存
-    if (item.aiResult) {
-      updateAiArea(div, item.aiResult);
-      return;
-    }
-
-    // 检查本地缓存
-    const cached = getAiCache(aid);
-    if (cached) {
-      try {
-        item.aiResult = JSON.parse(cached);
-        updateAiArea(div, item.aiResult);
-        return;
-      } catch (e) {}
-    }
-
-    // 频率限制（仅自动触发）
-    if (isAuto) {
-      const now = Date.now();
-      if (now - aiAnalysisLastReset > 60000) {
-        aiAnalysisCount = 0;
-        aiAnalysisLastReset = now;
-      }
-      if (aiAnalysisCount >= AI_RATE_LIMIT) {
-        return; // 超过频率限制
-      }
-      aiAnalysisCount++;
-    }
-
-    // 更新按钮状态
-    const aiBtn = div.querySelector('.btn-ai-interpret');
-    if (aiBtn) {
-      aiBtn.textContent = '分析中...';
-      aiBtn.disabled = true;
-    }
-
-    // 执行分析（透传 isAuto 标志，让 analyze 在未配置时不弹 toast 避免自动触发打扰）
-    const result = await window.aiAnalyzer.analyze(item.title, item.content, { isAuto: isAuto });
-
-    if (result) {
-      item.aiResult = result;
-      setAiCache(aid, result);
-      updateAiArea(div, result);
-    } else {
-      // 分析失败，恢复按钮
-      if (aiBtn) {
-        aiBtn.textContent = 'AI解读';
-        aiBtn.disabled = false;
-      }
-    }
-  }
-
-  // ===== 更新AI区域UI =====
-  function updateAiArea(div, result) {
-    const aiArea = div.querySelector('.ai-area');
-    if (!aiArea || !result) return;
-
-    // A股市场：红涨绿跌
-    const sentimentConfig = {
-      'positive': { icon: '↑', text: '利好', color: '#E53935' },
-      'negative': { icon: '↓', text: '利空', color: '#43A047' },
-      'neutral': { icon: '—', text: '中性', color: '#FFA726' }
-    };
-    const sentiment = sentimentConfig[result.sentiment] || sentimentConfig.neutral;
-    const confidence = result.confidence ? Math.round(result.confidence * 100) : '--';
-
-    aiArea.innerHTML = `
-      <span class="ai-badge" title="AI分析">AI</span>
-      <span class="ai-sentiment" style="color: ${sentiment.color}; font-weight: bold;">
-        ${sentiment.icon}${sentiment.text}
-      </span>
-      <span class="ai-confidence" title="置信度">${confidence}%</span>
-    `;
-
-    // 添加AI摘要（在标题下方）
-    if (result.summary) {
-      let summaryEl = div.querySelector('.ai-summary');
-      if (!summaryEl) {
-        summaryEl = document.createElement('div');
-        summaryEl.className = 'ai-summary';
-        const titleEl = div.querySelector('.news-title');
-        if (titleEl) {
-          titleEl.insertAdjacentElement('afterend', summaryEl);
-        }
-      }
-      summaryEl.innerHTML = `📋 <span class="ai-summary-label">AI摘要：</span>${esc(result.summary)}`;
-    }
-  }
+  // ===== AI 解读（实现见 modules/ai-service.js）=====
 
   // ===== 初始化 =====
   async function init() {
@@ -767,31 +629,8 @@
     _alertConditions = {"changePercent":5,"volumeRatio":2,"amplitude":8,"triggerMode":"any","cooldown":300};
   }
 
-  // ===== 加载更多 =====
-  async function loadMore() {
-    $loading.classList.add('show');
-
-    try {
-      const beforeTime = Math.floor(Date.now() / 1000) - 3600;
-      const result = await pywebview.api.load_more(beforeTime);
-      const data = unwrapResult(result);
-
-      if (data.status === 'ok' && Array.isArray(data.data) && data.data.length > 0) {
-        data.data.forEach(item => {
-          if (!seenAids.has(item.aid)) {
-            seenAids.add(item.aid);
-            newAidBuffer.push(item.aid);
-            appendNewsItem(item);
-          }
-        });
-        updateCount();
-      }
-    } catch (err) {
-      console.error('加载更多失败:', err);
-    }
-
-    $loading.classList.remove('show');
-  }
+  // ===== 加载更多（实现见 modules/ui-utils.js）=====
+  function loadMore() { return window.ztfi.ui.loadMore(); }
 
   // ===== 语音播报（实现见 modules/voice-service.js；此处保留薄包装以稳定既有调用点）=====
   function initVoice() { window.ztfi.voiceService.init(); }
@@ -817,107 +656,12 @@
 
   // ===== 新闻详情弹窗（实现见 modules/news-detail.js）=====
 
-  // ===== 工具函数 =====
-  // toast 类型样式（success/error/warning/info）
-  const TOAST_TYPES = {
-    success: { bg: 'rgba(46, 125, 50, 0.92)', icon: '✓' },
-    error:   { bg: 'rgba(211, 47, 47, 0.92)',  icon: '✗' },
-    warning: { bg: 'rgba(237, 144, 33, 0.92)', icon: '!' },
-    info:    { bg: 'rgba(0, 0, 0, 0.78)',       icon: '' }
-  };
-
-  /**
-   * 显示 toast 提示（支持可选的动作按钮和类型）
-   * @param {string} message - 提示文本
-   * @param {object} [opts] - 选项
-   *   - type: 'success' | 'error' | 'warning' | 'info'（默认 info）
-   *   - duration: 显示毫秒数（默认 2500，有 action 时自动延长到 6000）
-   *   - action: { label, callback } 可选动作按钮（如"去配置"）
-   */
-  function showToast(message, opts) {
-    opts = opts || {};
-    const type = opts.type && TOAST_TYPES[opts.type] ? opts.type : 'info';
-    const typeInfo = TOAST_TYPES[type];
-    const hasAction = opts.action && typeof opts.action.callback === 'function';
-    const duration = opts.duration || (hasAction ? 6000 : 2500);
-
-    const toast = document.createElement('div');
-    toast.className = 'toast toast-' + type;
-    toast.style.background = typeInfo.bg;
-
-    // 内容区
-    const textSpan = document.createElement('span');
-    textSpan.textContent = (typeInfo.icon ? typeInfo.icon + ' ' : '') + message;
-    toast.appendChild(textSpan);
-
-    // 动作按钮
-    if (hasAction) {
-      const actionBtn = document.createElement('button');
-      actionBtn.className = 'toast-action-btn';
-      actionBtn.textContent = opts.action.label;
-      actionBtn.addEventListener('click', () => {
-        try { opts.action.callback(); } catch (e) { console.warn('toast action error:', e); }
-        dismiss();
-      });
-      toast.appendChild(actionBtn);
-    }
-
-    document.body.appendChild(toast);
-
-    let dismissTimer = null;
-    function dismiss() {
-      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
-      if (!toast.parentNode) return;
-      toast.classList.add('fade-out');
-      setTimeout(() => toast.remove(), 300);
-    }
-    dismissTimer = setTimeout(dismiss, duration);
-  }
-
-
-  function setStatus(state, text) {
-    $statusDot.className = 'status-dot ' + state;
-    $statusText.textContent = text;
-  }
-
-  function updateCount() {
-    let text = `${newsCount} 条消息`;
-    if (hiddenCount > 0) {
-      text += ` · 已隐藏 ${hiddenCount} 条相似`;
-    }
-    $newsCount.textContent = text;
-    const d = new Date();
-    $lastUpdate.textContent = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
-
-    // 虚拟滚动：超出上限时移除最旧的 DOM 节点
-    trimOldDomItems();
-
-    // 定期持久化已读 aid（每 50 条批量写一次）
-    if (newAidBuffer.length >= 50) {
-      flushAidBuffer();
-    }
-  }
-
-  function trimOldDomItems() {
-    const children = $newsList.children;
-    if (children.length <= MAX_DOM_ITEMS) return;
-    const toRemove = children.length - MAX_DOM_ITEMS;
-    // 移除最旧的（列表末尾的）
-    for (let i = 0; i < toRemove; i++) {
-      const el = children[children.length - 1];
-      if (el) $newsList.removeChild(el);
-    }
-    // 从 recentItems 中也清理
-    if (recentItems.length > MAX_RECENT) {
-      recentItems.splice(0, recentItems.length - MAX_RECENT);
-    }
-  }
-
-  function flushAidBuffer() {
-    if (newAidBuffer.length === 0) return;
-    const batch = newAidBuffer.splice(0, newAidBuffer.length);
-    pywebview.api.persist_seen_aids(JSON.stringify(batch)).catch(() => {});
-  }
+  // ===== UI 工具（toast / 状态 / 计数 / 虚拟滚动 / aid 持久化，实现见 modules/ui-utils.js）=====
+  // 保留薄包装以稳定既有「bare 调用点 + 各模块 host 钩子」引用。
+  function showToast(message, opts) { return window.ztfi.ui.showToast(message, opts); }
+  function setStatus(state, text) { return window.ztfi.ui.setStatus(state, text); }
+  function updateCount() { return window.ztfi.ui.updateCount(); }
+  function flushAidBuffer() { return window.ztfi.ui.flushAidBuffer(); }
 
   // ===== 滚动检测 =====
   $container.addEventListener('scroll', () => {
