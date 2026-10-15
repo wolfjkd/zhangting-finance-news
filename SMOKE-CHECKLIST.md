@@ -3,7 +3,7 @@
 > 用途：本项目前端无自动化测试，P5（app.js 拆模块）每完成 2–3 个阶段，必须在实机上手工过一遍本清单。
 > 通过标准：全部项「符合预期」。任一失败 → 停止下一步、回退到上一个原子 commit 定位。
 > 记录方式：在每项后打 ✅ / ❌，附现象与截图（如需要）。
-> 最近一次执行：____（日期，待老板实机冒烟）｜ 执行阶段：**S0–S7 全部完成**（ztfi 命名空间 / utils / dom / ui-utils / settings-store / voice-service / news-list / dialogs-* / watchlist-view / settings-panel / keyword-alert / watchlist-alert / ai-service / update-check / window-service / favorites-search / history-buffer / stats / news-detail），app.js 已从 5036 行收敛至 **766 行**（P5 目标 <1000 达成）
+> 最近一次执行：2026-10-16（**P5 全量冒烟通过 ✅**）｜ 执行阶段：**S0–S7 全部完成**（ztfi 命名空间 / utils / dom / ui-utils / settings-store / voice-service / news-list / dialogs-* / watchlist-view / settings-panel / keyword-alert / watchlist-alert / ai-service / update-check / window-service / favorites-search / history-buffer / stats / news-detail），app.js 已从 5036 行收敛至 **766 行**（P5 目标 <1000 达成）
 
 ---
 
