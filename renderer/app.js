@@ -64,7 +64,7 @@
     highlightElement, checkKeywordAlert,
     checkFavoriteStatus: window.ztfi.favoritesSearch.checkFavoriteStatus,
     toggleFavorite: window.ztfi.favoritesSearch.toggleFavorite,
-    showNewsDetail,
+    showNewsDetail: window.ztfi.newsDetail.showNewsDetail,
     updateAiArea, triggerAiAnalysis, markWatchlistMatch,
     showToast, shouldAnnounce, enqueueVoice,
   });
@@ -140,6 +140,11 @@
     maxHistoryDays: MAX_HISTORY_DAYS,
   });
   // ===== 评估指标统计（实现见 modules/stats.js）=====
+  // 注入 host：debugMode
+  window.ztfi.newsDetail.attach({
+    debugMode: DEBUG_MODE,
+  });
+
 
   // ===== DOM（modules/dom.js 集中登记，加载顺序在 app.js 之前）=====
   const {
@@ -1449,83 +1454,7 @@
 
   // ===== 历史存储（批量优化，实现见 modules/history-buffer.js）=====
 
-  // ===== 新闻详情弹窗 =====
-  async function showNewsDetail(item) {
-    // 加载状态
-    const overlay = document.createElement('div');
-    overlay.className = 'news-detail-overlay';
-    overlay.innerHTML = `
-      <div class="news-detail-panel">
-        <div class="news-detail-header">
-          <span class="detail-source">${esc(item.comefrom || '详情')}</span>
-          <button class="news-detail-close">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="#e53935">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-            </svg>
-          </button>
-        </div>
-        <div class="news-detail-body">
-          <div class="detail-title">${esc(item.title || '')}</div>
-          <div class="detail-time">${esc(item.ptime || '')}  ${esc(item.comefrom || '')}</div>
-          <div class="detail-content" style="color:#999;">加载详情中...</div>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    // 点击遮罩关闭
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) overlay.remove();
-    });
-    overlay.querySelector('.news-detail-close').addEventListener('click', () => overlay.remove());
-    const escHandler = (e) => {
-      if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
-    };
-    document.addEventListener('keydown', escHandler);
-
-    // 请求后端获取详情正文
-    try {
-      if (DEBUG_MODE) console.log('[详情] 请求详情, item keys:', Object.keys(item), 'art_code:', item.art_code, 'info_code:', item.info_code);
-      let detailContent = '';
-      if (item.art_code && apiHas('get_announcement_detail')) {
-        if (DEBUG_MODE) console.log('[详情] 调用 get_announcement_detail, art_code:', item.art_code);
-        const resp = await pywebview.api.get_announcement_detail(item.art_code);
-        if (DEBUG_MODE) console.log('[详情] 公告详情返回:', resp);
-        const data = unwrapResult(resp);
-        if (data && data.status === 'ok' && data.content) {
-          detailContent = data.content;
-        }
-      } else if (item.info_code && apiHas('get_research_detail')) {
-        if (DEBUG_MODE) console.log('[详情] 调用 get_research_detail, info_code:', item.info_code);
-        const resp = await pywebview.api.get_research_detail(item.info_code);
-        if (DEBUG_MODE) console.log('[详情] 研报详情返回:', resp);
-        const data = unwrapResult(resp);
-        if (data && data.status === 'ok' && data.content) {
-          detailContent = data.content;
-        }
-      } else {
-        if (DEBUG_MODE) console.log('[详情] 没有 art_code 或 info_code，无法请求详情');
-      }
-
-      const contentEl = overlay.querySelector('.detail-content');
-      if (contentEl) {
-        if (detailContent) {
-          contentEl.style.color = '';
-          contentEl.textContent = detailContent;
-        } else {
-          contentEl.textContent = item.content || '暂无详细内容';
-          contentEl.style.color = '#666';
-        }
-      }
-    } catch (err) {
-      const contentEl = overlay.querySelector('.detail-content');
-      if (contentEl) {
-        contentEl.textContent = '加载详情失败: ' + err.message;
-        contentEl.style.color = '#f44336';
-      }
-    }
-  }
+  // ===== 新闻详情弹窗（实现见 modules/news-detail.js）=====
 
   // ===== 工具函数 =====
   // toast 类型样式（success/error/warning/info）

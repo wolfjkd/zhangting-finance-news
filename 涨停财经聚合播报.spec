@@ -26,6 +26,7 @@ a = Analysis(
         ('renderer/modules/favorites-search.js', 'renderer/modules'),
         ('renderer/modules/history-buffer.js', 'renderer/modules'),
         ('renderer/modules/stats.js', 'renderer/modules'),
+        ('renderer/modules/news-detail.js', 'renderer/modules'),
         ('renderer/modules/news-classifier.js', 'renderer/modules'),
         ('renderer/modules/history-storage.js', 'renderer/modules'),
         ('renderer/modules/minute-chart.js', 'renderer/modules'),
