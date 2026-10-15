@@ -59,7 +59,8 @@
     getHiddenCount: () => hiddenCount, setHiddenCount: v => { hiddenCount = v; },
     getOldestCtime: () => oldestCtime, setOldestCtime: v => { oldestCtime = v; },
     isAutoScroll: () => autoScroll,
-    recordSourceStats, classifyItem, storeToHistory, updateCount,
+    recordSourceStats, classifyItem, updateCount,
+    storeToHistory: window.ztfi.historyBuffer.storeToHistory,
     highlightElement, checkKeywordAlert,
     checkFavoriteStatus: window.ztfi.favoritesSearch.checkFavoriteStatus,
     toggleFavorite: window.ztfi.favoritesSearch.toggleFavorite,
@@ -132,6 +133,11 @@
   window.ztfi.favoritesSearch.attach({
     showToast: (msg, opts) => showToast(msg, opts),
     debugMode: DEBUG_MODE,
+  });
+  // 注入 host：debugMode + 历史保留天数
+  window.ztfi.historyBuffer.attach({
+    debugMode: DEBUG_MODE,
+    maxHistoryDays: MAX_HISTORY_DAYS,
   });
   // ===== 评估指标统计 =====
   const stats = {
@@ -475,7 +481,7 @@
 
     initVoice();
     initSettings();
-    scheduleCleanup();
+    window.ztfi.historyBuffer.scheduleCleanup();
     initTTSSettings();
   }
 
@@ -1497,65 +1503,7 @@
     }
   }
 
-  // ===== 历史存储（批量优化） =====
-  let historyBuffer = [];  // 消息缓冲
-  let historyFlushTimer = null;  // 刷新定时器
-  const BATCH_SIZE = 10;  // 批量大小
-  const FLUSH_INTERVAL = 2000;  // 刷新间隔(ms)
-
-  function flushHistoryBuffer() {
-    if (!window.historyStorage || historyBuffer.length === 0) return;
-    const items = historyBuffer.splice(0, historyBuffer.length);
-    window.historyStorage.storeMessagesBatch(items).catch(() => {});
-  }
-
-  function scheduleFlush() {
-    if (historyFlushTimer) return;
-    historyFlushTimer = setTimeout(() => {
-      historyFlushTimer = null;
-      flushHistoryBuffer();
-    }, FLUSH_INTERVAL);
-  }
-
-  function storeToHistory(item) {
-    if (!window.historyStorage) return;
-    try {
-      historyBuffer.push(item);
-      // 达到批量大小则立即刷新
-      if (historyBuffer.length >= BATCH_SIZE) {
-        if (historyFlushTimer) {
-          clearTimeout(historyFlushTimer);
-          historyFlushTimer = null;
-        }
-        flushHistoryBuffer();
-      } else {
-        scheduleFlush();
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  async function cleanupOldHistory() {
-    if (!window.historyStorage) return;
-    try {
-      const cutoffTime = Date.now() - MAX_HISTORY_DAYS * 24 * 60 * 60 * 1000;
-      const deletedCount = await window.historyStorage.deleteOldMessages(cutoffTime);
-      if (DEBUG_MODE && deletedCount > 0) {
-        console.log(`清理过期消息: 删除 ${deletedCount} 条`);
-      }
-    } catch (e) {
-      if (DEBUG_MODE) console.warn('清理历史消息失败:', e);
-    }
-  }
-
-  function scheduleCleanup() {
-    // 延迟 5 分钟首次启动清理，避开启动高峰；之后每 24 小时一次
-    setTimeout(() => {
-      cleanupOldHistory();
-      setInterval(cleanupOldHistory, 24 * 60 * 60 * 1000);
-    }, 5 * 60 * 1000);
-  }
+  // ===== 历史存储（批量优化，实现见 modules/history-buffer.js）=====
 
   // ===== 新闻详情弹窗 =====
   async function showNewsDetail(item) {
