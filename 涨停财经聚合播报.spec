@@ -10,6 +10,7 @@ a = Analysis(
         ('renderer/style.css', 'renderer'),
         ('renderer/app.js', 'renderer'),
         ('renderer/themes.js', 'renderer'),
+        ('renderer/modules/core.js', 'renderer/modules'),
         ('renderer/modules/news-classifier.js', 'renderer/modules'),
         ('renderer/modules/history-storage.js', 'renderer/modules'),
         ('renderer/modules/minute-chart.js', 'renderer/modules'),
