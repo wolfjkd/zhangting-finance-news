@@ -898,45 +898,7 @@ body.dark-mode .toolbar-right {
   margin-bottom: 12px;
 }
 
-.source-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.source-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  font-size: 12px;
-  cursor: pointer;
-  background: var(--bg);
-  color: var(--text);
-  transition: all 0.15s;
-  user-select: none;
-}
-
-.source-chip:hover {
-  border-color: var(--accent);
-}
-
-.source-chip.active {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-
-.source-chip .check {
-  display: none;
-  font-size: 10px;
-}
-
-.source-chip.active .check {
-  display: inline;
-}
+/* 注：原 .source-list / .source-chip 样式已于 2026-10-15 移除（"消息来源"筛选功能下线） */
 
 .setting-row {
   display: flex;

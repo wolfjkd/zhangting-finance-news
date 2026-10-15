@@ -42,12 +42,16 @@
   const MAX_RECENT = 50; // 只与最近50条比较，避免性能问题
   const MAX_DOM_ITEMS = 200; // 虚拟滚动：最多保留 DOM 节点数（减少内存占用）
   const MAX_HISTORY_DAYS = 7; // 历史消息最多保留7天
+  // 延迟消息丢弃阈值：消息自带 ctime 与当前真实时间差超过此值（秒），视为过时旧消息直接丢弃。
+  // 该项目是实时突发新闻播报工具，过时新闻没有实时指导意义（老板 2026-10-15 拍板）。
+  const STALE_MSG_THRESHOLD = 120; // 120 秒
   let windowResizeTimer = null; // 窗口大小保存防抖定时器
 
   // ===== 设置 =====
-  const ALL_SOURCES = [
-    '涨停聚合（Beta）', '传统聚合', '外网资讯', '东方财富公告', '龙虎榜', '券商研报', '公告解读', '北向资金'
-  ];
+  // 注：原"消息来源"筛选（settings.sources + ALL_SOURCES + $sourceList）已于 2026-10-15 移除。
+  // 理由：数据源管理（齿轮图标）的开关已精确表达用户"要/不要哪个源"的意愿，
+  //       前端再加一道显示过滤闸属冗余，反而造成"两套开关认知负担"。
+  // 去重 / 来源统计 / 卡片来源标签 功能不受影响（它们用各自独立字段）。
 
   let settings = loadSettings();
   // 暴露到全局，同步 darkMode 状态
@@ -149,7 +153,6 @@
   const $btnThemeToggle = document.getElementById('btnThemeToggle');
   const $settingsOverlay = document.getElementById('settingsOverlay');
   const $settingsClose = document.getElementById('settingsClose');
-  const $sourceList = document.getElementById('sourceList');
   const $voiceEnabled = document.getElementById('voiceEnabled');
   const $voiceSettings = document.getElementById('voiceSettings');
   const $voiceSelect = document.getElementById('voiceSelect');
@@ -358,7 +361,6 @@
         if (DEBUG_MODE) console.log('[DEBUG] backendSettings:', backendSettings ? backendSettings.substring(0, 200) : 'null');
         if (backendSettings) {
           const parsed = unwrapResult(backendSettings);
-          if (DEBUG_MODE) console.log('[DEBUG] parsed settings sources:', parsed.sources);
           if (Object.keys(parsed).length > 0) {
             localStorage.setItem('ztfi-settings', JSON.stringify(parsed));
             settings = loadSettings();
@@ -782,11 +784,23 @@
   async function handleNewsItem(item) {
     if (!item || !item.aid || seenAids.has(item.aid)) return;
 
-    // 来源过滤
-    // WebSocket 传统聚合消息（无 source_id 或 source_id=ztfi）统一用"传统聚合"作为过滤来源
-    // akshare_beta 消息统一用"涨停聚合（Beta）"作为过滤来源
-    // foreign_news 消息统一用"外网资讯"作为过滤来源
-    // 其他数据源消息用 comefrom 作为过滤来源
+    // 延迟旧消息丢弃：上游（鼓掌财经等聚合源）有时会因为排队/积压/重试，
+    // 把几分钟甚至更久之前的旧消息晚推过来。本项目是实时突发新闻播报工具，
+    // 过时新闻没有实时指导意义，直接丢弃（老板 2026-10-15 拍板）。
+    // 注意：丢弃前要先加入 seenAids，防止同一旧消息被重复尝试插入。
+    if (item.ctime && typeof item.ctime === 'number') {
+      const ageSec = Math.floor(Date.now() / 1000) - item.ctime;
+      if (ageSec > STALE_MSG_THRESHOLD) {
+        seenAids.add(item.aid);
+        newAidBuffer.push(item.aid);
+        console.warn(`[stale] 丢弃延迟消息: age=${ageSec}s aid=${item.aid} title=${(item.title || '').slice(0, 40)}`);
+        return;
+      }
+    }
+
+    // 来源映射（用于相似消息去重徽章 appendDupBadge，不再做显示过滤）
+    // 注：原 settings.sources 显示过滤闸已于 2026-10-15 移除——
+    // 数据源管理开关已精确表达用户意愿，前端不再加第二道闸。
     let source = '';
     if (!item.source_id || item.source_id === 'ztfi') {
       source = '传统聚合';
@@ -796,11 +810,6 @@
       source = '外网资讯';
     } else {
       source = item.comefrom || '';
-    }
-    if (settings.sources.length > 0 && source && !settings.sources.includes(source)) {
-      seenAids.add(item.aid);
-      newAidBuffer.push(item.aid);
-      return;
     }
 
     seenAids.add(item.aid);
@@ -2550,14 +2559,14 @@
     try {
       const saved = localStorage.getItem('ztfi-settings');
       if (saved) {
-        // 直接返回已保存的设置，不修改 sources 数组
-        // settings.sources = [] 表示不过滤（显示所有来源）
-        // settings.sources = ['实时聚合', ...] 表示只显示指定来源
+        // 直接返回已保存的设置。
+        // 注：原 sources 字段（消息来源显示过滤）已于 2026-10-15 弃用，
+        // 但保留默认值以兼容老用户已保存的 localStorage，不会被任何代码读取。
         return JSON.parse(saved);
       }
     } catch (e) {}
     return {
-      sources: [], // 默认不过滤，显示所有来源
+      sources: [], // 已弃用（2026-10-15），保留默认值兼容旧 localStorage，不再被读取
       fontSize: 'large',
       voiceEnabled: true,
       voiceIndex: 0,
@@ -2599,19 +2608,7 @@
   }
 
   function initSettings() {
-    // 来源列表
-    $sourceList.innerHTML = '';
-    ALL_SOURCES.forEach(src => {
-      const chip = document.createElement('span');
-      chip.className = 'source-chip' + (settings.sources.length === 0 || settings.sources.includes(src) ? ' active' : '');
-      chip.dataset.source = src;
-      chip.innerHTML = `<span class="check">✓</span>${src}`;
-      chip.addEventListener('click', () => {
-        chip.classList.toggle('active');
-        updateSourceSettings();
-      });
-      $sourceList.appendChild(chip);
-    });
+    // 注：原"消息来源"chip 列表已于 2026-10-15 移除（数据源管理开关已覆盖此需求）。
 
     // 语音
     $voiceEnabled.checked = settings.voiceEnabled;
@@ -3020,23 +3017,7 @@
     });
   }
 
-  function updateSourceSettings() {
-    const chips = $sourceList.querySelectorAll('.source-chip');
-    const activeSources = [];
-    chips.forEach(chip => {
-      if (chip.classList.contains('active')) {
-        activeSources.push(chip.dataset.source);
-      }
-    });
-
-    // 如果全部勾选，清空数组表示"不过滤"
-    if (activeSources.length === ALL_SOURCES.length) {
-      settings.sources = [];
-    } else {
-      settings.sources = activeSources;
-    }
-    saveSettings();
-  }
+  // 注：原 updateSourceSettings() 函数已于 2026-10-15 移除（"消息来源"筛选功能整体下线）。
 
   // ===== 关键词高亮 =====
 
