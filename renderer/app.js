@@ -59,7 +59,7 @@
     getHiddenCount: () => hiddenCount, setHiddenCount: v => { hiddenCount = v; },
     getOldestCtime: () => oldestCtime, setOldestCtime: v => { oldestCtime = v; },
     isAutoScroll: () => autoScroll,
-    recordSourceStats, classifyItem, updateCount,
+    recordSourceStats: window.ztfi.stats.recordSourceStats, classifyItem, updateCount,
     storeToHistory: window.ztfi.historyBuffer.storeToHistory,
     highlightElement, checkKeywordAlert,
     checkFavoriteStatus: window.ztfi.favoritesSearch.checkFavoriteStatus,
@@ -127,7 +127,7 @@
     showPrivacyDialog: () => showPrivacyDialog(),
     setStatus: (state, text) => setStatus(state, text),
     showToast: (msg, opts) => showToast(msg, opts),
-    getStatsReport: () => getStatsReport(),
+    getStatsReport: () => window.ztfi.stats.getStatsReport(),
   });
   // 注入 host：toast + debugMode
   window.ztfi.favoritesSearch.attach({
@@ -139,63 +139,7 @@
     debugMode: DEBUG_MODE,
     maxHistoryDays: MAX_HISTORY_DAYS,
   });
-  // ===== 评估指标统计 =====
-  const stats = {
-    sourceCounts: {},
-    sourceClicks: {},
-    sourceDelays: {},
-    totalMessages: 0,
-    totalClicks: 0,
-    startTime: Date.now(),
-  };
-  
-  function recordSourceStats(item) {
-    const source = item.comefrom || item.source_id || 'unknown';
-    if (!stats.sourceCounts[source]) {
-      stats.sourceCounts[source] = 0;
-      stats.sourceClicks[source] = 0;
-      stats.sourceDelays[source] = [];
-    }
-    stats.sourceCounts[source]++;
-    stats.totalMessages++;
-    
-    const delay = Date.now() - (item.ctime || Date.now()) * 1000;
-    if (delay >= 0) {
-      stats.sourceDelays[source].push(delay);
-    }
-  }
-  
-  function recordSourceClick(item) {
-    const source = item.comefrom || item.source_id || 'unknown';
-    if (!stats.sourceClicks[source]) {
-      stats.sourceClicks[source] = 0;
-    }
-    stats.sourceClicks[source]++;
-    stats.totalClicks++;
-  }
-  
-  function getStatsReport() {
-    const report = {
-      totalMessages: stats.totalMessages,
-      totalClicks: stats.totalClicks,
-      uptime: Math.floor((Date.now() - stats.startTime) / 1000),
-      sources: {},
-    };
-    for (const source in stats.sourceCounts) {
-      const delays = stats.sourceDelays[source];
-      const avgDelay = delays.length > 0 ? Math.floor(delays.reduce((a, b) => a + b, 0) / delays.length) : 0;
-      const maxDelay = delays.length > 0 ? Math.max(...delays) : 0;
-      report.sources[source] = {
-        count: stats.sourceCounts[source],
-        clicks: stats.sourceClicks[source],
-        clickRate: stats.sourceCounts[source] > 0 ? 
-          ((stats.sourceClicks[source] / stats.sourceCounts[source]) * 100).toFixed(1) : 0,
-        avgDelay: avgDelay,
-        maxDelay: maxDelay,
-      };
-    }
-    return report;
-  }
+  // ===== 评估指标统计（实现见 modules/stats.js）=====
 
   // ===== DOM（modules/dom.js 集中登记，加载顺序在 app.js 之前）=====
   const {
