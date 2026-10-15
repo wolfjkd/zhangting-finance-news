@@ -2608,8 +2608,21 @@
   }
 
   function initSettings() {
-    // 注：原"消息来源"chip 列表已于 2026-10-15 移除（数据源管理开关已覆盖此需求）。
+    // P4 重构（2026-10-15）：原 409 行单函数按功能域拆为 8 个子函数。
+    // 子函数均定义在 IIFE 顶层、共享同一闭包；调用顺序与原同步执行顺序一致，
+    // 因此初始化时序与行为不变。原"消息来源"chip 列表已于 2026-10-15 移除。
+    bindVoiceSettings();
+    bindKeywordSettings();
+    bindDisplaySettings();
+    bindWatchlistAlertSettings();
+    bindFontSizeSettings();
+    bindAiSettings();
+    bindPanelAndWindowControls();
+    bindThemeAndLifecycle();
+  }
 
+  // ===== 设置面板：语音播报 =====
+  function bindVoiceSettings() {
     // 语音
     $voiceEnabled.checked = settings.voiceEnabled;
     $voiceSpeedRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
@@ -2672,7 +2685,10 @@
         synth.speak(utter);
       }
     });
+  }
 
+  // ===== 设置面板：关键词（高亮 / 警报） =====
+  function bindKeywordSettings() {
     // 隐藏相似消息
     $hideDuplicates.checked = settings.hideDuplicates;
     $hideDuplicates.addEventListener('change', () => {
@@ -2710,7 +2726,10 @@
     $keywordInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') addKeyword();
     });
+  }
 
+  // ===== 设置面板：显示内容开关 =====
+  function bindDisplaySettings() {
     // 显示设置
     $showStocks.checked = settings.showStocks;
     $showStocks.addEventListener('change', () => {
@@ -2723,7 +2742,10 @@
       settings.showRelated = $showRelated.checked;
       saveSettings();
     });
+  }
 
+  // ===== 设置面板：自选股异动提醒 =====
+  function bindWatchlistAlertSettings() {
     // 自选股异动提醒设置
     const $watchlistAlertEnabled = document.getElementById('watchlistAlertEnabled');
     const $watchlistAlertThreshold = document.getElementById('watchlistAlertThreshold');
@@ -2764,7 +2786,10 @@
     if (settings.watchlistAlertEnabled) {
       startWatchlistAlertMonitor();
     }
+  }
 
+  // ===== 设置面板：字体大小 =====
+  function bindFontSizeSettings() {
     // 字体大小设置
     $fontSize.value = settings.fontSize || 'small';
     applyFontSize(settings.fontSize || 'small');
@@ -2774,7 +2799,10 @@
       applyFontSize(settings.fontSize);
       saveSettings();
     });
+  }
 
+  // ===== 设置面板：AI 深度分析 =====
+  function bindAiSettings() {
     // AI深度分析设置
     $aiEnabled.checked = settings.aiEnabled || false;
     $aiApiKey.value = settings.aiApiKey || '';
@@ -2853,7 +2881,10 @@
         $btnAiTest.disabled = false;
       }
     });
+  }
 
+  // ===== 设置面板：面板开关 / 工具栏按钮 / 对话框 =====
+  function bindPanelAndWindowControls() {
     // 打开/关闭
     $btnSettings.addEventListener('click', () => {
       $settingsOverlay.classList.add('show');
@@ -2948,7 +2979,10 @@
     });
 
     updateFavoritesBadge();
+  }
 
+  // ===== 主题 / 窗口生命周期 / 首次启动引导触发 =====
+  function bindThemeAndLifecycle() {
     // 主题切换
     function applyTheme() {
       if (settings.darkMode) {
