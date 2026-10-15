@@ -3,7 +3,7 @@
 > 用途：本项目前端无自动化测试，P5（app.js 拆模块）每完成 2–3 个阶段，必须在实机上手工过一遍本清单。
 > 通过标准：全部项「符合预期」。任一失败 → 停止下一步、回退到上一个原子 commit 定位。
 > 记录方式：在每项后打 ✅ / ❌，附现象与截图（如需要）。
-> 最近一次执行：____（日期）｜ 执行阶段：S0–S3（ztfi 命名空间 / utils / dom / settings-store）
+> 最近一次执行：____（日期，待老板实机冒烟）｜ 执行阶段：**S0–S7 全部完成**（ztfi 命名空间 / utils / dom / ui-utils / settings-store / voice-service / news-list / dialogs-* / watchlist-view / settings-panel / keyword-alert / watchlist-alert / ai-service / update-check / window-service / favorites-search / history-buffer / stats / news-detail），app.js 已从 5036 行收敛至 **766 行**（P5 目标 <1000 达成）
 
 ---
 
@@ -61,5 +61,5 @@
 
 1. 先 `git log --oneline -6` 确认当前停在哪个原子 commit。
 2. 打开 F12 控制台（`renderer/app.js` 顶部 `DEBUG_MODE` 置 `true` 可开详细日志）。
-3. 若报 `Cannot read properties of undefined (reading 'xxx')` 且指向 `window.ztfi.*` → 大概率是 `index.html` 的 `<script>` 顺序错（core → utils → dom → settings-store → … → app.js）。
+3. 若报 `Cannot read properties of undefined (reading 'xxx')` 且指向 `window.ztfi.*` → 大概率是 `index.html` 的 `<script>` 顺序错（core → utils → dom → ui-utils → settings-store → voice-service → news-list → dialogs-legal → watchlist-view → keyword-alert → watchlist-alert → dialogs-datasource → … → ai-service → news-detail → news-classifier → history-storage → themes → app.js）。
 4. 单阶段回退：`git revert <该阶段 commit>`（不删历史）。
