@@ -18,6 +18,8 @@ a = Analysis(
         ('renderer/modules/news-list.js', 'renderer/modules'),
         ('renderer/modules/dialogs-legal.js', 'renderer/modules'),
         ('renderer/modules/watchlist-view.js', 'renderer/modules'),
+        ('renderer/modules/keyword-alert.js', 'renderer/modules'),
+        ('renderer/modules/watchlist-alert.js', 'renderer/modules'),
         ('renderer/modules/dialogs-datasource.js', 'renderer/modules'),
         ('renderer/modules/dialogs-onboarding.js', 'renderer/modules'),
         ('renderer/modules/settings-panel.js', 'renderer/modules'),
