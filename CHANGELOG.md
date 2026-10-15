@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v4.2.1] - 2026-10-15
+
+数据流净化 + 累计修复。本版汇总了 v4.2.0 之后进入 main 的全部修复（含 11 个代码审查 Bug
+与 1 个致命回归修复），并新增两笔数据流质量修复。
+
+### Fixed
+- **延迟旧消息直接丢弃**：上游聚合源（鼓掌财经等）因排队/积压/重试会把旧消息晚推过来，
+  而 `app.js` 原实现无脑 `prepend`，导致 10:00 的旧消息排在 11:23 的最新消息之上。
+  新增 `STALE_MSG_THRESHOLD=120`（秒），超阈值消息入口即丢弃（先入 `seenAids` 防重试）
+- **移除设置页冗余的"消息来源"筛选闸**：数据源管理（齿轮）开关已精确表达用户意愿，
+  前端再做显示过滤属冗余，反而造成"两套开关"的认知负担
+- **右上角关闭按钮失效（致命回归）**：`exit_app` 从 `os._exit(0)` 改 `sys.exit(0)` 后
+  `SystemExit` 被 pywebview RPC 异常层吞掉；改用 `window.destroy()` + 主线程清理 + `os._exit(0)`
+- **代码审查累计 11 个 Bug**：自选股预警 SyntaxError 失效、localStorage 损坏崩溃、
+  AI 异常泄露 Key、去重失效（set 无序）、WAL checkpoint 丢数据、wsConfig 嵌套解析截断、
+  AudioContext 耗尽、前端直连外部 API 的 CORS 失败、U+2028/2029 转义缺失、深市代码前缀缺失等
+- **未配置 API Key 时随机自动 AI 解读不再弹 toast 打扰**
+
+### Changed
+- 质量重构：`apiHas`/`unwrapResult` helper 替换 30+ 处防御模板、DEBUG 日志守卫、
+  `playAlertSound` 同名死代码去重
+
+### Removed
+- 设置页"消息来源"筛选闸（HTML 区块 + `ALL_SOURCES`/`$sourceList`/过滤判断/chip 循环/
+  `updateSourceSettings()` + 相关 CSS）；保留 `settings.sources` 默认值兼容旧 localStorage
+  （不再被读取），保留 `source` 变量供相似消息去重徽章使用
+
+### 验收数据
+- 延迟消息：自带时间超过 120 秒即丢弃，控制台可见 `[stale] 丢弃延迟消息` 日志
+- "消息来源"筛选闸：整道下线
+- 关闭按钮：恢复正常
+
 ## [v4.2.0] - 2026-10-14
 
 本次版本包含两批改动：**方案 B 资源优化**（性能）+ **用户体验增强批次**（功能）。
