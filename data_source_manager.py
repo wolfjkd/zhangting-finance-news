@@ -16,6 +16,9 @@ from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
+# 海外新闻抓取基类（P2/P3 重构）：本模块不反向被其 import，仅单向依赖注入
+from foreign_news_fetcher import build_fetchers
+
 logger = logging.getLogger('ztfi')
 
 # ===== 直连 Session（不走系统代理，用于国内 API）=====
@@ -386,6 +389,16 @@ class DataSourceManager:
         self._MIN_DELAY_INTERVAL = 10
         self._MAX_DELAY_INTERVAL = 20
         self._DELAY_PUSH_MAX_QUEUE = 15
+
+        # 海外新闻抓取器（P2/P3 重构）：9 个海外源统一由 foreign_news_fetcher 基类驱动。
+        # 依赖以注入方式传入，避免 foreign_news_fetcher 反向 import 本模块造成循环依赖。
+        self._foreign_fetchers = build_fetchers(
+            http_get=_get_with_fallback,
+            translate=self._translate_title_or_discard,
+            make_aid=_make_aid,
+            include_keywords=FOREIGN_NEWS_INCLUDE_KEYWORDS,
+            exclude_keywords=FOREIGN_NEWS_EXCLUDE_KEYWORDS,
+        )
 
         self._init_default_sources()
 
@@ -1376,95 +1389,8 @@ class DataSourceManager:
             logger.warning(f"X平台优先轮询失败: {e}")
 
     def _fetch_reddit_news(self, seen):
-        """获取Reddit高质量财经科技新闻（使用RSS feed，无需OAuth）"""
-        messages = []
-        
-        seventy_two_hours_ago = time.time() - 72 * 3600
-        
-        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
-        
-        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
-        
-        import re
-        
-        def _match_keyword(title_lower, keyword):
-            kw_lower = keyword.lower()
-            if len(kw_lower) <= 4:
-                pattern = r'\b' + re.escape(kw_lower) + r'\b'
-                return re.search(pattern, title_lower) is not None
-            return kw_lower in title_lower
-        
-        subreddits = ["technology", "worldnews", "business", "stocks", "science"]
-        
-        for sub in subreddits[:3]:
-            try:
-                url = f"https://www.reddit.com/r/{sub}/hot.rss"
-                resp = _get_with_fallback(url, timeout=15)
-                if resp.status_code != 200:
-                    continue
-                
-                import xml.etree.ElementTree as ET
-                root = ET.fromstring(resp.text)
-                entries = root.findall('.//{http://www.w3.org/2005/Atom}entry')
-                
-                for entry in entries[:10]:
-                    title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
-                    link_elem = entry.find('{http://www.w3.org/2005/Atom}link')
-                    updated_elem = entry.find('{http://www.w3.org/2005/Atom}updated')
-                    author_elem = entry.find('{http://www.w3.org/2005/Atom}author/{http://www.w3.org/2005/Atom}name')
-                    
-                    title = title_elem.text.strip() if title_elem is not None else ""
-                    link = link_elem.get('href', '') if link_elem is not None else ""
-                    updated = updated_elem.text.strip() if updated_elem is not None else ""
-                    author = author_elem.text.strip() if author_elem is not None else ""
-                    
-                    if not title:
-                        continue
-                    
-                    title_lower = title.lower()
-                    
-                    if updated:
-                        try:
-                            import email.utils
-                            parsed_date = email.utils.parsedate(updated)
-                            if parsed_date:
-                                pub_timestamp = time.mktime(parsed_date)
-                                if pub_timestamp < seventy_two_hours_ago:
-                                    continue
-                        except:
-                            pass
-                    
-                    if any(ek.lower() in title_lower for ek in exclude_keywords):
-                        continue
-                    
-                    has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
-                    if not has_include:
-                        continue
-                    
-                    unique_key = f"reddit_{link}" if link else f"reddit_{title[:50]}"
-                    if unique_key in seen:
-                        continue
-                    seen[unique_key] = True
-                    
-                    translated_title = self._translate_title_or_discard(title)
-                    if not translated_title:
-                        continue
-                    
-                    messages.append({
-                        "aid": _make_aid("foreign_news", unique_key),
-                        "title": f"[Reddit] {translated_title}",
-                        "content": f"作者: {author}",
-                        "comefrom": f"Reddit r/{sub}",
-                        "ctime": int(time.time()),
-                        "ptime": updated[:16] if updated else "",
-                        "categoryId": 0,
-                        "stocks": [],
-                        "child": [],
-                    })
-            except Exception as e:
-                logger.warning(f"获取Reddit r/{sub}失败: {e}")
-        
-        return messages
+        """[P2 重构] 委托至 foreign_news_fetcher.RedditFetcher（原实现已迁出）"""
+        return self._foreign_fetchers['reddit'].fetch(seen)
 
     def _fetch_google_news(self, seen):
         """获取Google News高质量国际财经科技新闻（关键词搜索+多层筛选）"""
@@ -1668,182 +1594,12 @@ class DataSourceManager:
         return messages
 
     def _fetch_hacker_news(self, seen):
-        """获取Hacker News热门科技新闻（使用frontpage源，过滤低质量内容）"""
-        messages = []
-        
-        seventy_two_hours_ago = time.time() - 72 * 3600
-        
-        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
-        
-        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
-        
-        import re
-        
-        def _match_keyword(title_lower, keyword):
-            kw_lower = keyword.lower()
-            if len(kw_lower) <= 4:
-                pattern = r'\b' + re.escape(kw_lower) + r'\b'
-                return re.search(pattern, title_lower) is not None
-            return kw_lower in title_lower
-        
-        try:
-            url = "https://hnrss.org/frontpage"
-            resp = _get_with_fallback(url, timeout=15)
-            if resp.status_code != 200:
-                return messages
-            
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(resp.text)
-            items = root.findall('.//item')
-            
-            for item in items[:10]:
-                title_elem = item.find('title')
-                link_elem = item.find('link')
-                pub_date_elem = item.find('pubDate')
-                
-                title = title_elem.text.strip() if title_elem is not None else ""
-                link = link_elem.text.strip() if link_elem is not None else ""
-                pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
-                
-                if not title:
-                    continue
-                
-                title_lower = title.lower()
-                
-                if pub_date:
-                    try:
-                        import email.utils
-                        parsed_date = email.utils.parsedate(pub_date)
-                        if parsed_date:
-                            pub_timestamp = time.mktime(parsed_date)
-                            if pub_timestamp < seventy_two_hours_ago:
-                                continue
-                    except:
-                        pass
-                
-                if any(ek.lower() in title_lower for ek in exclude_keywords):
-                    continue
-                
-                has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
-                if not has_include:
-                    continue
-                
-                unique_key = f"hn_{link}" if link else f"hn_{title[:50]}"
-                if unique_key in seen:
-                    continue
-                seen[unique_key] = True
-                
-                translated_title = self._translate_title_or_discard(title)
-                if not translated_title:
-                    continue
-                
-                messages.append({
-                    "aid": _make_aid("foreign_news", unique_key),
-                    "title": f"[Hacker News] {translated_title}",
-                    "content": "",
-                    "comefrom": "Hacker News",
-                    "ctime": int(time.time()),
-                    "ptime": pub_date[:16] if pub_date else "",
-                    "categoryId": 0,
-                    "stocks": [],
-                    "child": [],
-                })
-        except Exception as e:
-            logger.warning(f"获取Hacker News失败: {e}")
-        
-        return messages
+        """[P2 重构] 委托至 foreign_news_fetcher.HackerNewsFetcher（原实现已迁出）"""
+        return self._foreign_fetchers['hacker_news'].fetch(seen)
 
     def _fetch_bbc_news(self, seen):
-        """获取BBC News科技财经新闻"""
-        messages = []
-        limit = 8
-        
-        seventy_two_hours_ago = time.time() - 72 * 3600
-        
-        include_keywords = FOREIGN_NEWS_INCLUDE_KEYWORDS
-        
-        exclude_keywords = FOREIGN_NEWS_EXCLUDE_KEYWORDS
-        
-        import re
-        
-        def _match_keyword(title_lower, keyword):
-            kw_lower = keyword.lower()
-            if len(kw_lower) <= 4:
-                pattern = r'\b' + re.escape(kw_lower) + r'\b'
-                return re.search(pattern, title_lower) is not None
-            return kw_lower in title_lower
-        
-        feeds = [
-            "http://feeds.bbci.co.uk/news/technology/rss.xml",
-            "http://feeds.bbci.co.uk/news/business/rss.xml"
-        ]
-        
-        for url in feeds:
-            try:
-                resp = _get_with_fallback(url, timeout=15)
-                if resp.status_code != 200:
-                    continue
-                
-                import xml.etree.ElementTree as ET
-                root = ET.fromstring(resp.text)
-                items = root.findall('.//item')
-                
-                for item in items[:limit]:
-                    title_elem = item.find('title')
-                    link_elem = item.find('link')
-                    pub_date_elem = item.find('pubDate')
-                    
-                    title = title_elem.text.strip() if title_elem is not None else ""
-                    link = link_elem.text.strip() if link_elem is not None else ""
-                    pub_date = pub_date_elem.text.strip() if pub_date_elem is not None else ""
-                    
-                    if not title:
-                        continue
-                    
-                    title_lower = title.lower()
-                    
-                    if pub_date:
-                        try:
-                            import email.utils
-                            parsed_date = email.utils.parsedate(pub_date)
-                            if parsed_date:
-                                pub_timestamp = time.mktime(parsed_date)
-                                if pub_timestamp < seventy_two_hours_ago:
-                                    continue
-                        except:
-                            pass
-                    
-                    if any(ek.lower() in title_lower for ek in exclude_keywords):
-                        continue
-                    
-                    has_include = any(_match_keyword(title_lower, ik) for ik in include_keywords)
-                    if not has_include:
-                        continue
-                    
-                    unique_key = f"bbc_{link}" if link else f"bbc_{title[:50]}"
-                    if unique_key in seen:
-                        continue
-                    seen[unique_key] = True
-                    
-                    translated_title = self._translate_title_or_discard(title)
-                    if not translated_title:
-                        continue
-                    
-                    messages.append({
-                        "aid": _make_aid("foreign_news", unique_key),
-                        "title": f"[BBC News] {translated_title}",
-                        "content": "",
-                        "comefrom": "BBC News",
-                        "ctime": int(time.time()),
-                        "ptime": pub_date[:16] if pub_date else "",
-                        "categoryId": 0,
-                        "stocks": [],
-                        "child": [],
-                    })
-            except Exception as e:
-                logger.warning(f"获取BBC News失败: {e}")
-        
-        return messages
+        """[P2 重构] 委托至 foreign_news_fetcher.BBCFetcher（原实现已迁出）"""
+        return self._foreign_fetchers['bbc'].fetch(seen)
 
     def _fetch_cnbc_news(self, seen):
         """获取CNBC财经科技新闻"""
