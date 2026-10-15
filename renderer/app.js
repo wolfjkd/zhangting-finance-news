@@ -35,7 +35,6 @@
   // 延迟消息丢弃阈值：消息自带 ctime 与当前真实时间差超过此值（秒），视为过时旧消息直接丢弃。
   // 该项目是实时突发新闻播报工具，过时新闻没有实时指导意义（老板 2026-10-15 拍板）。
   const STALE_MSG_THRESHOLD = 120; // 120 秒
-  let windowResizeTimer = null; // 窗口大小保存防抖定时器
 
   // ===== 设置 =====
   // 注：原"消息来源"筛选（settings.sources + ALL_SOURCES + $sourceList）已于 2026-10-15 移除。
@@ -95,6 +94,24 @@
     saveSettings: () => saveSettings(),
   });
 
+  // 注入 host：设置读写 + 留在 app.js 的能力（关键词/高亮/自选股预警/收藏搜索/字体/版本）
+  window.ztfi.settingsPanel.attach({
+    getSettings: () => settings,
+    saveSettings: () => saveSettings(),
+    applyFontSize: (size) => applyFontSize(size),
+    applyHighlightAll: () => applyHighlightAll(),
+    removeHighlightAll: () => removeHighlightAll(),
+    renderKeywordTags: () => renderKeywordTags(),
+    addKeyword: () => addKeyword(),
+    startWatchlistAlertMonitor: () => startWatchlistAlertMonitor(),
+    stopWatchlistAlertMonitor: () => stopWatchlistAlertMonitor(),
+    stopVoice: () => stopVoice(),
+    showToast: (msg, opts) => showToast(msg, opts),
+    loadFavorites: () => loadFavorites(),
+    performSearch: () => performSearch(),
+    updateFavoritesBadge: () => updateFavoritesBadge(),
+    getCurrentVersion: () => getCurrentVersion(),
+  });
   // ===== 评估指标统计 =====
   const stats = {
     sourceCounts: {},
@@ -204,7 +221,7 @@
             type: 'warning',
             action: {
               label: '去配置',
-              callback: () => openSettingsAtSection('ai')
+              callback: () => window.openSettingsAtSection('ai')
             }
           });
         }
@@ -1384,439 +1401,8 @@
   // 注：saveSettings 保留为无参包装，因调用点达 26 处且共享同一闭包 settings。
   function saveSettings() { window.ztfi.settingsStore.save(settings); }
 
-  function initSettings() {
-    // P4 重构（2026-10-15）：原 409 行单函数按功能域拆为 8 个子函数。
-    // 子函数均定义在 IIFE 顶层、共享同一闭包；调用顺序与原同步执行顺序一致，
-    // 因此初始化时序与行为不变。原"消息来源"chip 列表已于 2026-10-15 移除。
-    bindVoiceSettings();
-    bindKeywordSettings();
-    bindDisplaySettings();
-    bindWatchlistAlertSettings();
-    bindFontSizeSettings();
-    bindAiSettings();
-    bindPanelAndWindowControls();
-    bindThemeAndLifecycle();
-  }
-
-  // ===== 设置面板：语音播报 =====
-  function bindVoiceSettings() {
-    // 语音
-    $voiceEnabled.checked = settings.voiceEnabled;
-    $voiceSpeedRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
-    $voiceSettings.style.display = settings.voiceEnabled ? 'flex' : 'none';
-    $voiceInterruptModeRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
-    const $ttsEngineRow = document.getElementById('ttsEngineRow');
-    if ($ttsEngineRow) $ttsEngineRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
-
-    $voiceEnabled.addEventListener('change', () => {
-      settings.voiceEnabled = $voiceEnabled.checked;
-      $voiceSettings.style.display = settings.voiceEnabled ? 'flex' : 'none';
-      $voiceSpeedRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
-      $voiceInterruptModeRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
-      if ($ttsEngineRow) $ttsEngineRow.style.display = settings.voiceEnabled ? 'flex' : 'none';
-      // 根据当前 TTS 引擎显示对应音色行
-      updateTtsVoiceRowVisibility();
-      // 关闭语音播报时，立即停止正在播放/排队的语音（含 Edge TTS 异步请求）
-      if (!settings.voiceEnabled) {
-        stopVoice();
-      }
-      saveSettings();
-    });
-
-    // 根据当前 TTS 引擎显示/隐藏对应音色选择行
-    function updateTtsVoiceRowVisibility() {
-      const engine = localStorage.getItem('tts_engine') || 'web';
-      if ($voiceSettings) $voiceSettings.style.display = (settings.voiceEnabled && engine === 'web') ? 'flex' : 'none';
-      const $ttsVoiceRow = document.getElementById('ttsVoiceRow');
-      if ($ttsVoiceRow) $ttsVoiceRow.style.display = (settings.voiceEnabled && engine === 'edge') ? 'flex' : 'none';
-    }
-    updateTtsVoiceRowVisibility();
-
-    $voiceRate.value = settings.voiceRate;
-    $voiceRate.addEventListener('change', () => {
-      settings.voiceRate = parseFloat($voiceRate.value);
-      saveSettings();
-    });
-
-    $voiceInterruptMode.value = settings.voiceInterruptMode;
-    $voiceInterruptMode.addEventListener('change', () => {
-      settings.voiceInterruptMode = $voiceInterruptMode.value;
-      saveSettings();
-    });
-
-    $voiceSelect.addEventListener('change', () => {
-      settings.voiceIndex = parseInt($voiceSelect.value);
-      saveSettings();
-    });
-
-    $voiceTest.addEventListener('click', () => {
-      voiceSvc.testSpeak('这是一条测试语音，财经聚合消息推送已开启。');
-    });
-  }
-
-  // ===== 设置面板：关键词（高亮 / 警报） =====
-  function bindKeywordSettings() {
-    // 隐藏相似消息
-    $hideDuplicates.checked = settings.hideDuplicates;
-    $hideDuplicates.addEventListener('change', () => {
-      settings.hideDuplicates = $hideDuplicates.checked;
-      saveSettings();
-    });
-
-    // 关键词高亮
-    $keywordHighlight.checked = settings.keywordHighlight;
-    $keywordInputRow.style.display = settings.keywordHighlight ? 'flex' : 'none';
-    $keywordTags.style.display = settings.keywordHighlight ? 'flex' : 'none';
-
-    $keywordHighlight.addEventListener('change', () => {
-      settings.keywordHighlight = $keywordHighlight.checked;
-      $keywordInputRow.style.display = settings.keywordHighlight ? 'flex' : 'none';
-      $keywordTags.style.display = settings.keywordHighlight ? 'flex' : 'none';
-      saveSettings();
-      if (settings.keywordHighlight) {
-        applyHighlightAll();
-      } else {
-        removeHighlightAll();
-      }
-    });
-
-    // 关键词警报开关
-    $keywordAlert.checked = settings.keywordAlert;
-    $keywordAlert.addEventListener('change', () => {
-      settings.keywordAlert = $keywordAlert.checked;
-      saveSettings();
-    });
-
-    renderKeywordTags();
-
-    $keywordAddBtn.addEventListener('click', addKeyword);
-    $keywordInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addKeyword();
-    });
-  }
-
-  // ===== 设置面板：显示内容开关 =====
-  function bindDisplaySettings() {
-    // 显示设置
-    $showStocks.checked = settings.showStocks;
-    $showStocks.addEventListener('change', () => {
-      settings.showStocks = $showStocks.checked;
-      saveSettings();
-    });
-
-    $showRelated.checked = settings.showRelated;
-    $showRelated.addEventListener('change', () => {
-      settings.showRelated = $showRelated.checked;
-      saveSettings();
-    });
-  }
-
-  // ===== 设置面板：自选股异动提醒 =====
-  function bindWatchlistAlertSettings() {
-    // 自选股异动提醒设置
-    const $watchlistAlertEnabled = document.getElementById('watchlistAlertEnabled');
-    const $watchlistAlertThreshold = document.getElementById('watchlistAlertThreshold');
-    const $watchlistAlertInterval = document.getElementById('watchlistAlertInterval');
-    const $watchlistAlertSound = document.getElementById('watchlistAlertSound');
-
-    $watchlistAlertEnabled.checked = settings.watchlistAlertEnabled;
-    $watchlistAlertThreshold.value = settings.watchlistAlertThreshold;
-    $watchlistAlertInterval.value = settings.watchlistAlertInterval;
-    $watchlistAlertSound.checked = settings.watchlistAlertSound;
-
-    $watchlistAlertEnabled.addEventListener('change', () => {
-      settings.watchlistAlertEnabled = $watchlistAlertEnabled.checked;
-      saveSettings();
-      if (settings.watchlistAlertEnabled) {
-        startWatchlistAlertMonitor();
-      } else {
-        stopWatchlistAlertMonitor();
-      }
-    });
-
-    $watchlistAlertThreshold.addEventListener('change', () => {
-      settings.watchlistAlertThreshold = parseFloat($watchlistAlertThreshold.value) || 5;
-      saveSettings();
-    });
-
-    $watchlistAlertInterval.addEventListener('change', () => {
-      settings.watchlistAlertInterval = parseInt($watchlistAlertInterval.value) || 5;
-      saveSettings();
-    });
-
-    $watchlistAlertSound.addEventListener('change', () => {
-      settings.watchlistAlertSound = $watchlistAlertSound.checked;
-      saveSettings();
-    });
-
-    // 如果开启，启动异动监控
-    if (settings.watchlistAlertEnabled) {
-      startWatchlistAlertMonitor();
-    }
-  }
-
-  // ===== 设置面板：字体大小 =====
-  function bindFontSizeSettings() {
-    // 字体大小设置
-    $fontSize.value = settings.fontSize || 'small';
-    applyFontSize(settings.fontSize || 'small');
-
-    $fontSize.addEventListener('change', () => {
-      settings.fontSize = $fontSize.value;
-      applyFontSize(settings.fontSize);
-      saveSettings();
-    });
-  }
-
-  // ===== 设置面板：AI 深度分析 =====
-  function bindAiSettings() {
-    // AI深度分析设置
-    $aiEnabled.checked = settings.aiEnabled || false;
-    $aiApiKey.value = settings.aiApiKey || '';
-    $aiApiUrl.value = settings.aiApiUrl || '';
-    $aiModelName.value = settings.aiModelName || '';
-
-    const updateAiVisibility = () => {
-      const enabled = $aiEnabled.checked;
-      $aiApiKeyRow.style.display = enabled ? 'flex' : 'none';
-      $aiApiUrlRow.style.display = enabled ? 'flex' : 'none';
-      $aiModelNameRow.style.display = enabled ? 'flex' : 'none';
-      $aiTestRow.style.display = enabled ? 'flex' : 'none';
-      $aiConfigHint.style.display = enabled ? 'block' : 'none';
-    };
-    updateAiVisibility();
-
-    $aiEnabled.addEventListener('change', () => {
-      settings.aiEnabled = $aiEnabled.checked;
-      updateAiVisibility();
-      saveSettings();
-    });
-
-    $aiApiKey.addEventListener('change', () => {
-      settings.aiApiKey = $aiApiKey.value;
-      saveSettings();
-    });
-
-    $aiApiUrl.addEventListener('change', () => {
-      settings.aiApiUrl = $aiApiUrl.value;
-      saveSettings();
-    });
-
-    $aiModelName.addEventListener('change', () => {
-      settings.aiModelName = $aiModelName.value;
-      saveSettings();
-    });
-
-    $btnAiTest.addEventListener('click', async () => {
-      if (!settings.aiEnabled || !settings.aiApiKey) {
-        showToast('请先启用 AI 分析并配置 API 密钥', {
-          type: 'warning',
-          action: { label: '去配置', callback: () => window.openSettingsAtSection('ai') }
-        });
-        return;
-      }
-
-      const originalText = $btnAiTest.textContent;
-      $btnAiTest.textContent = '测试中...';
-      $btnAiTest.disabled = true;
-
-      try {
-        if (apiHas('ai_analyze')) {
-          const result = await pywebview.api.ai_analyze(
-            '央行宣布下调存款准备金率', 
-            '央行决定下调金融机构存款准备金率0.25个百分点',
-            'custom',
-            settings.aiApiKey,
-            settings.aiApiUrl || '',
-            settings.aiModelName || ''
-          );
-          const parsed = JSON.parse(result);
-          if (parsed.error) {
-            showToast('AI 测试失败：' + parsed.error, { type: 'error', duration: 5000 });
-          } else {
-            const detail = `分类: ${parsed.category} | 优先级: ${parsed.priority} | 情感: ${parsed.sentiment} | 摘要: ${parsed.summary}`;
-            showToast('AI 测试成功！' + detail, { type: 'success', duration: 6000 });
-            console.log('[AI 测试详细结果]', parsed);
-          }
-        } else {
-          showToast('AI 分析 API 不可用', { type: 'error' });
-        }
-      } catch (e) {
-        showToast('AI 测试失败：' + e.message, { type: 'error' });
-      } finally {
-        $btnAiTest.textContent = originalText;
-        $btnAiTest.disabled = false;
-      }
-    });
-  }
-
-  // ===== 设置面板：面板开关 / 工具栏按钮 / 对话框 =====
-  function bindPanelAndWindowControls() {
-    // 打开/关闭
-    $btnSettings.addEventListener('click', () => {
-      $settingsOverlay.classList.add('show');
-    });
-
-    // 打开设置面板并定位到指定区域（'ai' | 'tushare' | 'wind' | 'datasource'）
-    // 用于 toast 的"去配置"按钮一键直达
-    function openSettingsAtSection(section) {
-      $settingsOverlay.classList.add('show');
-      // 等面板渲染完再滚动/聚焦
-      setTimeout(() => {
-        try {
-          if (section === 'ai') {
-            // 滚到 AI 配置区并勾选启用
-            const aiRow = document.getElementById('aiEnabledRow') || document.getElementById('aiApiKeyRow');
-            if (aiRow) aiRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            const aiEnabled = document.getElementById('aiEnabled');
-            if (aiEnabled && !aiEnabled.checked) aiEnabled.focus();
-          } else if (section === 'datasource' || section === 'tushare' || section === 'wind') {
-            // 打开数据源管理弹窗
-            showDataSourceDialog();
-            if (section === 'tushare' || section === 'wind') {
-              // 数据源弹窗打开后再打开对应 Token 配置
-              setTimeout(() => {
-                const cfgBtn = document.querySelector(`.datasource-config-btn[data-source-id="${section}"]`);
-                if (cfgBtn) cfgBtn.click();
-              }, 300);
-            }
-          }
-        } catch (e) { console.warn('openSettingsAtSection error:', e); }
-      }, 100);
-    }
-    // 暴露给其他模块使用（如 toast action）
-    window.openSettingsAtSection = openSettingsAtSection;
-
-    $btnWatchlist.addEventListener('click', () => {
-      showWatchlistDialog();
-    });
-
-    $btnSearch.addEventListener('click', () => {
-      $searchDialog.style.display = 'flex';
-      $searchInput.focus();
-    });
-
-    $btnFavorites.addEventListener('click', () => {
-      loadFavorites();
-      $favoritesDialog.style.display = 'flex';
-    });
-
-    // 自绘标题栏窗口按钮（frameless，见 DESIGN_SYSTEM.md A.6）
-    document.getElementById('btnMinimize')?.addEventListener('click', () => {
-      if (apiHas('minimize_window')) {
-        pywebview.api.minimize_window().catch(() => {});
-      }
-    });
-    document.getElementById('btnMaximize')?.addEventListener('click', () => {
-      if (apiHas('toggle_maximize')) {
-        pywebview.api.toggle_maximize().catch(() => {});
-      }
-    });
-    document.getElementById('btnClose')?.addEventListener('click', () => {
-      if (apiHas('exit_app')) {
-        pywebview.api.exit_app();
-      }
-    });
-
-    $searchDialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
-      $searchDialog.style.display = 'none';
-    });
-
-    $favoritesDialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
-      $favoritesDialog.style.display = 'none';
-    });
-
-    $searchBtn.addEventListener('click', () => {
-      performSearch();
-    });
-
-    $searchInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        performSearch();
-      }
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!$searchDialog.contains(e.target) && !$btnSearch.contains(e.target)) {
-        $searchDialog.style.display = 'none';
-      }
-      if (!$favoritesDialog.contains(e.target) && !$btnFavorites.contains(e.target)) {
-        $favoritesDialog.style.display = 'none';
-      }
-    });
-
-    updateFavoritesBadge();
-  }
-
-  // ===== 主题 / 窗口生命周期 / 首次启动引导触发 =====
-  function bindThemeAndLifecycle() {
-    // 主题切换
-    function applyTheme() {
-      if (settings.darkMode) {
-        document.body.classList.add('dark-mode');
-      } else {
-        document.body.classList.remove('dark-mode');
-      }
-      setWindowTitlebarTheme(settings.darkMode);
-    }
-
-    function setWindowTitlebarTheme(isDark) {
-      if (apiHas('set_theme')) {
-        pywebview.api.set_theme(isDark ? 'dark' : 'light').catch(() => {});
-      }
-    }
-
-    applyTheme();
-
-    // pywebview API 就绪后重新应用主题（解决初始化时序问题）
-    window.addEventListener('pywebviewready', () => {
-      setWindowTitlebarTheme(settings.darkMode);
-      if (settings.isPinned && apiHas('toggle_pin')) {
-        pywebview.api.toggle_pin(true).catch(() => {});
-      }
-      // 监听窗口大小变化，保存到后端
-      window.addEventListener('resize', () => {
-        if (windowResizeTimer) clearTimeout(windowResizeTimer);
-        windowResizeTimer = setTimeout(() => {
-          const width = window.outerWidth;
-          const height = window.outerHeight;
-          if (apiHas('set_window_size')) {
-            window.pywebview.api.set_window_size(width, height).catch(() => {});
-          }
-        }, 1000);
-      });
-    });
-
-    // 首次启动引导（按版本号判断——每个新版本首次运行都弹一次）
-    // 必须放在 init() 同步执行路径上，不能放进 pywebviewready 监听器——
-    // 因为免责声明接受后才调用 init()，此时 pywebviewready 事件早已触发，
-    // 新注册的监听器不会再执行，会导致引导永远弹不出。
-    // 注意：判定标记存到 settings.onboardingCompletedVersion（由后端 settings.json
-    // 持久化），不依赖 localStorage——pywebview/WebView2 的 localStorage 在源代码
-    // 调试模式下可能每次启动都被重置，导致"每次都弹"。
-    setTimeout(() => {
-      const currentVer = getCurrentVersion();
-      if (settings.onboardingCompletedVersion !== currentVer) {
-        showOnboardingDialog();
-      }
-    }, 800);  // 延迟 800ms 避免和启动动画抢镜
-
-    $btnThemeToggle.addEventListener('click', () => {
-      settings.darkMode = !settings.darkMode;
-      applyTheme();
-      saveSettings();
-    });
-
-    $settingsClose.addEventListener('click', () => {
-      $settingsOverlay.classList.remove('show');
-    });
-
-    $settingsOverlay.addEventListener('click', (e) => {
-      if (e.target === $settingsOverlay) {
-        $settingsOverlay.classList.remove('show');
-      }
-    });
-  }
+  // ===== 设置面板（实现见 modules/settings-panel.js）=====
+  function initSettings() { return window.ztfi.settingsPanel.initSettings(); }
 
   // 注：原 updateSourceSettings() 函数已于 2026-10-15 移除（"消息来源"筛选功能整体下线）。
 
