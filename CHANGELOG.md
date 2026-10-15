@@ -5,10 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
-## [v4.3.0] - 未发布（开发中，分支 feature/v4.3-refactor）
+## [v4.3.0] - 2026-10-15
 
 结构性重构批次。目标：不改接口、只做内部结构调整，降低后续维护成本，同时不抬高资源占用。
-基线 `v4.2.0-stable`（tag 已建，回滚点）。
+开发基线 `v4.2.0-stable`（tag 为回滚点）。本版同时修复了 app 内置「检查更新」永久失效的问题，
+也是**第一个自带可用更新检测器的版本**（此前各版本的更新检测均指向已改名的旧仓库、一直 404）。
 
 ### Changed（重构）
 - **海外新闻抓取抽基类（P2/P3）**：`data_source_manager.py` 的 9 个海外源抓取方法
@@ -33,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
   `app.js` 的 `.stock-tag` 仍在用而保留
 - **PyInstaller spec 中的死数据引用**：`涨停财经聚合播报.spec` 的 `datas` 此前仍引用已删除的
   `renderer/modules/stock-quote.js`，本批次一并移除（否则从重构分支打包会失败）
+
+### Fixed
+- **app 内置「检查更新」永久失效**：仓库改名后 `app.py`（`_VERSION_JSON_URL` /
+  `_RELEASES_API_URL`）、`version.json`（`download_url`）、`renderer/index.html`（项目主页）、
+  `renderer/app.js`（隐私/开源声明）、`PRIVACY.md` 里的仓库 URL 未同步，导致更新检测的
+  两条路径（raw version.json + Releases API）都 404，用户端永远看不到更新提示。
+  已全部改为 `wolfjkd/zhangting-finance-news`
+- **更新下载未走代理**：`download_update` 原用裸 `requests.get`，国内直连 GitHub 会失败；
+  改为复用 `_get_github_session()`，与 `_check_update` 保持一致
 
 ### 验证
 - `node --check`（app.js 等）+ `python -m py_compile`（data_source_manager.py /
