@@ -1,11 +1,11 @@
 {
-    "latest_version": "v4.3.0",
+    "latest_version": "v4.4.0",
     "release_date": "2026-10-15",
     "changelog": [
-        "结构性重构：海外新闻抓取抽出 ForeignNewsFetcher 基类（9 个源共用），initSettings 拆为 8 个功能域子函数，清理零引用死模块 stock-quote.js——对外功能与接口零变化",
-        "修复 app 内置「检查更新」永久失效：仓库改名后代码里的仓库 URL 未同步，更新检测一直 404；已修正并让更新下载也走代理",
-        "新增单元测试 test_foreign_news_fetcher.py（38 项行为对齐）",
-        "版本号升级至v4.3.0"
+        "重构收尾：翻译体系抽为 TranslationService（多源降级+限流冷却+缓存），外网延迟推送队列抽为 DelayedPushQueue，data_source_manager.py 1946 → 1760 行——对外功能与接口零变化",
+        "清理死代码：移除零引用的 efinance_source.py / source_failover.py 与 app.py 两个无调用者死接口",
+        "新增行为冒烟测试：翻译/延时推送 10 项全绿，38 项海外源行为对齐测试回归通过",
+        "版本号升级至v4.4.0"
     ],
     "urgent": false,
     "urgent_message": "",

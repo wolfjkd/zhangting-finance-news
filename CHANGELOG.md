@@ -5,7 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
-## [未发布]
+## [v4.4.0] - 2026-10-15
+
+重构收尾批次。延续 v4.3.0 的结构性重构路线，继续把 `data_source_manager.py` 中的
+独立职责抽为独立模块，并清理上一批次遗留的死代码。**对外功能与接口零变化**。
 
 ### Changed（重构）
 - **TranslationService 抽离（任务 4）**：`data_source_manager.py` 的翻译体系

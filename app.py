@@ -152,7 +152,7 @@ def _apply_initial_theme(window):
             logger.debug(f'获取 renderer_hwnd 失败: {e}')
 
         if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.3.0版')
+            hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.4.0版')
 
         if not hwnd:
             logger.warning('初始主题应用失败: 未找到窗口句柄')
@@ -266,7 +266,7 @@ class Api:
         except Exception as e:
             logger.debug(f'从 renderer 获取 HWND 失败: {e}')
 
-        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.3.0版')
+        hwnd = ctypes.windll.user32.FindWindowW(None, '涨停财经聚合播报 v4.4.0版')
         if hwnd:
             self._main_hwnd = hwnd
             return hwnd
@@ -322,7 +322,7 @@ class Api:
             logger.warning(f'读取设置失败: {e}')
             return json.dumps({})
 
-    _CURRENT_VERSION = 'v4.3.0'
+    _CURRENT_VERSION = 'v4.4.0'
     _VERSION_JSON_URL = 'https://raw.githubusercontent.com/wolfjkd/zhangting-finance-news/main/version.json'
     _RELEASES_API_URL = 'https://api.github.com/repos/wolfjkd/zhangting-finance-news/releases/latest'
 
@@ -1460,7 +1460,7 @@ def get_html_path():
 
 
 def main():
-    logger.info('=== 涨停财经聚合播报 v4.3.0版（开源版）启动 ===')
+    logger.info('=== 涨停财经聚合播报 v4.4.0版（开源版）启动 ===')
 
     _init_seen_db()
     _cleanup_old_seen_aids(days=7)
@@ -1485,7 +1485,7 @@ def main():
     api.migrate_config_if_needed()
 
     window = webview.create_window(
-        '涨停财经聚合播报 v4.3.0版',
+        '涨停财经聚合播报 v4.4.0版',
         url=get_html_path(),
         width=default_width,
         height=default_height,
