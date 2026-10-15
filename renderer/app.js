@@ -114,63 +114,24 @@
     return report;
   }
 
-  // ===== DOM =====
-  const $container = document.getElementById('newsContainer');
-  const $newsList = document.getElementById('newsList');
-  const $statusDot = document.getElementById('statusDot');
-  const $statusText = document.getElementById('statusText');
-  const $newsCount = document.getElementById('newsCount');
-  const $lastUpdate = document.getElementById('lastUpdate');
-  const $loading = document.getElementById('loadingIndicator');
-  const $btnAutoscroll = document.getElementById('btnAutoscroll');
-  const $btnPin = document.getElementById('btnPin');
-  const $btnLoadMore = document.getElementById('btnLoadMore');
-  const $btnSettings = document.getElementById('btnSettings');
-  const $btnSearch = document.getElementById('btnSearch');
-  const $btnFavorites = document.getElementById('btnFavorites');
-  const $favoritesBadge = document.getElementById('favoritesBadge');
-  const $btnReview = null; // 已移除
-  const $btnWatchlist = document.getElementById('btnWatchlist');
-  const $watchlistBadge = document.getElementById('watchlistBadge');
-  const $searchDialog = document.getElementById('searchDialog');
-  const $searchInput = document.getElementById('searchInput');
-  const $searchBtn = document.getElementById('searchBtn');
-  const $searchCategory = document.getElementById('searchCategory');
-  const $searchPriority = document.getElementById('searchPriority');
-  const $searchResults = document.getElementById('searchResults');
-  const $favoritesDialog = document.getElementById('favoritesDialog');
-  const $favoritesList = document.getElementById('favoritesList');
-  const $btnThemeToggle = document.getElementById('btnThemeToggle');
-  const $settingsOverlay = document.getElementById('settingsOverlay');
-  const $settingsClose = document.getElementById('settingsClose');
-  const $voiceEnabled = document.getElementById('voiceEnabled');
-  const $voiceSettings = document.getElementById('voiceSettings');
-  const $voiceSelect = document.getElementById('voiceSelect');
-  const $voiceTest = document.getElementById('voiceTest');
-  const $voiceRate = document.getElementById('voiceRate');
-  const $voiceSpeedRow = document.getElementById('voiceSpeedRow');
-  const $voiceInterruptMode = document.getElementById('voiceInterruptMode');
-  const $voiceInterruptModeRow = document.getElementById('voiceInterruptModeRow');
-  const $aiEnabled = document.getElementById('aiEnabled');
-  const $aiApiKey = document.getElementById('aiApiKey');
-  const $aiApiUrl = document.getElementById('aiApiUrl');
-  const $aiModelName = document.getElementById('aiModelName');
-  const $aiApiKeyRow = document.getElementById('aiApiKeyRow');
-  const $aiApiUrlRow = document.getElementById('aiApiUrlRow');
-  const $aiModelNameRow = document.getElementById('aiModelNameRow');
-  const $aiTestRow = document.getElementById('aiTestRow');
-  const $aiConfigHint = document.getElementById('aiConfigHint');
-  const $btnAiTest = document.getElementById('btnAiTest');
-  const $showStocks = document.getElementById('showStocks');
-  const $showRelated = document.getElementById('showRelated');
-  const $hideDuplicates = document.getElementById('hideDuplicates');
-  const $keywordHighlight = document.getElementById('keywordHighlight');
-  const $keywordInputRow = document.getElementById('keywordInputRow');
-  const $keywordInput = document.getElementById('keywordInput');
-  const $keywordAddBtn = document.getElementById('keywordAddBtn');
-  const $keywordTags = document.getElementById('keywordTags');
-  const $keywordAlert = document.getElementById('keywordAlert');
-  const $fontSize = document.getElementById('fontSize');
+  // ===== DOM（modules/dom.js 集中登记，加载顺序在 app.js 之前）=====
+  const {
+    $container, $newsList, $statusDot, $statusText, $newsCount, $lastUpdate, $loading,
+    $btnAutoscroll, $btnPin, $btnLoadMore, $btnSettings, $btnSearch, $btnFavorites,
+    $favoritesBadge, $btnReview, $btnWatchlist, $watchlistBadge,
+    $searchDialog, $searchInput, $searchBtn, $searchCategory, $searchPriority, $searchResults,
+    $favoritesDialog, $favoritesList,
+    $btnThemeToggle, $settingsOverlay, $settingsClose,
+    $voiceEnabled, $voiceSettings, $voiceSelect, $voiceTest, $voiceRate, $voiceSpeedRow,
+    $voiceInterruptMode, $voiceInterruptModeRow,
+    $aiEnabled, $aiApiKey, $aiApiUrl, $aiModelName, $aiApiKeyRow, $aiApiUrlRow, $aiModelNameRow,
+    $aiTestRow, $aiConfigHint, $btnAiTest,
+    $showStocks, $showRelated, $hideDuplicates,
+    $keywordHighlight, $keywordInputRow, $keywordInput, $keywordAddBtn, $keywordTags, $keywordAlert,
+    $fontSize,
+    $updateDialog, $urgentOverlay, $btnCheckUpdate,
+    $btnUpdateLater, $btnUpdateNow, $btnUrgentUpdate, $btnUrgentExit,
+  } = window.ztfi.dom;
 
   // ===== 字体大小配置 =====
   const FONT_SCALE = {
@@ -4786,14 +4747,7 @@
     if (e.target.closest('#btnDataSources')) showDataSourceDialog();
   });
 
-  // ===== 更新检测功能 =====
-  const $updateDialog = document.getElementById('updateDialog');
-  const $urgentOverlay = document.getElementById('urgentOverlay');
-  const $btnCheckUpdate = document.getElementById('btnCheckUpdate');
-  const $btnUpdateLater = document.getElementById('btnUpdateLater');
-  const $btnUpdateNow = document.getElementById('btnUpdateNow');
-  const $btnUrgentUpdate = document.getElementById('btnUrgentUpdate');
-  const $btnUrgentExit = document.getElementById('btnUrgentExit');
+  // ===== 更新检测功能（DOM 引用见 modules/dom.js）=====
 
   window._onUpdateAvailable = function(dataStr) {
     try {

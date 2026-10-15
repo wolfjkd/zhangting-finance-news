@@ -12,6 +12,7 @@ a = Analysis(
         ('renderer/themes.js', 'renderer'),
         ('renderer/modules/core.js', 'renderer/modules'),
         ('renderer/modules/utils.js', 'renderer/modules'),
+        ('renderer/modules/dom.js', 'renderer/modules'),
         ('renderer/modules/news-classifier.js', 'renderer/modules'),
         ('renderer/modules/history-storage.js', 'renderer/modules'),
         ('renderer/modules/minute-chart.js', 'renderer/modules'),
