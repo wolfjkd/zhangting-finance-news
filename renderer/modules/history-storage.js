@@ -244,96 +244,41 @@ class HistoryStorage {
     } = options;
     
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['messages', 'searchIndex'], 'readonly');
+      const transaction = this.db.transaction(['messages'], 'readonly');
       const messagesStore = transaction.objectStore('messages');
-      const indexStore = transaction.objectStore('searchIndex');
-      
+
       const results = [];
       const seenIds = new Set();
-      
-      // 如果是空查询，返回最近的消息
-      if (!query || query.trim() === '') {
-        const request = messagesStore.index('timestamp').openCursor(null, 'prev');
-        
-        request.onsuccess = (event) => {
-          const cursor = event.target.result;
-          if (cursor && results.length < limit) {
-            const message = cursor.value;
-            
-            // 应用过滤条件
-            if (this.matchesFilters(message, { category, priority, startDate, endDate })) {
-              if (!seenIds.has(message.id)) {
-                results.push(message);
-                seenIds.add(message.id);
-              }
+      const q = (query || '').trim().toLowerCase();
+      const need = offset + limit;
+
+      // 中文分词块（4 字贪婪切分）常与查询块不对齐，故统一改为「标题/正文子串匹配」，
+      // 按时间倒序扫描（空查询即返回最近消息）。原词索引路径对短词/错位词几乎必然漏检。
+      const request = messagesStore.index('timestamp').openCursor(null, 'prev');
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor && results.length < need) {
+          const message = cursor.value;
+
+          const text = ((message.title || '') + ' ' + (message.content || '')).toLowerCase();
+          const queryOk = !q || text.includes(q);
+
+          if (queryOk && this.matchesFilters(message, { category, priority, startDate, endDate })) {
+            if (!seenIds.has(message.id)) {
+              results.push(message);
+              seenIds.add(message.id);
             }
-            
-            cursor.continue();
-          } else {
-            resolve(results);
           }
-        };
-        
-        request.onerror = (event) => {
-          reject(event.target.error);
-        };
-        
-        return;
-      }
-      
-      // 全文搜索
-      const searchWords = this.extractWords(query);
-      const wordPromises = searchWords.map(word => {
-        return new Promise((resolveWord, rejectWord) => {
-          const index = indexStore.index('word');
-          const request = index.getAll(word.toLowerCase());
-          
-          request.onsuccess = (event) => {
-            resolveWord(event.target.result.map(item => item.messageId));
-          };
-          
-          request.onerror = (event) => {
-            rejectWord(event.target.error);
-          };
-        });
-      });
-      
-      Promise.all(wordPromises).then(wordResults => {
-        // 合并所有匹配的消息ID
-        const allMessageIds = wordResults.flat();
-        const idCounts = {};
-        
-        allMessageIds.forEach(id => {
-          idCounts[id] = (idCounts[id] || 0) + 1;
-        });
-        
-        // 按匹配度排序
-        const sortedIds = Object.keys(idCounts)
-          .sort((a, b) => idCounts[b] - idCounts[a])
-          .slice(offset, offset + limit);
-        
-        // 获取完整消息
-        const messagePromises = sortedIds.map(id => {
-          return new Promise((resolveMsg, rejectMsg) => {
-            const request = messagesStore.get(id);
-            request.onsuccess = (event) => {
-              resolveMsg(event.target.result);
-            };
-            request.onerror = (event) => {
-              rejectMsg(event.target.error);
-            };
-          });
-        });
-        
-        Promise.all(messagePromises).then(messages => {
-          const filteredMessages = messages.filter(msg => {
-            if (!msg) return false;
-            return this.matchesFilters(msg, { category, priority, startDate, endDate });
-          });
-          
-          resolve(filteredMessages);
-        }).catch(reject);
-      }).catch(reject);
+          cursor.continue();
+        } else {
+          resolve(results.slice(offset, offset + limit));
+        }
+      };
+
+      request.onerror = (event) => {
+        reject(event.target.error);
+      };
     });
   }
 
