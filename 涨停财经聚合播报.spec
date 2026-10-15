@@ -21,6 +21,7 @@ a = Analysis(
         ('renderer/modules/dialogs-datasource.js', 'renderer/modules'),
         ('renderer/modules/dialogs-onboarding.js', 'renderer/modules'),
         ('renderer/modules/settings-panel.js', 'renderer/modules'),
+        ('renderer/modules/update-check.js', 'renderer/modules'),
         ('renderer/modules/news-classifier.js', 'renderer/modules'),
         ('renderer/modules/history-storage.js', 'renderer/modules'),
         ('renderer/modules/minute-chart.js', 'renderer/modules'),

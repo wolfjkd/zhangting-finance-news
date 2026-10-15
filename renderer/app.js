@@ -112,6 +112,10 @@
     updateFavoritesBadge: () => updateFavoritesBadge(),
     getCurrentVersion: () => getCurrentVersion(),
   });
+  // 注入 host：toast
+  window.ztfi.updateCheck.attach({
+    showToast: (msg, opts) => showToast(msg, opts),
+  });
   // ===== 评估指标统计 =====
   const stats = {
     sourceCounts: {},
@@ -2108,9 +2112,9 @@
     try {
       const data = JSON.parse(dataStr);
       if (data.urgent) {
-        showUrgentOverlay(data);
+        window.ztfi.updateCheck.showUrgentOverlay(data);
       } else {
-        showUpdateDialog(data);
+        window.ztfi.updateCheck.showUpdateDialog(data);
       }
     } catch (e) {
       console.error('解析更新数据失败:', e);
@@ -2119,136 +2123,6 @@
 
 
 
-  function showUpdateDialog(data) {
-    document.getElementById('updateLatestVersion').textContent = data.latest_version || '';
-    document.getElementById('updateReleaseDate').textContent = data.release_date ? '发布日期: ' + data.release_date : '';
-    
-    const changelogUl = document.getElementById('updateChangelog');
-    changelogUl.innerHTML = '';
-    if (data.changelog && Array.isArray(data.changelog)) {
-      data.changelog.forEach(item => {
-        const li = document.createElement('li');
-        li.textContent = item;
-        changelogUl.appendChild(li);
-      });
-    }
-    
-    document.getElementById('updateProgress').style.display = 'none';
-    $updateDialog.style.display = 'flex';
-  }
-
-  function showUrgentOverlay(data) {
-    document.getElementById('urgentMessage').textContent = data.urgent_message || '请立即更新到最新版本以获取安全修复';
-    $urgentOverlay.style.display = 'flex';
-  }
-
-  async function performUpdateCheck() {
-    if (!$btnCheckUpdate) return;
-    const originalText = $btnCheckUpdate.textContent;
-    $btnCheckUpdate.textContent = '检查中...';
-    $btnCheckUpdate.disabled = true;
-
-    try {
-      if (apiHas('check_update')) {
-        const result = await pywebview.api.check_update();
-        const data = JSON.parse(result);
-
-        if (data.status === 'update_available') {
-          if (data.urgent) {
-            showUrgentOverlay(data);
-          } else {
-            showUpdateDialog(data);
-          }
-        } else if (data.status === 'latest') {
-          showToast('✅ 当前版本已是最新版本（' + (data.current_version || '') + '）', { type: 'success' });
-        } else {
-          // 错误提示更明确
-          const msg = data.message || '未知错误';
-          if (msg.includes('网络连接') || msg.includes('无法连接') || msg.includes('timeout')) {
-            showToast('检查更新失败：无法连接 GitHub，请检查网络/代理', { type: 'error', duration: 6000 });
-            console.log('[更新检查失败详情]', msg);
-          } else {
-            showToast('检查更新失败：' + msg, { type: 'error' });
-          }
-        }
-      } else {
-        showToast('更新检查功能不可用', { type: 'warning' });
-      }
-    } catch (e) {
-      showToast('检查更新异常: ' + e.message, { type: 'error' });
-    } finally {
-      $btnCheckUpdate.textContent = originalText;
-      $btnCheckUpdate.disabled = false;
-    }
-  }
-
-  async function downloadAndUpdate() {
-    document.getElementById('updateProgress').style.display = 'block';
-    document.getElementById('updateProgressFill').style.width = '0%';
-    document.getElementById('updateProgressText').textContent = '0%';
-    $btnUpdateNow.disabled = true;
-    $btnUpdateLater.disabled = true;
-
-    try {
-      if (apiHas('download_update')) {
-        const result = await pywebview.api.download_update();
-        const data = JSON.parse(result);
-        if (data.status === 'ok') {
-          showToast(data.message, { type: 'success', duration: 5000 });
-        } else {
-          showToast('下载失败：' + (data.message || '未知错误'), { type: 'error' });
-        }
-      } else {
-        showToast('更新下载 API 不可用', { type: 'error' });
-      }
-    } catch (e) {
-      showToast('下载更新失败：' + e.message, { type: 'error' });
-    } finally {
-      $btnUpdateNow.disabled = false;
-      $btnUpdateLater.disabled = false;
-    }
-  }
-
-  function updateDownloadProgress(percent) {
-    document.getElementById('updateProgressFill').style.width = percent + '%';
-    document.getElementById('updateProgressText').textContent = percent + '%';
-  }
-
-  if ($btnCheckUpdate) {
-    $btnCheckUpdate.addEventListener('click', performUpdateCheck);
-  }
-
-  if ($btnUpdateLater) {
-    $btnUpdateLater.addEventListener('click', () => {
-      $updateDialog.style.display = 'none';
-    });
-  }
-
-  if ($btnUpdateNow) {
-    $btnUpdateNow.addEventListener('click', downloadAndUpdate);
-  }
-
-  if ($btnUrgentUpdate) {
-    $btnUrgentUpdate.addEventListener('click', () => {
-      $urgentOverlay.style.display = 'none';
-      downloadAndUpdate();
-    });
-  }
-
-  if ($btnUrgentExit) {
-    $btnUrgentExit.addEventListener('click', () => {
-      if (apiHas('exit_app')) {
-        pywebview.api.exit_app();
-      } else {
-        window.close();
-      }
-    });
-  }
-
-  if ($updateDialog) {
-    $updateDialog.querySelector('.dialog-close-btn').addEventListener('click', () => {
-      $updateDialog.style.display = 'none';
-    });
-  }
+  // ===== 更新检测（实现见 modules/update-check.js）=====
 
 })();
