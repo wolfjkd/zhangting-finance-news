@@ -407,11 +407,11 @@ gh release create v3.5.1 ...
 
 ---
 
-## 十、当前项目版本基线（2026-10-14）
+## 十、当前项目版本基线（2026-10-15）
 
 | 项目 | 当前版本 | 最新 Tag | 最新 Release | 仓库 |
 |------|---------|---------|-------------|------|
-| zhangting-finance-news | v4.2.0 | v4.2.0 | v4.2.0 | wolfjkd/zhangting-finance-news |
+| zhangting-finance-news | v4.2.1 | v4.2.1 | v4.2.1 | wolfjkd/zhangting-finance-news |
 | trader-data-router | v3.5.0 | v3.5.0 | v3.5.0 | wolfjkd/trader-data-router |
 | tradex-hub | v3.3.1 | v3.3.1 | v3.3.1 | wolfjkd/tradex-hub |
 | auction-hunter | v1.0.0 | v1.0.0 | v1.0.0 | wolfjkd/auction-hunter |

@@ -31,28 +31,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/
   调用点（仅文档提及），每次启动白白解析；连同其 `<script>` 引用与 3 条死样式
   （`.stock-quote` / `.stock-price` / `.stock-change`）一并移除；`.stock-name` 因
   `app.js` 的 `.stock-tag` 仍在用而保留
-
-### Fixed
-- **延迟旧消息直接丢弃**：上游聚合源（鼓掌财经等）因排队/积压/重试会把旧消息晚推过来，
-  而 `app.js` 原实现无脑 `prepend`，导致 10:00 的旧消息排在 11:23 的最新消息之上。
-  新增 `STALE_MSG_THRESHOLD=120`（秒），超阈值消息入口即丢弃（先入 `seenAids` 防重试）
-- **移除设置页冗余的"消息来源"筛选闸**：数据源管理（齿轮）开关已精确表达用户意愿，
-  前端再做显示过滤属冗余且造成"两套开关"认知负担。删除 `ALL_SOURCES` / `$sourceList` /
-  过滤判断 / chip 循环 / `updateSourceSettings()` 及相关 CSS；保留 `settings.sources`
-  默认值兼容旧 localStorage（不再被读取），保留 `source` 变量供相似消息去重徽章使用
+- **PyInstaller spec 中的死数据引用**：`涨停财经聚合播报.spec` 的 `datas` 此前仍引用已删除的
+  `renderer/modules/stock-quote.js`，本批次一并移除（否则从重构分支打包会失败）
 
 ### 验证
 - `node --check`（app.js 等）+ `python -m py_compile`（data_source_manager.py /
   foreign_news_fetcher.py）全部通过
-- 新增 `foreign_news_fetcher` 合成 feed 行为对齐测试：P2 15 项 + P3 30 项全绿
+- 新增 `test_foreign_news_fetcher.py` 合成 feed 行为对齐测试 38 项全绿
   （覆盖时效过滤/词表过滤/去重/翻译失败丢弃/seen 标记顺序/Atom 逐子版 comefrom/
   Google 动态搜索 URL/标题最短长度/Nitter 24h 时效·多实例·图片·逐账号标签·20 条上限·limit）
 - 未改动任何对外接口（pywebview API 签名、消息 dict 结构均不变）
 
 ### 待确认（本批次未动）
 - `app.py` 的 `get_stock_names` / `persist_stock_names`：随 `stock-quote.js` 移除后已无调用者（死接口，约 27 行）
-- `efinance_source.py` / `source_failover.py`：未被任何代码 import（约 134 行），
-  但 CHANGELOG/README 曾作为"多源降级"特性记录，疑为未接线特性
+- `efinance_source.py` / `source_failover.py`：未被业务代码 import（约 134 行），但被
+  `涨停财经聚合播报.spec` 的 `hiddenimports` 显式打包 —— 疑为未接线特性，删前需老板拍板
+
+> 注：本批次 P0 的两笔数据流修复（延迟消息丢弃 / 移除"消息来源"筛选闸）已随 **v4.2.1** 一并发布，
+> 详见下方 v4.2.1 段。
+
+## [v4.2.1] - 2026-10-15
+
+数据流净化 + 累计修复。本版汇总了 v4.2.0 之后进入 main 的全部修复（含 11 个代码审查 Bug
+与 1 个致命回归修复），并新增两笔数据流质量修复。
+
+### Fixed
+- **延迟旧消息直接丢弃**：上游聚合源（鼓掌财经等）因排队/积压/重试会把旧消息晚推过来，
+  而 `app.js` 原实现无脑 `prepend`，导致 10:00 的旧消息排在 11:23 的最新消息之上。
+  新增 `STALE_MSG_THRESHOLD=120`（秒），超阈值消息入口即丢弃（先入 `seenAids` 防重试）
+- **移除设置页冗余的"消息来源"筛选闸**：数据源管理（齿轮）开关已精确表达用户意愿，
+  前端再做显示过滤属冗余，反而造成"两套开关"的认知负担
+- **右上角关闭按钮失效（致命回归）**：`exit_app` 从 `os._exit(0)` 改 `sys.exit(0)` 后
+  `SystemExit` 被 pywebview RPC 异常层吞掉；改用 `window.destroy()` + 主线程清理 + `os._exit(0)`
+- **代码审查累计 11 个 Bug**：自选股预警 SyntaxError 失效、localStorage 损坏崩溃、
+  AI 异常泄露 Key、去重失效（set 无序）、WAL checkpoint 丢数据、wsConfig 嵌套解析截断、
+  AudioContext 耗尽、前端直连外部 API 的 CORS 失败、U+2028/2029 转义缺失、深市代码前缀缺失等
+- **未配置 API Key 时随机自动 AI 解读不再弹 toast 打扰**
+
+### Changed
+- 质量重构：`apiHas`/`unwrapResult` helper 替换 30+ 处防御模板、DEBUG 日志守卫、
+  `playAlertSound` 同名死代码去重
+
+### Removed
+- 设置页"消息来源"筛选闸（HTML 区块 + `ALL_SOURCES`/`$sourceList`/过滤判断/chip 循环/
+  `updateSourceSettings()` + 相关 CSS）；保留 `settings.sources` 默认值兼容旧 localStorage
+  （不再被读取），保留 `source` 变量供相似消息去重徽章使用
+
+### 验收数据
+- 延迟消息：自带时间超过 120 秒即丢弃，控制台可见 `[stale] 丢弃延迟消息` 日志
+- "消息来源"筛选闸：整道下线
+- 关闭按钮：恢复正常
 
 ## [v4.2.0] - 2026-10-14
 
