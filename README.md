@@ -306,7 +306,6 @@ ZTFI-News/
 │   ├── 赞赏码.png          # 赞赏收款码
 │   └── modules/
 │       ├── news-classifier.js   # 新闻分类与优先级系统
-│       ├── stock-quote.js       # 行情查询模块
 │       └── history-storage.js   # 历史存储（IndexedDB）
 └── README.md
 ```

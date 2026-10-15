@@ -1990,28 +1990,13 @@ body.dark-mode .toolbar-right {
   margin: 4px 0;
 }
 
-/* ===== 股票行情样式 ===== */
-.stock-quote {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background-color: #f5f5f5;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
+/* ===== 股票标签样式 =====
+   .stock-name 供新闻卡片的 .stock-tag 使用（app.js 渲染）。
+   原 .stock-quote / .stock-price / .stock-change 三条死样式，
+   随零引用模块 modules/stock-quote.js 于 2026-10-15 一并移除。 */
 .stock-name {
   font-weight: 500;
   color: #333;
-}
-
-.stock-price {
-  font-weight: 600;
-}
-
-.stock-change {
-  font-size: 11px;
 }
 
 /* ===== 消息卡片增强（优先级边框） ===== */
