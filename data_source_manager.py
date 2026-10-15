@@ -18,6 +18,8 @@ from enum import Enum
 
 # 海外新闻抓取基类（P2/P3 重构）：本模块不反向被其 import，仅单向依赖注入
 from foreign_news_fetcher import build_fetchers
+from translation_service import TranslationService
+from delayed_push_queue import DelayedPushQueue
 
 logger = logging.getLogger('ztfi')
 
@@ -367,35 +369,24 @@ class DataSourceManager:
 
         self._northbound_last_net: Optional[float] = None
 
-        self._translation_cache = {}
-        self._translator_status = {
-            'google': {'last_call': 0, 'failures': 0, 'cooldown_until': 0},
-            'mymemory': {'last_call': 0, 'failures': 0, 'cooldown_until': 0},
-            'libretranslate': {'last_call': 0, 'failures': 0, 'cooldown_until': 0},
-        }
-        self._MIN_CALL_INTERVAL = 2.5
-        self._MAX_FAILURES_BEFORE_COOLDOWN = 3
-        self._COOLDOWN_DURATION = 300
+        # 翻译服务（任务 4 重构）：多源降级 + 限流冷却 + 缓存，依赖注入避免循环 import
+        self._translator = TranslationService(http_get=_get_with_fallback, http_post=_post_with_fallback)
 
         self._translate_queue = []
         self._translate_queue_lock = threading.Lock()
         self._translate_rate_limit = 1.0
         self._translate_last_batch = 0
 
-        self._delay_push_queue = []
-        self._delay_push_lock = threading.Lock()
-        self._delay_push_thread = None
+        # 延时推送队列（任务 5 重构）：外网资讯集中推送先缓存再按 10-20 秒间隔逐条推送
         self._DELAY_PUSH_SOURCES = {"google_news", "reddit", "twitter_x", "techcrunch"}
-        self._MIN_DELAY_INTERVAL = 10
-        self._MAX_DELAY_INTERVAL = 20
-        self._DELAY_PUSH_MAX_QUEUE = 15
+        self._delay_pusher = DelayedPushQueue(dispatch=self._dispatch_message, is_running=lambda: self.running)
 
         # 海外新闻抓取器（P2/P3 重构）：9 个海外源统一由 foreign_news_fetcher 基类驱动。
         # 依赖以注入方式传入，避免 foreign_news_fetcher 反向 import 本模块造成循环依赖。
         self._foreign_fetchers = build_fetchers(
             http_get=_get_with_fallback,
-            translate=self._translate_title_or_discard,
-            translate_raw=self._translate_to_chinese,
+            translate=self._translator.translate_title_or_discard,
+            translate_raw=self._translator.translate_to_chinese,
             make_aid=_make_aid,
             include_keywords=FOREIGN_NEWS_INCLUDE_KEYWORDS,
             exclude_keywords=FOREIGN_NEWS_EXCLUDE_KEYWORDS,
@@ -424,7 +415,7 @@ class DataSourceManager:
             self._translate_last_batch = now
             for item in batch:
                 try:
-                    translated = self._translate_to_chinese(item['text'])
+                    translated = self._translator.translate_to_chinese(item['text'])
                     if translated and translated != item['text']:
                         self._update_message_translation(item['aid'], item['field'], translated)
                 except Exception as e:
@@ -443,7 +434,7 @@ class DataSourceManager:
             time.sleep(self._translate_rate_limit - (now - self._translate_last_batch))
         
         self._translate_last_batch = now
-        return self._translate_to_chinese(text)
+        return self._translator.translate_to_chinese(text)
     
     # ===== 回调 =====
     def set_message_callback(self, callback: Callable[[Dict], None]):
@@ -1143,128 +1134,6 @@ class DataSourceManager:
         
         return f"公告类型: {ann_type}\n建议关注公告核心内容，评估对公司基本面的影响"
 
-    # ===== 翻译功能 =====
-    def _wait_translator_cooldown(self, translator_name):
-        status = self._translator_status[translator_name]
-        now = time.time()
-        if now < status['cooldown_until']:
-            return False
-        if now - status['last_call'] < self._MIN_CALL_INTERVAL:
-            sleep_time = self._MIN_CALL_INTERVAL - (now - status['last_call'])
-            time.sleep(sleep_time)
-        status['last_call'] = time.time()
-        return True
-
-    def _record_translator_failure(self, translator_name):
-        status = self._translator_status[translator_name]
-        status['failures'] += 1
-        if status['failures'] >= self._MAX_FAILURES_BEFORE_COOLDOWN:
-            status['cooldown_until'] = time.time() + self._COOLDOWN_DURATION
-            logger.warning(f"翻译源 {translator_name} 连续失败{status['failures']}次，进入{self._COOLDOWN_DURATION}秒冷却")
-
-    def _record_translator_success(self, translator_name):
-        status = self._translator_status[translator_name]
-        status['failures'] = 0
-        status['cooldown_until'] = 0
-
-    @staticmethod
-    def _contains_chinese(text: str) -> bool:
-        """判断文本是否包含中文字符"""
-        return any('\u4e00' <= ch <= '\u9fff' for ch in text)
-
-    def _translate_title_or_discard(self, title: str):
-        """翻译标题；翻译失败（结果仍为英文）返回 None，调用方应丢弃该消息"""
-        translated = self._translate_to_chinese(title)
-        if translated and self._contains_chinese(translated):
-            return translated
-        return None
-
-    def _translate_to_chinese(self, text: str) -> str:
-        if not text or not isinstance(text, str):
-            return text
-        
-        text_key = hashlib.md5(text.encode()).hexdigest()
-        if text_key in self._translation_cache:
-            cached = self._translation_cache[text_key]
-            if cached != text:
-                return cached
-        
-        translators = [
-            ('google', self._translate_google_unofficial),
-            ('mymemory', self._translate_mymemory),
-            ('libretranslate', self._translate_libretranslate),
-        ]
-        
-        for name, translator in translators:
-            try:
-                if not self._wait_translator_cooldown(name):
-                    continue
-                result = translator(text)
-                if result and result.strip() and result != text:
-                    self._translation_cache[text_key] = result
-                    self._record_translator_success(name)
-                    return result
-                self._record_translator_failure(name)
-            except Exception as e:
-                logger.debug(f"翻译源 {name} 失败: {e}")
-                self._record_translator_failure(name)
-        
-        if len(self._translation_cache) > 1000:
-            self._translation_cache = dict(list(self._translation_cache.items())[-500:])
-        
-        return text
-
-    def _translate_google_unofficial(self, text: str) -> str:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {
-            "client": "gtx",
-            "sl": "en",
-            "tl": "zh-CN",
-            "dt": "t",
-            "q": text[:2000]
-        }
-        resp = _get_with_fallback(url, params=params, timeout=15)
-        if resp.status_code == 200:
-            result = resp.json()
-            if isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
-                parts = [item[0] for item in result[0] if item[0]]
-                translated = ''.join(parts)
-                if translated and translated.strip():
-                    return translated
-        return text
-
-    def _translate_mymemory(self, text: str) -> str:
-        url = "https://api.mymemory.translated.net/get"
-        params = {"q": text[:2000], "langpair": "en|zh-CN"}
-        resp = _get_with_fallback(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            result = resp.json()
-            if 'responseData' in result and result['responseData']:
-                translated = result['responseData'].get('translatedText', '')
-                if translated and translated.strip():
-                    return translated
-        return text
-
-    def _translate_libretranslate(self, text: str) -> str:
-        endpoints = [
-            "https://libretranslate.de",
-            "https://translate.argosopentech.com",
-            "https://api.libretranslate.com",
-        ]
-        for base_url in endpoints:
-            try:
-                url = f"{base_url}/translate"
-                data = {"q": text[:2000], "source": "en", "target": "zh"}
-                resp = _post_with_fallback(url, json=data, timeout=10)
-                if resp.status_code == 200:
-                    result = resp.json()
-                    translated = result.get('translatedText', '')
-                    if translated and translated.strip():
-                        return translated
-            except Exception:
-                continue
-        return text
-
     # ===== 外网资讯综合函数 =====
     def _fetch_foreign_news(self):
         """获取外网资讯（并行抓取+即时推送，直连优先、代理兜底）"""
@@ -1601,7 +1470,7 @@ class DataSourceManager:
         
         if delay_messages:
             for msg in delay_messages:
-                self._enqueue_delay_message(msg)
+                self._delay_pusher.enqueue(msg)
             logger.info(f"{source_id} 延时推送 {len(delay_messages)} 条消息加入队列")
 
         count = len(messages)
@@ -1612,7 +1481,7 @@ class DataSourceManager:
     # ===== 全局启停 =====
     def start_all_enabled_sources(self):
         self.running = True
-        self._start_delay_push_thread()
+        self._delay_pusher.start()
         enabled = [(sid, s) for sid, s in self.sources.items() if s.enabled and s.type != DataSourceType.WEBSOCKET]
         enabled.sort(key=lambda x: x[1].priority)
         for source_id, _ in enabled:
@@ -1620,7 +1489,7 @@ class DataSourceManager:
 
     def stop_all_sources(self):
         self.running = False
-        self._stop_delay_push_thread()
+        self._delay_pusher.stop()
         # 停止 akshare 推送释放线程
         if hasattr(self, '_akshare_source') and self._akshare_source:
             try:
@@ -1642,62 +1511,6 @@ class DataSourceManager:
         for source_id in self.sources:
             self._stop_source(source_id)
 
-    # ===== 延时推送模块 =====
-    def _start_delay_push_thread(self):
-        """启动延时推送线程"""
-        if self._delay_push_thread and self._delay_push_thread.is_alive():
-            return
-        
-        def run():
-            logger.info("延时推送线程已启动，消息间隔 %d-%d 秒", self._MIN_DELAY_INTERVAL, self._MAX_DELAY_INTERVAL)
-            while self.running:
-                self._process_delay_push_queue()
-                time.sleep(1)
-        
-        self._delay_push_thread = threading.Thread(target=run, daemon=True, name="delay_push")
-        self._delay_push_thread.start()
-
-    def _stop_delay_push_thread(self):
-        """停止延时推送线程"""
-        if self._delay_push_thread and self._delay_push_thread.is_alive():
-            logger.info("延时推送线程正在停止...")
-            self._delay_push_thread.join(timeout=5)
-            if self._delay_push_thread.is_alive():
-                logger.warning("延时推送线程强制终止")
-            else:
-                logger.info("延时推送线程已停止")
-            self._delay_push_thread = None
-
-    def _enqueue_delay_message(self, message: Dict):
-        """将消息加入延时推送队列（队列满时丢弃最旧消息，防止集中推送积压）"""
-        with self._delay_push_lock:
-            if len(self._delay_push_queue) >= self._DELAY_PUSH_MAX_QUEUE:
-                dropped = self._delay_push_queue.pop(0)
-                logger.debug("延时推送队列已满，丢弃最旧消息: %s", dropped.get("title", "")[:40])
-            self._delay_push_queue.append(message)
-            logger.debug("消息加入延时推送队列，当前队列长度: %d", len(self._delay_push_queue))
-
-    def _process_delay_push_queue(self):
-        """处理延时推送队列，按10-20秒间隔推送消息"""
-        import random
-        
-        with self._delay_push_lock:
-            if not self._delay_push_queue:
-                return
-            message = self._delay_push_queue.pop(0)
-        
-        try:
-            self._dispatch_message(message)
-            count = len(self._delay_push_queue)
-            if count > 0:
-                delay = random.randint(self._MIN_DELAY_INTERVAL, self._MAX_DELAY_INTERVAL)
-                logger.info(f"延时推送: 已推送1条，队列剩余{count}条，下次推送等待{delay}秒")
-                for _ in range(delay):
-                    if not self.running:
-                        return
-                    time.sleep(1)
-        except Exception as e:
-            logger.error(f"延时推送处理失败: {e}")
 
     def _should_delay_push(self, message: Dict) -> bool:
         """判断消息是否需要延时推送"""

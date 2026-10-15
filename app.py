@@ -556,34 +556,6 @@ class Api:
             logger.warning(f'读取自选股失败: {e}')
             return json.dumps([])
 
-    def persist_stock_names(self, stock_names_json):
-        try:
-            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
-            os.makedirs(config_dir, exist_ok=True)
-            config_path = os.path.join(config_dir, 'stock_names.json')
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(stock_names_json)
-            logger.info(f'股票名称映射已保存到 {config_path}')
-            return json.dumps({'status': 'ok'})
-        except Exception as e:
-            logger.warning(f'保存股票名称映射失败: {e}')
-            return json.dumps({'status': 'error', 'message': str(e)})
-
-    def get_stock_names(self):
-        try:
-            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
-            config_path = os.path.join(config_dir, 'stock_names.json')
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    if content.strip():
-                        return content
-                    return json.dumps({})
-            return json.dumps({})
-        except Exception as e:
-            logger.warning(f'读取股票名称映射失败: {e}')
-            return json.dumps({})
-
     def persist_watchlist_groups(self, groups_json):
         try:
             config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')

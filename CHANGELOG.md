@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [未发布]
+
+### Changed（重构）
+- **TranslationService 抽离（任务 4）**：`data_source_manager.py` 的翻译体系
+  （9 个方法：google/mymemory/libretranslate 多源降级 + 限流冷却 + 结果缓存，约 122 行）
+  抽为 `translation_service.py` 的 `TranslationService` 类，HTTP 取数构造注入
+- **DelayedPushQueue 独立（任务 5）**：外网资讯延时推送队列（4 个方法，约 56 行）
+  抽为 `delayed_push_queue.py` 的 `DelayedPushQueue` 类，推送出口/运行标志构造注入；
+  `_DELAY_PUSH_SOURCES` / `_should_delay_push` 业务规则保留在 data_source_manager
+- `data_source_manager.py`：1946 → 1760 行；对外接口零变化
+
+### Removed（清理）
+- `app.py` 死接口 `get_stock_names` / `persist_stock_names`（27 行，
+  随 v4.3.0 移除 stock-quote.js 后已无调用者）
+- `efinance_source.py` / `source_failover.py`（158 行，业务代码零引用；
+  spec `hiddenimports` 同步移除两项）
+
+### 验证
+- 新增翻译/延时推送行为冒烟测试 10 项全绿（不联网，注入假 HTTP）；
+  38 项海外源行为对齐测试回归通过
+
 ## [v4.3.0] - 2026-10-15
 
 结构性重构批次。目标：不改接口、只做内部结构调整，降低后续维护成本，同时不抬高资源占用。

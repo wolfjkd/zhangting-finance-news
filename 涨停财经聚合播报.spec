@@ -15,7 +15,7 @@ a = Analysis(
         ('renderer/modules/minute-chart.js', 'renderer/modules'),
         ('renderer/赞赏码.png', 'renderer'),
     ],
-    hiddenimports=['websocket', 'websocket._app', 'data_source_manager', 'ai_analyzer', 'akshare_source', 'tushare_source', 'efinance_source', 'source_failover', 'ai_tts', 'edge_tts'],
+    hiddenimports=['websocket', 'websocket._app', 'data_source_manager', 'ai_analyzer', 'akshare_source', 'tushare_source', 'ai_tts', 'edge_tts'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
