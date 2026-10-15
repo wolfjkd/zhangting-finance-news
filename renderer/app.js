@@ -61,7 +61,9 @@
     isAutoScroll: () => autoScroll,
     recordSourceStats, classifyItem, storeToHistory, updateCount,
     highlightElement, checkKeywordAlert,
-    checkFavoriteStatus, toggleFavorite, showNewsDetail,
+    checkFavoriteStatus: window.ztfi.favoritesSearch.checkFavoriteStatus,
+    toggleFavorite: window.ztfi.favoritesSearch.toggleFavorite,
+    showNewsDetail,
     updateAiArea, triggerAiAnalysis, markWatchlistMatch,
     showToast, shouldAnnounce, enqueueVoice,
   });
@@ -107,9 +109,9 @@
     stopWatchlistAlertMonitor: () => stopWatchlistAlertMonitor(),
     stopVoice: () => stopVoice(),
     showToast: (msg, opts) => showToast(msg, opts),
-    loadFavorites: () => loadFavorites(),
-    performSearch: () => performSearch(),
-    updateFavoritesBadge: () => updateFavoritesBadge(),
+    loadFavorites: () => window.ztfi.favoritesSearch.loadFavorites(),
+    performSearch: () => window.ztfi.favoritesSearch.performSearch(),
+    updateFavoritesBadge: () => window.ztfi.favoritesSearch.updateFavoritesBadge(),
     getCurrentVersion: () => getCurrentVersion(),
   });
   // 注入 host：toast
@@ -125,6 +127,11 @@
     setStatus: (state, text) => setStatus(state, text),
     showToast: (msg, opts) => showToast(msg, opts),
     getStatsReport: () => getStatsReport(),
+  });
+  // 注入 host：toast + debugMode
+  window.ztfi.favoritesSearch.attach({
+    showToast: (msg, opts) => showToast(msg, opts),
+    debugMode: DEBUG_MODE,
   });
   // ===== 评估指标统计 =====
   const stats = {
@@ -774,153 +781,7 @@
     }
   }
 
-  // ===== 收藏功能 =====
-  async function checkFavoriteStatus(messageId, btn) {
-    if (!window.historyStorage) return;
-    try {
-      const isFav = await window.historyStorage.isFavorite(messageId);
-      if (isFav) {
-        btn.classList.add('favorited');
-      }
-    } catch (err) {
-      if (DEBUG_MODE) console.warn('检查收藏状态失败:', err);
-    }
-  }
-
-  async function toggleFavorite(item, btn) {
-    if (!window.historyStorage) {
-      console.warn('收藏功能未初始化');
-      return;
-    }
-    
-    const messageId = item.aid;
-    try {
-      const isFav = await window.historyStorage.isFavorite(messageId);
-      
-      if (isFav) {
-        await window.historyStorage.removeFavorite(messageId);
-        btn.classList.remove('favorited');
-        if (DEBUG_MODE) console.log('取消收藏:', item.title);
-      } else {
-        await window.historyStorage.addFavorite(item);
-        btn.classList.add('favorited');
-        if (DEBUG_MODE) console.log('已收藏:', item.title);
-      }
-      updateFavoritesBadge();
-    } catch (err) {
-      console.error('收藏操作失败:', err);
-    }
-  }
-
-  async function updateFavoritesBadge() {
-    if (!window.historyStorage) return;
-    try {
-      const count = await window.historyStorage.getFavoritesCount();
-      if ($favoritesBadge) {
-        if (count > 0) {
-          $favoritesBadge.textContent = count;
-          $favoritesBadge.style.display = 'inline-block';
-        } else {
-          $favoritesBadge.style.display = 'none';
-        }
-      }
-    } catch (err) {
-      if (DEBUG_MODE) console.warn('更新收藏徽章失败:', err);
-    }
-  }
-
-  async function loadFavorites() {
-    if (!window.historyStorage) return;
-    try {
-      const favorites = await window.historyStorage.getAllFavorites();
-      
-      if (!favorites || favorites.length === 0) {
-        $favoritesList.innerHTML = '<div class="favorites-empty">暂无收藏消息</div>';
-        return;
-      }
-      
-      $favoritesList.innerHTML = favorites.map(fav => `
-        <div class="favorite-item" data-id="${fav.id}">
-          <div class="fav-title">${esc(fav.title)}</div>
-          <div class="fav-meta">${fav.source || ''} · ${formatTime(fav.timestamp)}</div>
-          <div class="fav-actions">
-            <button class="btn-fav-copy">复制</button>
-            <button class="btn-fav-remove">取消收藏</button>
-          </div>
-        </div>
-      `).join('');
-      
-      $favoritesList.querySelectorAll('.btn-fav-copy').forEach((btn, idx) => {
-        btn.addEventListener('click', () => {
-          const fav = favorites[idx];
-          const text = `${fav.title}\n${fav.content || ''}\n来源: ${fav.source || ''}`;
-          navigator.clipboard.writeText(text.trim()).then(() => {
-            showToast('已复制到剪贴板');
-          }).catch(() => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text.trim();
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            showToast('已复制到剪贴板');
-          });
-        });
-      });
-      
-      $favoritesList.querySelectorAll('.btn-fav-remove').forEach((btn, idx) => {
-        btn.addEventListener('click', async () => {
-          const fav = favorites[idx];
-          await window.historyStorage.removeFavorite(fav.id);
-          updateFavoritesBadge();
-          loadFavorites();
-          showToast('已取消收藏');
-        });
-      });
-    } catch (err) {
-      console.error('加载收藏失败:', err);
-      $favoritesList.innerHTML = '<div class="favorites-empty">加载失败</div>';
-    }
-  }
-
-  async function performSearch() {
-    if (!window.historyStorage) return;
-    
-    const query = $searchInput.value.trim();
-    const category = $searchCategory.value || null;
-    const priority = $searchPriority.value || null;
-    
-    try {
-      $searchResults.innerHTML = '<div class="search-empty">搜索中...</div>';
-      
-      const results = await window.historyStorage.searchMessages(query, {
-        limit: 50,
-        category,
-        priority
-      });
-      
-      if (!results || results.length === 0) {
-        $searchResults.innerHTML = '<div class="search-empty">未找到匹配的消息</div>';
-        return;
-      }
-      
-      $searchResults.innerHTML = results.map(msg => `
-        <div class="search-result-item" data-id="${msg.id}">
-          <div class="result-title">${esc(msg.title)}</div>
-          <div class="result-meta">${msg.source || ''} · ${formatTime(msg.timestamp)} · ${msg.category || ''}</div>
-        </div>
-      `).join('');
-      
-      $searchResults.querySelectorAll('.search-result-item').forEach(item => {
-        item.addEventListener('click', () => {
-          $searchDialog.style.display = 'none';
-        });
-      });
-    } catch (err) {
-      console.error('搜索失败:', err);
-      $searchResults.innerHTML = '<div class="search-empty">搜索出错</div>';
-    }
-  }
+  // ===== 收藏 / 搜索（实现见 modules/favorites-search.js）=====
 
   // ===== 自选股（实现见 modules/watchlist-view.js；保留薄包装以稳定既有调用点）=====
   function showWatchlistDialog() { return window.ztfi.watchlistView.showWatchlistDialog(); }
