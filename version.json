@@ -1,11 +1,11 @@
 {
-    "latest_version": "v4.4.0",
-    "release_date": "2026-10-15",
+    "latest_version": "v4.4.1",
+    "release_date": "2026-10-16",
     "changelog": [
-        "重构收尾：翻译体系抽为 TranslationService（多源降级+限流冷却+缓存），外网延迟推送队列抽为 DelayedPushQueue，data_source_manager.py 1946 → 1760 行——对外功能与接口零变化",
-        "清理死代码：移除零引用的 efinance_source.py / source_failover.py 与 app.py 两个无调用者死接口",
-        "新增行为冒烟测试：翻译/延时推送 10 项全绿，38 项海外源行为对齐测试回归通过",
-        "版本号升级至v4.4.0"
+        "前端 app.js 拆模块重构：5036 行拆为 24 个独立模块（window.ztfi 命名空间 + host 注入），app.js 收敛至 766 行——对外接口与用户可见行为零变化",
+        "模块覆盖：core/utils/dom/ui-utils/settings-store/voice-service/news-list/dialogs-*/watchlist-view/settings-panel/keyword-alert/watchlist-alert/ai-service/update-check/window-service/favorites-search/history-buffer/stats/news-detail",
+        "修复历史消息搜索全部未匹配（词索引 4 字块错配 → 改标题/正文子串匹配 + 时间倒序扫描）",
+        "版本号升级至v4.4.1"
     ],
     "urgent": false,
     "urgent_message": "",

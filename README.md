@@ -1,4 +1,4 @@
-# 涨停财经聚合播报 v4.4.0（开源版）
+# 涨停财经聚合播报 v4.4.1（开源版）
 
 轻量级桌面财经新闻推送客户端，基于 pywebview（WebView2 内核），无需浏览器即可实时接收聚合消息推送，并集成了东财公告、券商研报、北向资金、外网资讯等多数据源。
 
@@ -6,11 +6,16 @@
 
 ---
 
-## ✨ 当前版本亮点（v4.4.0）
+## ✨ 当前版本亮点（v4.4.1）
 
-> 本次版本聚焦一件事：**让软件跑得更轻、更稳、更不打扰你**。不动框架、不破坏老用户配置，升级即可受益。
+> 本次版本聚焦一件事：**让前端代码更好维护**。纯内部结构重构，不动框架、不破坏老用户配置，升级后使用体验与旧版完全一致。
 
-### 🔧 v4.4.0 重构收尾：翻译/延时推送服务抽离 + 死代码清理（本次）
+### 🧩 v4.4.1 前端 app.js 拆模块重构（本次）
+- **前端可维护性大改造（对外接口与用户可见行为零变化）**：`renderer/app.js` 5036 行按功能域拆为 24 个独立模块，统一挂 `window.ztfi` 命名空间 + host 注入装配，主文件收敛至 **766 行**
+- **模块划分**：core / utils / dom / ui-utils / settings-store / voice-service / news-list / dialogs-legal / dialogs-datasource / dialogs-onboarding / watchlist-view / keyword-alert / watchlist-alert / ai-service / settings-panel / update-check / window-service / favorites-search / history-buffer / stats / news-detail 等
+- **修复历史消息搜索**：此前「点搜索全是未匹配」，根因是词索引按 4 字块错配；已改为标题/正文子串匹配 + 时间倒序扫描
+
+### 🔧 v4.4.0 重构收尾：翻译/延时推送服务抽离 + 死代码清理（已生效）
 - **继续结构性重构（对外功能零变化）**：翻译体系抽为 `TranslationService`（多源降级 + 限流冷却 + 结果缓存）、外网延迟推送队列抽为 `DelayedPushQueue`，依赖以构造注入；`data_source_manager.py` 1946 → 1760 行
 - **清理死代码**：移除从未接线且零引用的 `efinance_source.py` / `source_failover.py`，以及 `app.py` 两个无调用者的死接口
 
@@ -76,6 +81,11 @@ SQLite 启用 **WAL（Write-Ahead Logging）模式** + `synchronous=NORMAL`：
 ---
 
 ## 更新日志
+
+### v4.4.1（2026-10-16）
+- **前端 app.js 拆模块重构（对外功能零变化）**：5036 行拆为 24 个独立模块（`window.ztfi` 命名空间 + host 注入），`app.js` 收敛至 766 行；`index.html` 加载顺序与打包 spec 同步
+- **修复历史消息搜索全部未匹配**：词索引 4 字块错配导致零命中，改为标题/正文子串匹配 + 时间倒序扫描
+- **build.bat 合规化**：改为 GBK + CRLF + `chcp 936` + `goto` 兜底（修复潜在中文乱码/闪退隐患）
 
 ### v4.4.0（2026-10-15）
 - **重构收尾（对外功能零变化）**：翻译体系抽为 `TranslationService`（多源降级 + 限流冷却 + 缓存）、外网延迟推送队列抽为 `DelayedPushQueue`；`data_source_manager.py` 1946 → 1760 行

@@ -69,7 +69,7 @@
     } catch (e) {}
   }
 
-  /** 从页面标题解析当前版本号（如 "v4.4.0" → "4.4.0"） */
+  /** 从页面标题解析当前版本号（如 "v4.4.1" → "4.4.1"） */
   function getCurrentVersion() {
     const match = document.title.match(/v(\d+\.\d+\.\d+)/);
     return match ? match[1] : '3.9.2';

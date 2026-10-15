@@ -1,63 +1,71 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
+set PYTHONUTF8=
+set PYTHONIOENCODING=
+title ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨ v4.4.1 ¹¹½¨
 setlocal
 
 echo ==========================================
-echo  æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥ v4.4.0ï¼ˆå¼€æºç‰ˆï¼‰æž„å»ºè„šæœ¬
+echo  ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨ v4.4.1£¨¿ªÔ´°æ£©¹¹½¨½Å±¾
 echo ==========================================
 echo.
 
 cd /d "%~dp0"
 
-:: æ£€æŸ¥ Python çŽ¯å¢ƒ
-echo [1/4] æ£€æŸ¥ Python çŽ¯å¢ƒ...
+echo [1/4] ¼ì²é Python »·¾³...
 python --version >nul 2>&1
-if errorlevel 1 (
-    echo   ERROR: æœªæ‰¾åˆ° Pythonï¼Œè¯·ç¡®ä¿å·²å®‰è£… Python å¹¶æ·»åŠ åˆ° PATH
-    pause
-    exit /b 1
-)
-echo   OK: Python å·²æ‰¾åˆ°
+if errorlevel 1 goto NO_PY
+echo   OK: Python ÒÑÕÒµ½
 
-:: æ¸…ç†æ—§æž„å»º
 echo.
-echo [2/4] æ¸…ç†æ—§æž„å»º...
-if exist "build\" (
-    echo   åˆ é™¤ build ç›®å½•...
-    rd /s /q "build"
-)
-if exist "dist\æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥_v4.4.0.exe" (
-    echo   åˆ é™¤æ—§ exe...
-    del /q "dist\æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥_v4.4.0.exe"
-  )
-echo   OK: æ—§æž„å»ºå·²æ¸…ç†
+echo [2/4] ÇåÀí¾É¹¹½¨...
+if exist "build" goto RM_BUILD
+goto CK_OLD_EXE
 
-:: è¿è¡Œ PyInstaller
+:RM_BUILD
+echo   É¾³ý build Ä¿Â¼...
+rd /s /q "build"
+
+:CK_OLD_EXE
+if not exist "dist\ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨_v4.4.1.exe" goto CLEAN_DONE
+echo   É¾³ý¾É exe...
+del /q "dist\ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨_v4.4.1.exe"
+
+:CLEAN_DONE
+echo   OK: ¾É¹¹½¨ÒÑÇåÀí
+
 echo.
-echo [3/4] è¿è¡Œ PyInstaller...
-pyinstaller æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥.spec --noconfirm
-if errorlevel 1 (
-    echo   ERROR: PyInstaller æž„å»ºå¤±è´¥
-    pause
-    exit /b 1
-)
-echo   OK: PyInstaller æž„å»ºå®Œæˆ
+echo [3/4] ÔËÐÐ PyInstaller...
+pyinstaller ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨.spec --noconfirm
+if errorlevel 1 goto BUILD_FAIL
+echo   OK: PyInstaller ¹¹½¨Íê³É
 
-:: é‡å‘½å exeï¼ˆå¦‚éœ€è¦ï¼‰
-if exist "dist\æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥_v4.4.0.exe" (
-    echo.
-    echo [4/4] exe æ–‡ä»¶å·²ç”Ÿæˆ: dist\æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥_v4.4.0.exe
-  ) else (
-    echo.
-    echo [4/4] WARNING: æœªæ‰¾åˆ°é¢„æœŸçš„ exe æ–‡ä»¶ï¼Œè¯·æ£€æŸ¥ dist ç›®å½•
-  )
+echo.
+if not exist "dist\ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨_v4.4.1.exe" goto NO_EXE
+echo [4/4] exe ÎÄ¼þÒÑÉú³É: dist\ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨_v4.4.1.exe
+goto DONE
 
+:NO_EXE
+echo [4/4] WARNING: Î´ÕÒµ½Ô¤ÆÚµÄ exe ÎÄ¼þ£¬Çë¼ì²é dist Ä¿Â¼
+
+:DONE
 echo.
 echo ==========================================
-echo  æž„å»ºå®Œæˆï¼
+echo  ¹¹½¨Íê³É£¡
 echo ==========================================
 echo.
-echo  è¾“å‡ºæ–‡ä»¶: dist\æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥_v4.4.0.exe
+echo  Êä³öÎÄ¼þ: dist\ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨_v4.4.1.exe
 echo.
-echo  æŒ‰ä»»æ„é”®é€€å‡º...
+echo  °´ÈÎÒâ¼üÍË³ö...
 pause >nul
+goto :EOF
+
+:NO_PY
+echo   ERROR: Î´ÕÒµ½ Python£¬ÇëÈ·±£ÒÑ°²×° Python ²¢Ìí¼Óµ½ PATH
+pause
+goto :EOF
+
+:BUILD_FAIL
+echo   ERROR: PyInstaller ¹¹½¨Ê§°Ü
+pause
+goto :EOF

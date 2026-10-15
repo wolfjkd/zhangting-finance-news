@@ -411,7 +411,7 @@ gh release create v3.5.1 ...
 
 | 项目 | 当前版本 | 最新 Tag | 最新 Release | 仓库 |
 |------|---------|---------|-------------|------|
-| zhangting-finance-news | v4.4.0 | v4.4.0 | v4.4.0 | wolfjkd/zhangting-finance-news |
+| zhangting-finance-news | v4.4.1 | v4.4.1 | v4.4.1 | wolfjkd/zhangting-finance-news |
 | trader-data-router | v3.5.0 | v3.5.0 | v3.5.0 | wolfjkd/trader-data-router |
 | tradex-hub | v3.3.1 | v3.3.1 | v3.3.1 | wolfjkd/tradex-hub |
 | auction-hunter | v1.0.0 | v1.0.0 | v1.0.0 | wolfjkd/auction-hunter |

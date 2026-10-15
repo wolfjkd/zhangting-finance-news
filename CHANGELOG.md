@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v4.4.1] - 2026-10-16
+
+前端 `app.js` 拆模块重构批次。把单文件 `renderer/app.js` 按功能域拆为独立模块，
+统一 `window.ztfi` 命名空间 + host 注入装配。**对外接口与用户可见行为零变化**。
+
+### Changed（重构）
+- `renderer/app.js`：5036 → 766 行；新增 24 个模块文件，`index.html` `<script>`
+  加载顺序与打包 spec `datas` 同步
+- 采用 host 注入模式，模块不持有跨模块共享状态；`showToast / setStatus / updateCount /
+  flushAidBuffer / loadMore` 保留薄包装以稳定既有「bare 调用点 + 各模块 host 钩子」引用
+- `build.bat`：改为 GBK + CRLF + `chcp 936` + `goto` 兜底
+  （原 UTF-8 + `chcp 65001` + 中文括号块，存在乱码/闪退隐患）
+
+### Fixed（修复）
+- **历史消息搜索全部未匹配**：`history-storage` 词索引按 4 字块错配导致零命中；
+  改为标题/正文子串匹配 + 时间倒序扫描
+
+### 验证
+- `node --check` 全部 26 个 JS 文件通过；host / dom / utils / 跨模块契约校验脚本全绿；
+  模块在 `index.html` 与打包 spec 覆盖率全绿
+- 实机过 `SMOKE-CHECKLIST.md` 全量冒烟通过
+
 ## [v4.4.0] - 2026-10-15
 
 重构收尾批次。延续 v4.3.0 的结构性重构路线，继续把 `data_source_manager.py` 中的
