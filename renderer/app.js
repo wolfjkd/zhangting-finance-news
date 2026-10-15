@@ -2493,58 +2493,11 @@
     return true;
   }
 
-  // ===== 设置 =====
-  function loadSettings() {
-    try {
-      const saved = localStorage.getItem('ztfi-settings');
-      if (saved) {
-        // 直接返回已保存的设置。
-        // 注：原 sources 字段（消息来源显示过滤）已于 2026-10-15 弃用，
-        // 但保留默认值以兼容老用户已保存的 localStorage，不会被任何代码读取。
-        return JSON.parse(saved);
-      }
-    } catch (e) {}
-    return {
-      sources: [], // 已弃用（2026-10-15），保留默认值兼容旧 localStorage，不再被读取
-      fontSize: 'large',
-      voiceEnabled: true,
-      voiceIndex: 0,
-      voiceRate: 1.5,
-      voiceInterruptMode: 'complete',
-      showStocks: true,
-      showRelated: true,
-      hideDuplicates: true,
-      keywordHighlight: true,
-      keywords: [],
-      keywordAlert: false,
-      keywordAlertKeywords: [],
-      autoScroll: true,
-      isPinned: false,
-      watchlistAlertEnabled: false,
-      watchlistAlertThreshold: 5,
-      watchlistAlertInterval: 5,
-      watchlistAlertSound: true,
-      darkMode: false,
-      privacyAccepted: false,
-      privacyAcceptedVersion: '',
-      onboardingCompletedVersion: '',  // 引导完成标记（跟版本绑定，由 settings.json 持久化）
-    };
-  }
-
-  function getCurrentVersion() {
-    const match = document.title.match(/v(\d+\.\d+\.\d+)/);
-    return match ? match[1] : '3.9.2';
-  }
-
-  function saveSettings() {
-    try {
-      localStorage.setItem('ztfi-settings', JSON.stringify(settings));
-      // 同步保存到 Python 端文件（供启动时读取主题）
-      if (apiHas('persist_settings')) {
-        pywebview.api.persist_settings(JSON.stringify(settings)).catch(() => {});
-      }
-    } catch (e) {}
-  }
+  // ===== 设置（加载/保存/版本逻辑见 modules/settings-store.js）=====
+  function loadSettings() { return window.ztfi.settingsStore.load(); }
+  function getCurrentVersion() { return window.ztfi.settingsStore.getCurrentVersion(); }
+  // 注：saveSettings 保留为无参包装，因调用点达 26 处且共享同一闭包 settings。
+  function saveSettings() { window.ztfi.settingsStore.save(settings); }
 
   function initSettings() {
     // P4 重构（2026-10-15）：原 409 行单函数按功能域拆为 8 个子函数。
