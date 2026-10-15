@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v4.3.0] - 未发布（开发中，分支 feature/v4.3-refactor）
+
+结构性重构批次。目标：不改接口、只做内部结构调整，降低后续维护成本，同时不抬高资源占用。
+基线 `v4.2.0-stable`（tag 已建，回滚点）。
+
+### Changed（重构）
+- **海外新闻抓取抽基类（P2/P3）**：`data_source_manager.py` 的 9 个海外源抓取方法
+  （合计约 890 行、流程高度重复）抽为 `foreign_news_fetcher.py` 的 `ForeignNewsFetcher`
+  基类 + 9 个子类。基类固化"抓取 → 时效过滤 → 词表过滤 → 去重 → 翻译（失败即丢弃）→ 组装"，
+  各源仅声明 `FEEDS/PARSE_STYLE/KEY_PREFIX/LABEL/MAX_ITEMS_PER_FEED` 等类属性，
+  必要时覆写 `_scrape()/_parse_feed()/_content()/_feed_label()`。依赖（HTTP 取数 / 翻译 /
+  aid 生成 / 关键词表）以构造注入，避免循环 import。
+  - `data_source_manager.py`：2789 → 1946 行（-843）；新增 `foreign_news_fetcher.py`（505 行）
+  - 新增海外源从"复制 ~90 行方法"降为"写 ~10 行子类"
+- **initSettings 拆分（P4）**：`app.js` 的 `initSettings` 单函数 409 行按功能域拆为
+  8 个子函数（`bindVoiceSettings` / `bindKeywordSettings` / `bindDisplaySettings` /
+  `bindWatchlistAlertSettings` / `bindFontSizeSettings` / `bindAiSettings` /
+  `bindPanelAndWindowControls` / `bindThemeAndLifecycle`），均定义在 IIFE 顶层共享闭包；
+  调用顺序与原同步执行顺序一致，初始化时序不变。
+  - 主函数 409 → 13 行；各子函数 11~96 行
+
+### Removed（清理）
+- **零引用模块 `renderer/modules/stock-quote.js`**：`window.stockQuoteManager` 全仓库无
+  调用点（仅文档提及），每次启动白白解析；连同其 `<script>` 引用与 3 条死样式
+  （`.stock-quote` / `.stock-price` / `.stock-change`）一并移除；`.stock-name` 因
+  `app.js` 的 `.stock-tag` 仍在用而保留
+
+### Fixed
+- **延迟旧消息直接丢弃**：上游聚合源（鼓掌财经等）因排队/积压/重试会把旧消息晚推过来，
+  而 `app.js` 原实现无脑 `prepend`，导致 10:00 的旧消息排在 11:23 的最新消息之上。
+  新增 `STALE_MSG_THRESHOLD=120`（秒），超阈值消息入口即丢弃（先入 `seenAids` 防重试）
+- **移除设置页冗余的"消息来源"筛选闸**：数据源管理（齿轮）开关已精确表达用户意愿，
+  前端再做显示过滤属冗余且造成"两套开关"认知负担。删除 `ALL_SOURCES` / `$sourceList` /
+  过滤判断 / chip 循环 / `updateSourceSettings()` 及相关 CSS；保留 `settings.sources`
+  默认值兼容旧 localStorage（不再被读取），保留 `source` 变量供相似消息去重徽章使用
+
+### 验证
+- `node --check`（app.js 等）+ `python -m py_compile`（data_source_manager.py /
+  foreign_news_fetcher.py）全部通过
+- 新增 `foreign_news_fetcher` 合成 feed 行为对齐测试：P2 15 项 + P3 30 项全绿
+  （覆盖时效过滤/词表过滤/去重/翻译失败丢弃/seen 标记顺序/Atom 逐子版 comefrom/
+  Google 动态搜索 URL/标题最短长度/Nitter 24h 时效·多实例·图片·逐账号标签·20 条上限·limit）
+- 未改动任何对外接口（pywebview API 签名、消息 dict 结构均不变）
+
+### 待确认（本批次未动）
+- `app.py` 的 `get_stock_names` / `persist_stock_names`：随 `stock-quote.js` 移除后已无调用者（死接口，约 27 行）
+- `efinance_source.py` / `source_failover.py`：未被任何代码 import（约 134 行），
+  但 CHANGELOG/README 曾作为"多源降级"特性记录，疑为未接线特性
+
 ## [v4.2.0] - 2026-10-14
 
 本次版本包含两批改动：**方案 B 资源优化**（性能）+ **用户体验增强批次**（功能）。
