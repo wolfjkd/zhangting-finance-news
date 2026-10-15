@@ -48,13 +48,10 @@
   window._settings = settings;
   // 立即保存设置到文件（确保 Python 端能读取主题配置）
   try { saveSettings(); } catch(e) {}
-  let synth = window.speechSynthesis;
-  let voiceList = [];
-  let speaking = false;
-  let voiceQueue = [];
-  const VOICE_TIME_THRESHOLD = 180;
-  const VOICE_INTERRUPT_MODE_COMPLETE = 'complete';
-  const VOICE_INTERRUPT_MODE_IMMEDIATE = 'immediate';
+  // ===== 语音播报服务（modules/voice-service.js）=====
+  const voiceSvc = window.ztfi.voiceService;
+  // 注入设置访问器：settings 会被重载/重置，语音模块必须每次取最新对象
+  voiceSvc.attach(() => settings);
 
   // ===== 评估指标统计 =====
   const stats = {
@@ -410,22 +407,22 @@
     const ttsVoiceRow = document.getElementById('ttsVoiceRow');
     if (ttsEngineSelect) {
       ttsEngineSelect.addEventListener('change', (e) => {
-        _ttsEngine = e.target.value;
-        localStorage.setItem('tts_engine', _ttsEngine);
+        voiceSvc.setEngine(e.target.value);
+        localStorage.setItem('tts_engine', voiceSvc.getEngine());
         // 根据引擎切换显示对应音色行
-        if ($voiceSettings) $voiceSettings.style.display = (settings.voiceEnabled && _ttsEngine === 'web') ? 'flex' : 'none';
-        if (ttsVoiceRow) ttsVoiceRow.style.display = (settings.voiceEnabled && _ttsEngine === 'edge') ? 'flex' : 'none';
+        if ($voiceSettings) $voiceSettings.style.display = (settings.voiceEnabled && voiceSvc.getEngine() === 'web') ? 'flex' : 'none';
+        if (ttsVoiceRow) ttsVoiceRow.style.display = (settings.voiceEnabled && voiceSvc.getEngine() === 'edge') ? 'flex' : 'none';
         // 切换到 Edge 时检测可用性
-        if (_ttsEngine === 'edge') {
+        if (voiceSvc.getEngine() === 'edge') {
           checkEdgeTTSAvailability();
         }
       });
       // 恢复保存的值
-      _ttsEngine = localStorage.getItem('tts_engine') || 'web';
-      ttsEngineSelect.value = _ttsEngine;
-      if (ttsVoiceRow) ttsVoiceRow.style.display = (settings.voiceEnabled && _ttsEngine === 'edge') ? 'flex' : 'none';
+      voiceSvc.setEngine(localStorage.getItem('tts_engine') || 'web');
+      ttsEngineSelect.value = voiceSvc.getEngine();
+      if (ttsVoiceRow) ttsVoiceRow.style.display = (settings.voiceEnabled && voiceSvc.getEngine() === 'edge') ? 'flex' : 'none';
       // 启动时检测 Edge TTS 可用性
-      if (_ttsEngine === 'edge') {
+      if (voiceSvc.getEngine() === 'edge') {
         checkEdgeTTSAvailability();
       }
     }
@@ -451,11 +448,11 @@
     const ttsVoiceSelect = document.getElementById('ttsVoiceSelect');
     if (ttsVoiceSelect) {
       ttsVoiceSelect.addEventListener('change', (e) => {
-        _ttsVoice = e.target.value;
-        localStorage.setItem('tts_voice', _ttsVoice);
+        voiceSvc.setVoice(e.target.value);
+        localStorage.setItem('tts_voice', voiceSvc.getVoice());
       });
-      _ttsVoice = localStorage.getItem('tts_voice') || 'zh-CN-YunyangNeural';
-      ttsVoiceSelect.value = _ttsVoice;
+      voiceSvc.setVoice(localStorage.getItem('tts_voice') || 'zh-CN-YunyangNeural');
+      ttsVoiceSelect.value = voiceSvc.getVoice();
     }
 
     // Edge TTS 试听按钮
@@ -496,17 +493,17 @@
     const blockTags = document.getElementById('ttsBlockKeywordsTags');
     if (blockInput) {
       try {
-        _ttsBlockKeywords = JSON.parse(localStorage.getItem('tts_block_keywords') || '[]');
+        voiceSvc.setBlockKeywords(JSON.parse(localStorage.getItem('tts_block_keywords') || '[]'));
       } catch (e) {
-        _ttsBlockKeywords = [];
+        voiceSvc.setBlockKeywords([]);
       }
       renderBlockKeywords();
       blockInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && blockInput.value.trim()) {
           e.preventDefault();
-          _ttsBlockKeywords.push(blockInput.value.trim());
+          voiceSvc.blockKeywords().push(blockInput.value.trim());
           blockInput.value = '';
-          localStorage.setItem('tts_block_keywords', JSON.stringify(_ttsBlockKeywords));
+          localStorage.setItem('tts_block_keywords', JSON.stringify(voiceSvc.blockKeywords()));
           renderBlockKeywords();
         }
       });
@@ -515,7 +512,7 @@
     function renderBlockKeywords() {
       if (!blockTags) return;
       blockTags.innerHTML = '';
-      _ttsBlockKeywords.forEach((kw, i) => {
+      voiceSvc.blockKeywords().forEach((kw, i) => {
         const tag = document.createElement('span');
         tag.style.cssText = 'display:inline-flex;align-items:center;gap:2px;padding:2px 6px;background:var(--tag-bg);color:var(--tag-text);border-radius:3px;font-size:11px;';
         tag.textContent = kw;
@@ -523,8 +520,8 @@
         rmBtn.textContent = '×';
         rmBtn.style.cssText = 'cursor:pointer;margin-left:2px;font-weight:bold;';
         rmBtn.onclick = () => {
-          _ttsBlockKeywords.splice(i, 1);
-          localStorage.setItem('tts_block_keywords', JSON.stringify(_ttsBlockKeywords));
+          voiceSvc.blockKeywords().splice(i, 1);
+          localStorage.setItem('tts_block_keywords', JSON.stringify(voiceSvc.blockKeywords()));
           renderBlockKeywords();
         };
         tag.appendChild(rmBtn);
@@ -536,15 +533,15 @@
     const silentEnabled = document.getElementById('ttsSilentEnabled');
     const silentPeriodsRow = document.getElementById('ttsSilentPeriodsRow');
     if (silentEnabled) {
-      _ttsSilentEnabled = localStorage.getItem('tts_silent_enabled') === 'true';
-      silentEnabled.checked = _ttsSilentEnabled;
-      if (silentPeriodsRow) silentPeriodsRow.style.display = _ttsSilentEnabled ? 'flex' : 'none';
+      voiceSvc.setSilentEnabled(localStorage.getItem('tts_silent_enabled') === 'true');
+      silentEnabled.checked = voiceSvc.isSilentEnabled();
+      if (silentPeriodsRow) silentPeriodsRow.style.display = voiceSvc.isSilentEnabled() ? 'flex' : 'none';
       silentEnabled.addEventListener('change', (e) => {
-        _ttsSilentEnabled = e.target.checked;
-        localStorage.setItem('tts_silent_enabled', _ttsSilentEnabled);
-        if (silentPeriodsRow) silentPeriodsRow.style.display = _ttsSilentEnabled ? 'flex' : 'none';
+        voiceSvc.setSilentEnabled(e.target.checked);
+        localStorage.setItem('tts_silent_enabled', voiceSvc.isSilentEnabled());
+        if (silentPeriodsRow) silentPeriodsRow.style.display = voiceSvc.isSilentEnabled() ? 'flex' : 'none';
         // 开启定时静音后若当前处于静音时段，立即停止正在播报的语音
-        if (_ttsSilentEnabled && isInSilentPeriod()) {
+        if (voiceSvc.isSilentEnabled() && isInSilentPeriod()) {
           stopVoice();
         }
       });
@@ -581,10 +578,10 @@
       const e2 = document.getElementById('ttsSilentEnd2')?.value;
       if (s1 && e1) periods.push({ start: s1, end: e1 });
       if (s2 && e2) periods.push({ start: s2, end: e2 });
-      _ttsSilentPeriods = periods;
+      voiceSvc.setSilentPeriods(periods);
       localStorage.setItem('tts_silent_periods', JSON.stringify(periods));
       // 修改时段后若当前处于静音时段，立即停止正在播报的语音
-      if (_ttsSilentEnabled && isInSilentPeriod()) {
+      if (voiceSvc.isSilentEnabled() && isInSilentPeriod()) {
         stopVoice();
       }
     }
@@ -2259,239 +2256,12 @@
     $loading.classList.remove('show');
   }
 
-  // ===== 语音播报 =====
-  function initVoice() {
-    if (!synth) return;
-
-    function populateVoices() {
-      voiceList = synth.getVoices().filter(v =>
-        v.lang.startsWith('zh') || v.lang === 'cmn'
-      );
-      $voiceSelect.innerHTML = '';
-      voiceList.forEach((v, i) => {
-        const opt = document.createElement('option');
-        opt.value = i;
-        opt.textContent = v.name;
-        $voiceSelect.appendChild(opt);
-      });
-      // 选中之前保存的
-      if (settings.voiceIndex >= 0 && settings.voiceIndex < voiceList.length) {
-        $voiceSelect.value = settings.voiceIndex;
-      }
-    }
-
-    populateVoices();
-    synth.onvoiceschanged = populateVoices;
-  }
-
-  function stopVoice() {
-    if (synth) {
-      synth.cancel();
-    }
-    // 停止 Edge TTS 音频播放
-    if (_currentAudio) {
-      try { _currentAudio.pause(); _currentAudio.currentTime = 0; } catch (e) {}
-      _currentAudio = null;
-    }
-    voiceQueue = [];
-    speaking = false;
-    // 递增令牌，使正在进行的 Edge TTS 异步请求失效
-    _ttsRequestToken++;
-  }
-
-  // ===== Edge TTS 语音引擎 =====
-  let _ttsEngine = 'web'; // 'web' 或 'edge'
-  let _ttsVoice = 'zh-CN-YunyangNeural';
-  let _ttsRequestToken = 0; // 请求令牌，stopVoice 时递增，使进行中的异步请求失效
-  let _ttsBlockKeywords = [];
-  let _ttsSilentEnabled = false;
-  let _ttsSilentPeriods = [];
-  let _currentAudio = null;
-
-  async function speakWithEdgeTTS(text) {
-    if (!window.pywebview || !window.pywebview.api) return false;
-    const myToken = _ttsRequestToken; // 记录当前令牌
-    try {
-      const rateStr = (parseFloat(document.getElementById('voiceRate')?.value || 1.5) - 1) * 100;
-      const rate = (rateStr >= 0 ? '+' : '') + rateStr + '%';
-      const result = await window.pywebview.api.tts_synthesize(text, _ttsVoice, rate, '+0%');
-      // 检查令牌：如果在异步等待期间被 stopVoice 了，放弃播放
-      if (myToken !== _ttsRequestToken) return true; // 返回 true 避免回退到 web
-      // 定时静音期间：放弃播放，并清空队列（覆盖合成期间进入静音时段的场景）
-      if (isInSilentPeriod()) {
-        voiceQueue = [];
-        speaking = false;
-        return true;
-      }
-      const data = JSON.parse(result);
-      if (data.status === 'ok' && data.audio_data) {
-        // 再次检查令牌
-        if (myToken !== _ttsRequestToken) return true;
-        _currentAudio = new Audio(data.audio_data);
-        _currentAudio.onended = () => {
-          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
-        };
-        _currentAudio.onerror = () => {
-          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
-        };
-        _currentAudio.play().catch(e => console.error('Edge TTS 播放失败:', e));
-        return true;
-      } else if (data.status === 'ok' && data.audio_path) {
-        if (myToken !== _ttsRequestToken) return true;
-        _currentAudio = new Audio('file:///' + data.audio_path.replace(/\\/g, '/'));
-        _currentAudio.onended = () => {
-          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
-        };
-        _currentAudio.onerror = () => {
-          if (myToken === _ttsRequestToken) { _currentAudio = null; processVoiceQueue(); }
-        };
-        _currentAudio.play().catch(e => console.error('Edge TTS 播放失败:', e));
-        return true;
-      }
-      console.warn('Edge TTS 返回异常:', data.message);
-    } catch (e) {
-      console.error('Edge TTS 播放失败:', e);
-    }
-    return false;
-  }
-
-  function shouldSkipByKeyword(text) {
-    if (!_ttsBlockKeywords || _ttsBlockKeywords.length === 0) return false;
-    const escaped = _ttsBlockKeywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regex = new RegExp(escaped.join('|'), 'gi');
-    return regex.test(text);
-  }
-
-  function timeToMinutes(timeStr) {
-    const [h, m] = timeStr.split(':').map(Number);
-    return h * 60 + m;
-  }
-
-  function isInSilentPeriod() {
-    if (!_ttsSilentEnabled || _ttsSilentPeriods.length === 0) return false;
-    const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    for (const period of _ttsSilentPeriods) {
-      const start = timeToMinutes(period.start);
-      const end = timeToMinutes(period.end);
-      if (start <= end) {
-        if (currentMinutes >= start && currentMinutes < end) return true;
-      } else {
-        if (currentMinutes >= start || currentMinutes < end) return true;
-      }
-    }
-    return false;
-  }
-
-  function enqueueVoice(text, ctime) {
-    if (!synth || !text) return;
-
-    if (shouldSkipByKeyword(text)) return;
-    if (isInSilentPeriod()) return;
-
-    // 注意：不再基于 ctime（新闻发布时间）判断是否播报。
-    // 原因：各子源 API 时效性不同（如新浪财经接近实时，同花顺/东方财富可能有数分钟延迟），
-    //       用 ctime 过滤会导致延迟子源的新闻被静默跳过。
-    //       后端已通过 skip_tts=true 机制（基于入队时间，5分钟超时）统一控制，
-    //       shouldAnnounce 已检查 skip_tts，此处无需重复过滤。
-
-    const speakText = text.length > 80 ? text.substring(0, 80) + '...' : text;
-
-    if (settings.voiceInterruptMode === VOICE_INTERRUPT_MODE_IMMEDIATE) {
-      stopVoice();
-      voiceQueue = [speakText];
-      processVoiceQueue();
-    } else {
-      // 队列上限 10 条，满时丢弃最旧消息，保留最新消息，防止集中推送语音积压
-      if (voiceQueue.length >= 10) {
-        voiceQueue.shift();
-      }
-      voiceQueue.push(speakText);
-      if (!speaking) {
-        processVoiceQueue();
-      }
-    }
-  }
-
-  function processVoiceQueue() {
-    if (voiceQueue.length === 0) {
-      speaking = false;
-      return;
-    }
-    // 定时静音期间：清空队列，不播报（覆盖静音时段开始前已排队的语音）
-    if (isInSilentPeriod()) {
-      voiceQueue = [];
-      speaking = false;
-      return;
-    }
-    speaking = true;
-    const text = voiceQueue.shift();
-
-    // 根据引擎选择：Edge TTS 优先（如果可用且已选择）
-    if (_ttsEngine === 'edge' && apiHas('tts_synthesize')) {
-      speakWithEdgeTTS(text).then(ok => {
-        if (!ok) {
-          // Edge TTS 失败，回退到浏览器内置
-          _speakWithWeb(text);
-        }
-      });
-      return;
-    }
-    _speakWithWeb(text);
-  }
-
-  // 浏览器内置语音播报
-  function _speakWithWeb(text) {
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'zh-CN';
-    utter.rate = parseFloat($voiceRate.value) || 1.5;
-
-    if (voiceList.length > 0) {
-      const idx = parseInt($voiceSelect.value) || 0;
-      if (voiceList[idx]) utter.voice = voiceList[idx];
-    }
-
-    utter.onend = () => processVoiceQueue();
-    utter.onerror = () => processVoiceQueue();
-    synth.speak(utter);
-  }
-
-  // ===== 语音播报过滤规则 =====
-  const SKIP_SOURCES = ['券商研报', '公告解读'];
-
-  function shouldAnnounce(item) {
-    // 超时消息：后端标记 skip_tts=true，只展示不播报
-    if (item.skip_tts === true) {
-      return false;
-    }
-
-    const source = item.comefrom || '';
-    
-    // 检查是否命中关键词高亮（标题或内容包含关键词）
-    if (settings.keywordHighlight && settings.keywords.length > 0) {
-      const text = (item.title || '') + ' ' + (item.content || '');
-      const escaped = settings.keywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-      const regex = new RegExp(escaped.join('|'), 'gi');
-      if (regex.test(text)) {
-        return true;
-      }
-    }
-    
-    // 检查是否涉及自选股（同步检查，通过item.stocks字段）
-    if (item.stocks && item.stocks.length > 0) {
-      return true;
-    }
-    
-    // 来源黑名单：这些数据源的消息不播报
-    for (const skip of SKIP_SOURCES) {
-      if (source.includes(skip)) {
-        return false;
-      }
-    }
-    
-    // 默认：播报所有其他消息
-    return true;
-  }
+  // ===== 语音播报（实现见 modules/voice-service.js；此处保留薄包装以稳定既有调用点）=====
+  function initVoice() { window.ztfi.voiceService.init(); }
+  function stopVoice() { window.ztfi.voiceService.stop(); }
+  function isInSilentPeriod() { return window.ztfi.voiceService.isInSilentPeriod(); }
+  function shouldAnnounce(item) { return window.ztfi.voiceService.shouldAnnounce(item); }
+  function enqueueVoice(text, ctime) { window.ztfi.voiceService.enqueue(text, ctime); }
 
   // ===== 设置（加载/保存/版本逻辑见 modules/settings-store.js）=====
   function loadSettings() { return window.ztfi.settingsStore.load(); }
@@ -2565,17 +2335,7 @@
     });
 
     $voiceTest.addEventListener('click', () => {
-      if (synth) {
-        synth.cancel();
-        const utter = new SpeechSynthesisUtterance('这是一条测试语音，财经聚合消息推送已开启。');
-        utter.lang = 'zh-CN';
-        utter.rate = parseFloat($voiceRate.value) || 1.5;
-        if (voiceList.length > 0) {
-          const idx = parseInt($voiceSelect.value) || 0;
-          if (voiceList[idx]) utter.voice = voiceList[idx];
-        }
-        synth.speak(utter);
-      }
+      voiceSvc.testSpeak('这是一条测试语音，财经聚合消息推送已开启。');
     });
   }
 
