@@ -3779,7 +3779,7 @@
 <p style="margin: 4px 0;">3. 仅在司法机关依法出具法定文书要求时配合提供可留存的本地交互记录</p>
 <strong>六、开源声明</strong>
 <p style="margin: 8px 0;">本软件是开源项目（MIT License），源代码托管在 GitHub：</p>
-<p style="margin: 4px 0 4px 16px;">• <a href="https://github.com/wolfjkd/ZTFI-News" target="_blank" style="color: #0366d6;">https://github.com/wolfjkd/ZTFI-News</a></p>
+<p style="margin: 4px 0 4px 16px;">• <a href="https://github.com/wolfjkd/zhangting-finance-news" target="_blank" style="color: #0366d6;">https://github.com/wolfjkd/zhangting-finance-news</a></p>
 <p style="margin: 4px 0;">用户可自行审查源代码，确认数据处理逻辑符合本隐私政策。</p>`
       },
       'risk': {
@@ -3805,7 +3805,7 @@
       },
       'open-source': {
         title: '📜 开源组件版权说明',
-        content: `1. 本软件采用 MIT License 开源，源代码托管于 GitHub：https://github.com/wolfjkd/ZTFI-News。
+        content: `1. 本软件采用 MIT License 开源，源代码托管于 GitHub：https://github.com/wolfjkd/zhangting-finance-news。
 2. 本软件使用以下第三方开源组件：
    - pywebview（MIT License）：桌面应用框架
    - requests（Apache License 2.0）：HTTP请求库

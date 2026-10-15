@@ -93,7 +93,7 @@
 
 ## 五、开源组件版权说明
 
-1. 本软件采用 MIT License 开源，源代码托管于 GitHub：https://github.com/wolfjkd/ZTFI-News
+1. 本软件采用 MIT License 开源，源代码托管于 GitHub：https://github.com/wolfjkd/zhangting-finance-news
 
 2. 本软件使用以下第三方开源组件：
    - pywebview（MIT License）：桌面应用框架
@@ -136,7 +136,7 @@
 ## 八、联系我们
 
 如有任何问题，请通过以下方式联系：
-- GitHub Issues：https://github.com/wolfjkd/ZTFI-News/issues
+- GitHub Issues：https://github.com/wolfjkd/zhangting-finance-news/issues
 - 邮箱：wolfjkd@github.com
 
 ---

@@ -323,8 +323,8 @@ class Api:
             return json.dumps({})
 
     _CURRENT_VERSION = 'v4.2.1'
-    _VERSION_JSON_URL = 'https://raw.githubusercontent.com/wolfjkd/ZTFI-News/main/version.json'
-    _RELEASES_API_URL = 'https://api.github.com/repos/wolfjkd/ZTFI-News/releases/latest'
+    _VERSION_JSON_URL = 'https://raw.githubusercontent.com/wolfjkd/zhangting-finance-news/main/version.json'
+    _RELEASES_API_URL = 'https://api.github.com/repos/wolfjkd/zhangting-finance-news/releases/latest'
 
     def _compare_versions(self, v1, v2):
         def parse(v):
@@ -429,7 +429,9 @@ class Api:
 
     def download_update(self):
         try:
-            resp = requests.get(self._RELEASES_API_URL, timeout=10)
+            # 与更新检测一致：走代理 session（国内直连 GitHub 常失败）
+            session = self._get_github_session()
+            resp = session.get(self._RELEASES_API_URL, timeout=10)
             if resp.status_code != 200:
                 return json.dumps({'status': 'error', 'message': '无法获取下载链接'})
 
@@ -450,7 +452,7 @@ class Api:
             logger.info(f'开始下载更新: {download_url}')
             logger.info(f'保存路径: {new_exe_path}')
 
-            resp = requests.get(download_url, stream=True, timeout=300)
+            resp = session.get(download_url, stream=True, timeout=300)
             total_size = int(resp.headers.get('content-length', 0))
             downloaded_size = 0
 
