@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 *.so
 *.egg-info/
+# 显式忽略（不依赖 venv 内部自带的 .gitignore，避免哪天被清掉后误提交几 GB）
+.venv/
+venv/
 
 # WorkBuddy / Trae 本地开发目录
 .workbuddy/
@@ -23,6 +26,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+*.bak-*
 
 # Build artifacts
 build/
