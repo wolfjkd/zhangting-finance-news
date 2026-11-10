@@ -160,15 +160,19 @@ def _detect_local_proxy():
     if sys_proxy and _port_open(sys_proxy['host'], sys_proxy['port']):
         return sys_proxy
 
-    # 3) 常见本地端口（HTTP 混合端口）
-    for port in _COMMON_PROXY_PORTS:
-        if _port_open('127.0.0.1', port):
-            return {
-                'host': '127.0.0.1',
-                'port': port,
-                'source': 'local_port',
-                'url': f'http://127.0.0.1:{port}',
-            }
+    # 3) 常见本地端口（并发探测：串行 0.6s×N 在无代理环境阻塞启动约 10s——审计 #21；
+    #    ThreadPoolExecutor.map 按提交顺序返回结果，保持列表优先级语义）
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(_COMMON_PROXY_PORTS)) as _pool:
+        for port, opened in _pool.map(
+                lambda p: (p, _port_open('127.0.0.1', p)), _COMMON_PROXY_PORTS):
+            if opened:
+                return {
+                    'host': '127.0.0.1',
+                    'port': port,
+                    'source': 'local_port',
+                    'url': f'http://127.0.0.1:{port}',
+                }
 
     # 环境变量/系统代理已配置但端口暂时连不上时仍返回配置，便于给出明确错误
     if env_proxy:
@@ -204,11 +208,16 @@ def _create_proxy_session(proxy_info=None):
 
 _proxy_info = _detect_local_proxy()
 _proxy_session = _create_proxy_session(_proxy_info)
+_last_proxy_probe_ts = time.monotonic()
+_PROXY_PROBE_TTL = 300  # 探测节流秒数：每轮外网抓取都会调刷新，5 分钟内复用上次结果（审计 #21）
 
 
 def _refresh_proxy_session():
-    """重新检测代理并刷新外网 Session。"""
-    global _proxy_info, _proxy_session
+    """重新检测代理并刷新外网 Session（TTL 节流：300s 内复用上次探测结果）。"""
+    global _proxy_info, _proxy_session, _last_proxy_probe_ts
+    if time.monotonic() - _last_proxy_probe_ts < _PROXY_PROBE_TTL:
+        return _proxy_info
+    _last_proxy_probe_ts = time.monotonic()
     _proxy_info = _detect_local_proxy()
     _proxy_session = _create_proxy_session(_proxy_info)
     return _proxy_info
@@ -372,12 +381,6 @@ class DataSourceManager:
         # 翻译服务（任务 4 重构）：多源降级 + 限流冷却 + 缓存，依赖注入避免循环 import
         self._translator = TranslationService(http_get=_get_with_fallback, http_post=_post_with_fallback)
 
-        self._translate_queue = []
-        self._translate_queue_lock = threading.Lock()
-        self._translate_rate_limit = 1.0
-        self._translate_last_batch = 0
-
-        # 延时推送队列（任务 5 重构）：外网资讯集中推送先缓存再按 10-20 秒间隔逐条推送
         self._DELAY_PUSH_SOURCES = {"google_news", "reddit", "twitter_x", "techcrunch"}
         self._delay_pusher = DelayedPushQueue(dispatch=self._dispatch_message, is_running=lambda: self.running)
 
@@ -394,48 +397,6 @@ class DataSourceManager:
 
         self._init_default_sources()
 
-    # ===== 翻译限流保护 =====
-    def _enqueue_translate(self, aid, text, field_name):
-        """加入翻译队列（非阻塞）"""
-        with self._translate_queue_lock:
-            self._translate_queue.append({'aid': aid, 'text': text, 'field': field_name})
-    
-    def _process_translate_queue(self):
-        """处理翻译队列（限流）"""
-        now = time.time()
-        if now - self._translate_last_batch < self._translate_rate_limit:
-            return
-        
-        batch = []
-        with self._translate_queue_lock:
-            batch = self._translate_queue[:3]
-            self._translate_queue = self._translate_queue[3:]
-        
-        if batch:
-            self._translate_last_batch = now
-            for item in batch:
-                try:
-                    translated = self._translator.translate_to_chinese(item['text'])
-                    if translated and translated != item['text']:
-                        self._update_message_translation(item['aid'], item['field'], translated)
-                except Exception as e:
-                    logger.warning(f"翻译队列处理失败: {e}")
-    
-    def _update_message_translation(self, aid, field_name, translated):
-        """更新消息翻译（异步推送更新）"""
-        pass
-    
-    def _translate_with_rate_limit(self, text, allow_fallback=True):
-        """带限流的翻译调用，超过阈值时返回原文本"""
-        now = time.time()
-        if now - self._translate_last_batch < self._translate_rate_limit:
-            if allow_fallback:
-                return text
-            time.sleep(self._translate_rate_limit - (now - self._translate_last_batch))
-        
-        self._translate_last_batch = now
-        return self._translator.translate_to_chinese(text)
-    
     # ===== 回调 =====
     def set_message_callback(self, callback: Callable[[Dict], None]):
         """设置消息推送回调（app.py 调用，把消息推到前端）"""
@@ -1554,19 +1515,6 @@ class DataSourceManager:
             result.append(d)
         return result
 
-    def update_source_config(self, source_id: str, config: Dict) -> bool:
-        if source_id not in self.sources:
-            return False
-        source = self.sources[source_id]
-        for key, value in config.items():
-            if hasattr(source, key):
-                setattr(source, key, value)
-        if source.enabled:
-            self._stop_source(source_id)
-            self._start_source(source_id)
-        return True
-
-    def test_source_connection(self, source_id: str) -> Dict:
         """测试数据源连接（真实请求）"""
         if source_id not in self.sources:
             return {"success": False, "message": f"数据源 {source_id} 不存在"}

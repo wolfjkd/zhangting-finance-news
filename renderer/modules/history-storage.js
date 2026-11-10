@@ -3,6 +3,8 @@
  * 本地存储 + 全文检索
  */
 
+const ZTFI_HS_DEBUG = false; // 调试日志开关（旧全局模块未迁 ztfi 命名空间，拆分时并入 host.debugMode）
+
 class HistoryStorage {
   constructor() {
     this.dbName = 'ZTFINewsHistory';
@@ -10,7 +12,8 @@ class HistoryStorage {
     this.db = null;
     this.maxRecords = 10000; // 最大存储记录数
     this.cleanupThreshold = 12000; // 清理阈值
-    
+    this._lastCleanupCheck = 0; // 清理检查节流时间戳（审计 #19）
+
     this.init();
   }
 
@@ -20,7 +23,7 @@ class HistoryStorage {
   async init() {
     try {
       await this.openDB();
-      console.log('历史消息数据库初始化完成');
+      if (ZTFI_HS_DEBUG) console.log('历史消息数据库初始化完成');
     } catch (e) {
       console.error('初始化历史消息数据库失败:', e);
     }
@@ -91,10 +94,10 @@ class HistoryStorage {
     if (!this.db) await this.openDB();
     
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['messages', 'searchIndex'], 'readwrite');
+      // searchIndex 已停写（v4.4.1 搜索改子串扫描，词索引只写不读白耗配额与 IO——审计 #18）
+      const transaction = this.db.transaction(['messages'], 'readwrite');
       const messagesStore = transaction.objectStore('messages');
-      const indexStore = transaction.objectStore('searchIndex');
-      
+
       // 存储消息
       const messageData = {
         id: message.aid || Date.now().toString(),
@@ -111,10 +114,8 @@ class HistoryStorage {
       };
       
       const addRequest = messagesStore.put(messageData);
-      
+
       addRequest.onsuccess = () => {
-        // 创建全文索引
-        this.createSearchIndex(messageData, indexStore);
         resolve(true);
       };
       
@@ -135,10 +136,10 @@ class HistoryStorage {
     if (!messages || messages.length === 0) return;
     
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['messages', 'searchIndex'], 'readwrite');
+      // searchIndex 已停写（审计 #18）
+      const transaction = this.db.transaction(['messages'], 'readwrite');
       const messagesStore = transaction.objectStore('messages');
-      const indexStore = transaction.objectStore('searchIndex');
-      
+
       let processed = 0;
       let error = null;
       
@@ -167,32 +168,13 @@ class HistoryStorage {
         };
         
         messagesStore.put(messageData);
-        
-        // 创建全文索引
-        this.createSearchIndex(messageData, indexStore);
-        
+
         processed++;
       });
       
       // 检查是否需要清理
       if (processed > 0) {
         this.checkAndCleanup();
-      }
-    });
-  }
-
-  /**
-   * 创建搜索索引
-   */
-  createSearchIndex(message, indexStore) {
-    const words = this.extractWords(message.title + ' ' + message.content);
-    
-    words.forEach(word => {
-      if (word.length >= 2) { // 只索引2个字符以上的词
-        indexStore.add({
-          word: word.toLowerCase(),
-          messageId: message.id
-        });
       }
     });
   }
@@ -349,14 +331,25 @@ class HistoryStorage {
 
   /**
    * 检查并清理旧数据
+   * 优化（审计 #19）：原走 getStatistics 全 cursor 扫描，实时流下每条消息一次全表
+   * 扫描呈 O(N²)；本方法只需 total，改用 count() 并加 5 分钟节流。
    */
   async checkAndCleanup() {
     if (!this.db) return;
-    
+
+    const now = Date.now();
+    if (this._lastCleanupCheck && now - this._lastCleanupCheck < 300000) return;
+    this._lastCleanupCheck = now;
+
     try {
-      const stats = await this.getStatistics();
-      if (stats.total > this.cleanupThreshold) {
-        await this.cleanupOldMessages(stats.total - this.maxRecords);
+      const total = await new Promise((resolve, reject) => {
+        const tx = this.db.transaction(['messages'], 'readonly');
+        const req = tx.objectStore('messages').count();
+        req.onsuccess = (e) => resolve(e.target.result);
+        req.onerror = (e) => reject(e.target.error);
+      });
+      if (total > this.cleanupThreshold) {
+        await this.cleanupOldMessages(total - this.maxRecords);
       }
     } catch (e) {
       console.warn('清理历史消息失败:', e);
@@ -370,29 +363,24 @@ class HistoryStorage {
     if (!this.db || count <= 0) return;
     
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(['messages', 'searchIndex'], 'readwrite');
+      // searchIndex 已停写（审计 #18）
+      const transaction = this.db.transaction(['messages'], 'readwrite');
       const messagesStore = transaction.objectStore('messages');
-      const indexStore = transaction.objectStore('searchIndex');
-      
+
       // 获取最旧的消息
       const request = messagesStore.index('timestamp').openCursor();
       let deleted = 0;
-      
+
       request.onsuccess = (event) => {
         const cursor = event.target.result;
         if (cursor && deleted < count) {
-          const message = cursor.value;
-          
           // 删除消息
           cursor.delete();
-          
-          // 删除相关的搜索索引
-          this.deleteSearchIndex(message.id, indexStore);
-          
+
           deleted++;
           cursor.continue();
         } else {
-          console.log(`清理了 ${deleted} 条旧消息`);
+          if (ZTFI_HS_DEBUG) console.log(`清理了 ${deleted} 条旧消息`);
           resolve(deleted);
         }
       };
@@ -401,22 +389,6 @@ class HistoryStorage {
         reject(event.target.error);
       };
     });
-  }
-
-  /**
-   * 删除搜索索引
-   */
-  deleteSearchIndex(messageId, indexStore) {
-    const index = indexStore.index('messageId');
-    const request = index.openCursor(messageId);
-    
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (cursor) {
-        cursor.delete();
-        cursor.continue();
-      }
-    };
   }
 
   /**
@@ -510,7 +482,7 @@ class HistoryStorage {
           clearFavorites.onsuccess = () => {
             clearWatchlist.onsuccess = () => {
               clearGroups.onsuccess = () => {
-                console.log('所有数据已清空');
+                if (ZTFI_HS_DEBUG) console.log('所有数据已清空');
                 resolve(true);
               };
             };
@@ -553,7 +525,7 @@ class HistoryStorage {
       const request = store.put(favData);
 
       request.onsuccess = () => {
-        console.log('消息已收藏:', favData.title);
+        if (ZTFI_HS_DEBUG) console.log('消息已收藏:', favData.title);
         // 写穿同步到后端（%APPDATA%/ZTFINews/favorites.json）：IndexedDB 随 WebView2
         // 用户数据目录清理而丢，关键收藏必须有后端持久化通道
         this._syncFavoritesToBackend();
@@ -579,7 +551,7 @@ class HistoryStorage {
       const request = store.delete(messageId);
 
       request.onsuccess = () => {
-        console.log('收藏已移除:', messageId);
+        if (ZTFI_HS_DEBUG) console.log('收藏已移除:', messageId);
         this._syncFavoritesToBackend();
         resolve(true);
       };
@@ -922,7 +894,7 @@ class HistoryStorage {
       const request = store.put(stockData);
       
       request.onsuccess = () => {
-        console.log('已添加自选股:', stockData.code, stockData.name, '分组:', groupId);
+        if (ZTFI_HS_DEBUG) console.log('已添加自选股:', stockData.code, stockData.name, '分组:', groupId);
         this._syncWatchlistToBackend();
         resolve(true);
       };
@@ -1007,7 +979,7 @@ class HistoryStorage {
       const request = store.delete(code);
       
       request.onsuccess = () => {
-        console.log('已移除自选股:', code);
+        if (ZTFI_HS_DEBUG) console.log('已移除自选股:', code);
         this._syncWatchlistToBackend();
         resolve(true);
       };
@@ -1133,7 +1105,7 @@ class HistoryStorage {
       const request = store.add(group);
       
       request.onsuccess = () => {
-        console.log('已创建分组:', name);
+        if (ZTFI_HS_DEBUG) console.log('已创建分组:', name);
         this._syncWatchlistGroupsToBackend();
         resolve(group);
       };
@@ -1206,7 +1178,7 @@ class HistoryStorage {
         if (group) {
           group.name = newName;
           store.put(group);
-          console.log('已重命名分组:', groupId, '->', newName);
+          if (ZTFI_HS_DEBUG) console.log('已重命名分组:', groupId, '->', newName);
           this._syncWatchlistGroupsToBackend();
           resolve(true);
         } else {

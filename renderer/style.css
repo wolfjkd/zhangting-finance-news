@@ -2563,7 +2563,7 @@ body.dark-mode .toolbar-right {
   left: 50%;
   transform: translate(-50%, -50%);
   width: 90%;
-  max-width: 360px;
+  max-width: 420px;
   background: var(--bg);
   border-radius: 12px;
   border: 2px solid var(--trial-border);
@@ -3206,7 +3206,7 @@ body.dark-mode .toolbar-right {
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.15);
     padding: 16px;
-    max-width: 360px;
+    max-width: 420px;
     width: 90%;
 }
 
@@ -3222,7 +3222,7 @@ body.dark-mode .toolbar-right {
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(255,107,53,0.3);
     padding: 16px;
-    max-width: 360px;
+    max-width: 420px;
     width: 90%;
 }
 

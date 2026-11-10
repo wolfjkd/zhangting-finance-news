@@ -279,7 +279,7 @@
           } else {
             const detail = `分类: ${parsed.category} | 优先级: ${parsed.priority} | 情感: ${parsed.sentiment} | 摘要: ${parsed.summary}`;
             H().showToast('AI 测试成功！' + detail, { type: 'success', duration: 6000 });
-            console.log('[AI 测试详细结果]', parsed);
+            if (H().debugMode) console.log('[AI 测试详细结果]', parsed);
           }
         } else {
           H().showToast('AI 分析 API 不可用', { type: 'error' });

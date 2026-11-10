@@ -58,7 +58,7 @@
       const cutoffTime = Date.now() - H().maxHistoryDays * 24 * 60 * 60 * 1000;
       const deletedCount = await window.historyStorage.deleteOldMessages(cutoffTime);
       if (H().debugMode && deletedCount > 0) {
-        console.log(`清理过期消息: 删除 ${deletedCount} 条`);
+        if (H().debugMode) console.log(`清理过期消息: 删除 ${deletedCount} 条`);
       }
     } catch (e) {
       if (H().debugMode) console.warn('清理历史消息失败:', e);

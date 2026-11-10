@@ -158,7 +158,7 @@ def _fetch_wallstreetcn() -> List[Dict]:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'application/json',
         }
-        resp = requests.get(url, params=params, headers=headers, timeout=10)
+        resp = requests.get(url, params=params, headers=headers, timeout=10, trust_env=False)
         if resp.status_code != 200:
             logger.warning("华尔街见闻 HTTP %d", resp.status_code)
             return []
@@ -301,7 +301,7 @@ def _make_aid(source_id: str, unique_key: str) -> str:
 def _get_bigrams(text: str) -> set:
     """提取文本的 bigram 集合（去掉标点和空格）"""
     import re
-    clean = re.sub(r'[\s\u3000,，。.!！?？:：;；、""''「」【】—（）()《》\-]', '', text)
+    clean = re.sub(r'[\s\u3000,，。.!！?？:：;；、""''「」【】—（）()《》-]', '', text)
     result = set()
     for i in range(len(clean) - 1):
         result.add(clean[i:i + 2])
@@ -614,21 +614,6 @@ class AKShareSource:
             if _title_similarity(title, recent) >= threshold:
                 return True
         return False
-
-    def fetch_cls_only(self):
-        """仅获取财联社电报（用于高频轮询）"""
-        cls_msgs = self._fetch_with_dedup(_fetch_cls_telegraph, '财联社')
-        for msg in cls_msgs:
-            msg['aid'] = _make_aid(self._source_id,
-                                    msg['title'] + str(msg.get('ctime', '')))
-            msg['source_id'] = self._source_id
-            msg['source_name'] = '涨停聚合（Beta）'
-            msg['categoryId'] = 0
-            msg['stocks'] = msg.get('stocks', [])
-            msg['child'] = []
-        self._enqueue_messages(cls_msgs)
-        if cls_msgs:
-            logger.info("涨停聚合（Beta）·财联社: 入队 %d 条", len(cls_msgs))
 
     def cleanup_seen_ids(self, max_size: int = 500):
         """清理 seen_ids 和 recent_titles，防止无限增长（线程安全）。

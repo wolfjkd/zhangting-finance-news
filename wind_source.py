@@ -162,8 +162,11 @@ class WindSource:
         # 最近标题列表（用于模糊去重）
         self._recent_titles: List[str] = []
 
-        # 宏观指标上次值（避免重复推送相同数据）
+        # 宏观指标上次值（纯文本分支专用：同指标同文本不重复推送）
         self._macro_last_values: Dict[str, str] = {}
+
+        # 宏观结构化数据判重键集（指标_值_日期三元组；与 _macro_last_values 语义分离——审计 #20）
+        self._macro_seen_keys: set = set()
 
         # 模块轮询计数器
         self._poll_counter = 0
@@ -537,11 +540,15 @@ class WindSource:
         if not value:
             return
 
-        # 去重：相同指标+相同值不重复推送
+        # 去重：相同指标+相同值+相同日期不重复推送。原实现把 dedup_key 写回
+        # _macro_last_values（纯文本分支的「原始文本」语义），同指标两种语义互相
+        # 覆盖导致判重失效重复推送（审计 #20）——改用独立键集。
         dedup_key = f"{indicator}_{value}_{date}"
-        if dedup_key in self._macro_last_values.values():
+        if dedup_key in self._macro_seen_keys:
             return
-        self._macro_last_values[indicator] = dedup_key
+        self._macro_seen_keys.add(dedup_key)
+        if len(self._macro_seen_keys) > 500:
+            self._macro_seen_keys = set(list(self._macro_seen_keys)[-250:])
 
         title = f"[Wind·宏观] {indicator}: {value}{unit} ({date})"
         self._dispatch_with_dedup({

@@ -240,16 +240,6 @@ class Api:
             logger.error(f'窗口置顶异常: {e}')
             return json.dumps({'status': 'error', 'message': str(e)})
 
-    def resize_window(self, width, height):
-        self._window().resize(int(width), int(height))
-        return json.dumps({'status': 'ok'})
-
-    def get_window_size(self):
-        return json.dumps({
-            'width': self._window().width,
-            'height': self._window().height
-        })
-
     def _find_hwnd(self):
         if self._main_hwnd:
             if ctypes.windll.user32.IsWindow(self._main_hwnd):
@@ -669,7 +659,7 @@ class Api:
     def fetch_initial(self):
         logger.info('开始抓取初始页面: %s', SOURCE_URL)
         try:
-            resp = requests.get(SOURCE_URL, timeout=15, headers={
+            resp = requests.get(SOURCE_URL, timeout=15, trust_env=False, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             })
             resp.encoding = 'utf-8'
@@ -747,8 +737,8 @@ class Api:
         if self._ws:
             try:
                 self._ws.close()
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f'关闭 WebSocket 失败: {e}')
         return json.dumps({'status': 'ok'})
 
     def load_more(self, oldest_ctime):
@@ -757,6 +747,7 @@ class Api:
                 'https://724.guzhang.com/index',
                 json={'stime': int(oldest_ctime)},
                 timeout=10,
+                trust_env=False,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Content-Type': 'application/json'
@@ -804,8 +795,8 @@ class Api:
         if raw == 'ping':
             try:
                 self._ws.send('pong')
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f'WebSocket pong 发送失败（连接可能已断开）: {e}')
             return
         logger.info(f'WebSocket 收到消息: {raw[:300]}...')
         self._notify_js('ws_message', raw)
@@ -836,18 +827,6 @@ class Api:
                 logger.warning('_notify_js: 窗口未就绪')
         except Exception as e:
             logger.error(f'JS通知发送失败: {e}')
-
-    def init_data_source_manager(self):
-        try:
-            from data_source_manager import data_source_manager
-            self._data_source_manager = data_source_manager
-            data_source_manager.set_message_callback(self._on_data_source_message)
-            data_source_manager.start_all_enabled_sources()
-            logger.info('数据源管理器初始化完成')
-            return json.dumps({'status': 'ok'})
-        except Exception as e:
-            logger.error('初始化数据源管理器失败: %s', e)
-            return json.dumps({'status': 'error', 'message': str(e)})
 
     def _on_data_source_message(self, message):
         try:

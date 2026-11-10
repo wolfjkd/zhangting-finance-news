@@ -65,7 +65,7 @@
           const msg = data.message || '未知错误';
           if (msg.includes('网络连接') || msg.includes('无法连接') || msg.includes('timeout')) {
             H().showToast('检查更新失败：无法连接 GitHub，请检查网络/代理', { type: 'error', duration: 6000 });
-            console.log('[更新检查失败详情]', msg);
+            if (H().debugMode) console.log('[更新检查失败详情]', msg);
           } else {
             H().showToast('检查更新失败：' + msg, { type: 'error' });
           }

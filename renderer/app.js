@@ -99,6 +99,7 @@
 
   // 注入 host：设置读写 + 留在 app.js 的能力（关键词/高亮/自选股预警/收藏搜索/字体/版本）
   window.ztfi.settingsPanel.attach({
+    debugMode: DEBUG_MODE,
     getSettings: () => settings,
     saveSettings: () => saveSettings(),
     applyFontSize: (size) => applyFontSize(size),
@@ -115,12 +116,14 @@
     updateFavoritesBadge: () => window.ztfi.favoritesSearch.updateFavoritesBadge(),
     getCurrentVersion: () => getCurrentVersion(),
   });
-  // 注入 host：toast
+  // 注入 host：toast + debugMode（更新检查失败详情日志）
   window.ztfi.updateCheck.attach({
+    debugMode: DEBUG_MODE,
     showToast: (msg, opts) => showToast(msg, opts),
   });
   // 注入 host：设置读写（waitForApi 会重载 settings）+ 启动/隐私/状态/统计/toast 回调
   window.ztfi.windowService.attach({
+    debugMode: DEBUG_MODE,
     getSettings: () => settings,
     reloadSettings: () => { settings = loadSettings(); window._settings = settings; },
     init: () => init(),
@@ -291,7 +294,7 @@
           setStatus('connecting', '正在连接实时推送...');
           await pywebview.api.start_ws();
         } else {
-          console.log('[init] 传统聚合（ztfi）已关闭，跳过 WebSocket 启动');
+          if (DEBUG_MODE) console.log('[init] 传统聚合（ztfi）已关闭，跳过 WebSocket 启动');
           setStatus('ok', '已连接（传统聚合已关闭）');
         }
       } else {
@@ -349,7 +352,7 @@
           return;
         }
         // 音色列表已静态写在 HTML 中，这里仅做可用性确认
-        console.log('Edge TTS 可用，音色数:', Object.keys(data.voices).length);
+        if (DEBUG_MODE) console.log('Edge TTS 可用，音色数:', Object.keys(data.voices).length);
       } catch (e) {
         console.warn('Edge TTS 检测失败:', e);
       }
@@ -696,13 +699,13 @@
     settings.isPinned = isPinned;
     saveSettings();
     $btnPin.classList.toggle('active', isPinned);
-    console.log('[置顶调试] pywebview:', typeof window.pywebview);
-    console.log('[置顶调试] pywebview.api:', typeof window.pywebview?.api);
-    console.log('[置顶调试] toggle_pin:', typeof window.pywebview?.api?.toggle_pin);
-    console.log('[置顶调试] isPinned:', isPinned);
+    if (DEBUG_MODE) console.log('[置顶调试] pywebview:', typeof window.pywebview);
+    if (DEBUG_MODE) console.log('[置顶调试] pywebview.api:', typeof window.pywebview?.api);
+    if (DEBUG_MODE) console.log('[置顶调试] toggle_pin:', typeof window.pywebview?.api?.toggle_pin);
+    if (DEBUG_MODE) console.log('[置顶调试] isPinned:', isPinned);
     if (window.pywebview && window.pywebview.api) {
       pywebview.api.toggle_pin(isPinned).then(result => {
-        console.log('[置顶调试] toggle_pin 返回:', result);
+        if (DEBUG_MODE) console.log('[置顶调试] toggle_pin 返回:', result);
       }).catch(err => {
         console.error('[置顶调试] toggle_pin 失败:', err);
       });

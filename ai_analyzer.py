@@ -54,6 +54,7 @@ class CustomAdapter(AIAnalyzer):
             prompt = self._build_prompt(title, content)
             response = requests.post(
                 self.base_url,
+                trust_env=False,
                 headers={
                     'Authorization': f'Bearer {self.api_key}',
                     'Content-Type': 'application/json'

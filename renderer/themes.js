@@ -16,6 +16,8 @@
  *     预设行内变量），并把暗色开关 UI 复位为关闭。双向切换：先开暗色再选预设，以预设为准。
  */
 
+const ZTFI_THEME_DEBUG = false; // 调试日志开关（全局对象模块，无 host 注入通道）
+
 // ===== 预设主题（完整语义色令牌集，对齐 DESIGN_SYSTEM.md / style.css :root）=====
 
 const PRESET_THEMES = {
@@ -384,7 +386,7 @@ getPresetThemes() {
             window.pywebview.api.set_theme(intentDark ? 'dark' : 'light').catch(() => {});
         }
 
-        console.log('主题已切换:', theme.name, themeId);
+        if (ZTFI_THEME_DEBUG) console.log('主题已切换:', theme.name, themeId);
     },
 
     /**

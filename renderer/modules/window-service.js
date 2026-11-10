@@ -57,7 +57,7 @@
     if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       const report = H().getStatsReport();
-      console.log('[统计报告]', JSON.stringify(report, null, 2));
+      if (H().debugMode) console.log('[统计报告]', JSON.stringify(report, null, 2));
       H().showToast('统计报告已输出到控制台，按 F12 查看', { type: 'info', duration: 4000 });
     }
   });
