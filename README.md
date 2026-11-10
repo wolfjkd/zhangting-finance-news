@@ -8,12 +8,13 @@
 
 ## ✨ 当前版本亮点（v4.4.6）
 
-> 本次版本聚焦一件事：**让前端代码更好维护**。纯内部结构重构，不动框架、不破坏老用户配置，升级后使用体验与旧版完全一致。
+> 本次版本聚焦两件事：**清偿全量代码审计的 P2/P3 存量问题** + **拆掉最后一个大文件**。不破坏老用户配置，升级后使用体验与旧版完全一致。
 
-### 🧩 v4.4.6 前端 app.js 拆模块重构（本次）
-- **前端可维护性大改造（对外接口与用户可见行为零变化）**：`renderer/app.js` 5036 行按功能域拆为 24 个独立模块，统一挂 `window.ztfi` 命名空间 + host 注入装配，主文件收敛至 **766 行**
-- **模块划分**：core / utils / dom / ui-utils / settings-store / voice-service / news-list / dialogs-legal / dialogs-datasource / dialogs-onboarding / watchlist-view / keyword-alert / watchlist-alert / ai-service / settings-panel / update-check / window-service / favorites-search / history-buffer / stats / news-detail 等
-- **修复历史消息搜索**：此前「点搜索全是未匹配」，根因是词索引按 4 字块错配；已改为标题/正文子串匹配 + 时间倒序扫描
+### 🧩 v4.4.6 审计清偿 + 数据层拆模块（本次）
+- **审计 P2 清偿 12 条**：网络请求强制国内直连（`trust_env=False` ×6）、调试日志纪律（裸 `console.log` ×21 包开关）、死代码组删除（翻译队列 / 重复 Api 定义等）、**个人运维脚本移出开源仓（隐私）**、searchIndex 停写、历史清理 O(N²) 缓解、Wind 宏观去重语义分离、代理探测并发化 + 300s 节流、对话框宽度统一 420px
+- **审计 P3 择要六项**：收藏搜索转义、`_make_aid` 四份收口 `news_common.py`、硬编码日期动态化（2027 起失效隐患）、ESC/canvas 监听泄漏修复、WS 重连退避连接成功即重置、Wind 额度请求级统一计费
+- **架构改进**：`history-storage.js`（1415 行）拆为 `idb-core` / `history-search` / `watchlist-store` / `favorites-store` 四模块，聚合门面 `window.ztfi.historyStorage`（44 处调用点迁移，全局残留清零），死代码消化 477 行
+- **护栏升级**：`check.py` 升五件套——新增 `window.*` 越界挂载扫描（白名单制），模块全局只许挂 `window.ztfi.*`
 
 ### 🔧 v4.4.0 重构收尾：翻译/延时推送服务抽离 + 死代码清理（已生效）
 - **继续结构性重构（对外功能零变化）**：翻译体系抽为 `TranslationService`（多源降级 + 限流冷却 + 结果缓存）、外网延迟推送队列抽为 `DelayedPushQueue`，依赖以构造注入；`data_source_manager.py` 1946 → 1760 行
@@ -82,7 +83,13 @@ SQLite 启用 **WAL（Write-Ahead Logging）模式** + `synchronous=NORMAL`：
 
 ## 更新日志
 
-### v4.4.6（2026-10-16）
+### v4.4.6（2026-11-11）
+- **审计 P2 清偿 12 条**：trust_env 直连、DEBUG_MODE 纪律（21 处）、死代码组删除、个人运维脚本移出开源仓（隐私）、searchIndex 停写、清理 O(N²) 缓解、Wind 去重语义分离、代理探测并发化 + TTL、对话框宽度 420px
+- **审计 P3 择要六项**：收藏搜索转义、_make_aid 收口 news_common.py、硬编码日期动态化、ESC/canvas 监听泄漏修复、WS 退避重置、Wind 额度请求级计费
+- **架构 #1**：history-storage.js 拆为 idb-core / history-search / watchlist-store / favorites-store 四模块（门面 window.ztfi.historyStorage，44 处调用点迁移，死代码消化 477 行）
+- **护栏**：check.py 升五件套（+window.* 越界挂载扫描）
+
+### v4.4.1（2026-10-16）
 - **前端 app.js 拆模块重构（对外功能零变化）**：5036 行拆为 24 个独立模块（`window.ztfi` 命名空间 + host 注入），`app.js` 收敛至 766 行；`index.html` 加载顺序与打包 spec 同步
 - **修复历史消息搜索全部未匹配**：词索引 4 字块错配导致零命中，改为标题/正文子串匹配 + 时间倒序扫描
 - **build.bat 合规化**：改为 GBK + CRLF + `chcp 936` + `goto` 兜底（修复潜在中文乱码/闪退隐患）
