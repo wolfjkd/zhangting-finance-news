@@ -1,11 +1,11 @@
 {
-    "latest_version": "v4.4.1",
-    "release_date": "2026-10-16",
+    "latest_version": "v4.4.6",
+    "release_date": "2026-11-11",
     "changelog": [
-        "前端 app.js 拆模块重构：5036 行拆为 24 个独立模块（window.ztfi 命名空间 + host 注入），app.js 收敛至 766 行——对外接口与用户可见行为零变化",
-        "模块覆盖：core/utils/dom/ui-utils/settings-store/voice-service/news-list/dialogs-*/watchlist-view/settings-panel/keyword-alert/watchlist-alert/ai-service/update-check/window-service/favorites-search/history-buffer/stats/news-detail",
-        "修复历史消息搜索全部未匹配（词索引 4 字块错配 → 改标题/正文子串匹配 + 时间倒序扫描）",
-        "版本号升级至v4.4.1"
+        "审计 P2 清偿 12 条：trust_env 直连/DEBUG_MODE 纪律（21 处）/死代码组删除/个人运维脚本移出开源仓（隐私）/searchIndex 停写/O(N²) 清理缓解/Wind 去重语义分离/代理探测并发化+TTL/对话框宽度 420px",
+        "审计 P3 择要六项：favorites-search 转义/_make_aid 收口 news_common/硬编码日期动态化/ESC+canvas 监听泄漏修复/WS 重连退避重置/Wind 额度请求级计费",
+        "架构改进：history-storage.js（1415 行）拆为 idb-core/history-search/watchlist-store/favorites-store 四模块，聚合门面 window.ztfi.historyStorage，死代码消化 477 行",
+        "护栏升级：check.py 增 window.* 越界挂载扫描（五件套），白名单 11 项"
     ],
     "urgent": false,
     "urgent_message": "",

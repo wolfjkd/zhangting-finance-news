@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [v4.4.6] - 2026-11-11
+
+审计 P2 清偿 + P3 择要 + 架构改进批次（无人值守施工单 v1.1，基线 7614653）。
+**本批不发布**：tag / Release / 安装包等老板明确通知后执行。
+
+### Fixed（审计修复）
+- P2×12：裸 requests 补 `trust_env=False` ×6（AGENTS.md 硬条款）；裸 `console.log` ×21 包调试开关
+  （app.js `DEBUG_MODE` / 模块 `host.debugMode` / 旧全局模块文件级开关）；`"\-"` 非法转义；
+  Api 类重复定义死方法组删除；翻译队列死代码组 + `update_source_config`/`fetch_cls_only`/
+  `init_data_source_manager` 删除（`load_more` 复核有调用保留）；**个人运维脚本
+  `upload_to_obsidian.py` 移出开源仓（隐私）**；searchIndex 停写；checkAndCleanup
+  O(N²) 缓解（count + 5 分钟节流）；Wind 宏观去重值语义分离；代理探测并发化 + 300s TTL；
+  裸 `except:pass` ×2 补日志；对话框宽度 420px（multi-condition-popup / orderbook-alert /
+  watchlist-alert-dialog）
+- P3 择要六项：favorites-search source/category 补 esc 转义；`_make_aid` 四份收口
+  `news_common.py`；硬编码日期动态化（dsm 连接测试 / app.py 研报 endTime）；news-detail
+  点 X 关闭解绑 keydown + minute-chart 防同 canvas 重复挂载；WS 重连退避连接成功即重置；
+  Wind 额度改 `_mcp_call` 请求级统一计费
+
+### Changed（架构）
+- **history-storage.js（1415 行）拆为四模块**：`idb-core`（DB 连接/消息存储/清理生命周期/
+  回灌编排 + 聚合门面）、`history-search`（子串检索）、`watchlist-store`（自选股/分组）、
+  `favorites-store`（收藏）；聚合门面 `window.ztfi.historyStorage`（惰性转发 20 方法），
+  44 处调用点改走 ztfi 命名空间，全局残留清零；死代码消化 477 行（全仓零调用逐一复核）
+- `check.py` 增第 6 节 window.* 越界挂载扫描（五件套），白名单 11 项
+- `_make_aid` 收口新建 `news_common.py`（跨源共享）
+
+### 验证
+- `python check.py` 五件套全绿（py_compile + node --check 29 JS + 三方同步 27=27=27 +
+  bat 编码 + 版本号 + 越界挂载扫描）；越界扫描正/负双向验收通过
+- 实机冒烟待老板验证项见交接文档 06 号
+
 ## [v4.4.1] - 2026-10-16
 
 前端 `app.js` 拆模块重构批次。把单文件 `renderer/app.js` 按功能域拆为独立模块，
