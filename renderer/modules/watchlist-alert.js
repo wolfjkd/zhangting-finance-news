@@ -24,6 +24,7 @@
   // ===== 自选股异动提醒 =====
   let watchlistAlertTimer = null;
   let watchlistAlertState = {}; // {code: {lastTime, lastHigh, lastLow}} 记录每只股票上次提醒状态
+  let orderbookCheckCount = 0;  // 盘口异动检查轮次计数（降频用，替代失效的时间取模）
 
   function startWatchlistAlertMonitor() {
     if (watchlistAlertTimer) return;
@@ -133,8 +134,10 @@
 
         // 多条件提醒检查
         checkMultiConditionAlerts(q.quote);
-        // 盘口异动检查（每30秒检查一次）
-        if (Math.floor(Date.now() / 30000) % 2 === 0) { // 降频检查
+        // 盘口异动检查（降频：每 2 轮查一次，约 4 分钟。原 `时间戳/30000 取模` 在固定
+        // 120s 轮询下奇偶性恒定——实际效果是每次都查或永不查）
+        orderbookCheckCount += 1;
+        if (orderbookCheckCount % 2 === 0) {
           checkOrderbookAlert(q.quote.code, q.quote.name);
         }
       }

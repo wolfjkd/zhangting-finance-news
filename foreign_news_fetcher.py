@@ -27,7 +27,9 @@
        使 Nitter 等源能像原实现一样提前停止后续网络请求。
 """
 
+import calendar
 import re
+import threading
 import time
 import email.utils
 import logging
@@ -35,6 +37,10 @@ import xml.etree.ElementTree as ET
 from urllib.parse import quote as _url_quote
 
 logger = logging.getLogger('ztfi')
+
+# seen 去重锁：同一 seen OrderedDict 被主轮询线程池、Google/Bloomberg 裸线程与
+# X 优先线程并发 check-and-set，无锁时同一条目可能双重通过判定造成重复推送
+_SEEN_LOCK = threading.Lock()
 
 _ATOM_NS = '{http://www.w3.org/2005/Atom}'
 _IMG_PATTERN = re.compile(r'<img[^>]+src="([^"]+)"')
@@ -177,10 +183,11 @@ class ForeignNewsFetcher:
             return None
 
         unique_key = self._make_key(raw)
-        if unique_key in seen:
-            return None
-        # 注意：与原实现一致——先标记已见，再做翻译。翻译失败的条目不再重试。
-        seen[unique_key] = True
+        with _SEEN_LOCK:
+            if unique_key in seen:
+                return None
+            # 注意：与原实现一致——先标记已见，再做翻译。翻译失败的条目不再重试。
+            seen[unique_key] = True
 
         translated = self._translate(title) if self.NEED_TRANSLATION else title
         if not translated:
@@ -195,7 +202,8 @@ class ForeignNewsFetcher:
         try:
             parsed = email.utils.parsedate(pub_date)
             if parsed:
-                return time.mktime(parsed) >= time.time() - self.MAX_AGE_HOURS * 3600
+                # parsedate 返回 UTC struct_time，mktime 按本地时区误读（偏 8h），用 timegm
+                return calendar.timegm(parsed) >= time.time() - self.MAX_AGE_HOURS * 3600
         except Exception:
             pass
         return True
@@ -218,7 +226,7 @@ class ForeignNewsFetcher:
             'content': self._content(raw),
             'comefrom': raw.get('comefrom') or self.COMEFROM or self.SOURCE_NAME,
             'ctime': int(time.time()),
-            'ptime': pub_date[:16] if pub_date else '',
+            'ptime': self._format_local_time(pub_date),
             'categoryId': 0,
             'stocks': [],
             'child': [],
@@ -227,6 +235,19 @@ class ForeignNewsFetcher:
         if images:
             msg['images'] = images[:3]
         return msg
+
+    @staticmethod
+    def _format_local_time(pub_date: str) -> str:
+        """RFC822 UTC 时间串 → 本地 'MM-DD HH:MM' 展示；解析失败回退原文前 16 字符"""
+        if not pub_date:
+            return ''
+        try:
+            parsed = email.utils.parsedate(pub_date)
+            if parsed:
+                return time.strftime('%m-%d %H:%M', time.localtime(calendar.timegm(parsed)))
+        except Exception:
+            pass
+        return pub_date[:16]
 
     def _content(self, raw) -> str:
         """正文内容，默认空；子类可覆写（如 Reddit 的作者行）"""

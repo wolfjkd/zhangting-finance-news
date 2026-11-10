@@ -551,9 +551,12 @@ class HistoryStorage {
       };
       
       const request = store.put(favData);
-      
+
       request.onsuccess = () => {
         console.log('消息已收藏:', favData.title);
+        // 写穿同步到后端（%APPDATA%/ZTFINews/favorites.json）：IndexedDB 随 WebView2
+        // 用户数据目录清理而丢，关键收藏必须有后端持久化通道
+        this._syncFavoritesToBackend();
         resolve(true);
       };
       
@@ -574,9 +577,10 @@ class HistoryStorage {
       const store = transaction.objectStore('favorites');
       
       const request = store.delete(messageId);
-      
+
       request.onsuccess = () => {
         console.log('收藏已移除:', messageId);
+        this._syncFavoritesToBackend();
         resolve(true);
       };
       
@@ -1145,36 +1149,41 @@ class HistoryStorage {
    */
   async deleteWatchlistGroup(groupId) {
     if (!this.db || groupId === 'ungrouped') return false;
-    
+
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['watchlistGroups', 'watchlist'], 'readwrite');
       const groupStore = transaction.objectStore('watchlistGroups');
       const watchStore = transaction.objectStore('watchlist');
-      
+
       // 先删除分组
       const deleteGroupReq = groupStore.delete(groupId);
-      
+
       deleteGroupReq.onsuccess = () => {
         // 将该分组的股票移到未分组
         const index = watchStore.index('groupId');
         const request = index.openCursor(groupId);
-        
+
         request.onsuccess = (event) => {
           const cursor = event.target.result;
           if (cursor) {
             cursor.value.groupId = 'ungrouped';
             cursor.update(cursor.value);
             cursor.continue();
+          } else {
+            // 游标扫完（迁移完成）再同步回写与 resolve：原先在 onsuccess 里立即回写
+            // 会读到迁移前的旧数据，且外层不存在 request 变量，此处一旦执行必 ReferenceError
+            this._syncWatchlistToBackend();
+            this._syncWatchlistGroupsToBackend();
+            resolve(true);
           }
         };
-        
-        console.log('已删除分组:', groupId);
-        this._syncWatchlistToBackend();
-        this._syncWatchlistGroupsToBackend();
-        resolve(true);
+
+        request.onerror = (event) => {
+          reject(event.target.error);
+        };
       };
-      
-      request.onerror = (event) => {
+
+      deleteGroupReq.onerror = (event) => {
         reject(event.target.error);
       };
     });
@@ -1314,6 +1323,36 @@ class HistoryStorage {
     }
   }
 
+  async _syncFavoritesToBackend() {
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.persist_favorites) {
+        const favorites = await this.getAllFavorites({ limit: 1000, offset: 0 });
+        await pywebview.api.persist_favorites(JSON.stringify(favorites));
+      }
+    } catch (e) {
+      console.warn('同步收藏到后端失败:', e);
+    }
+  }
+
+  async _importFavorites(favorites) {
+    if (!this.db) await this.openDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction(['favorites'], 'readwrite');
+      const store = transaction.objectStore('favorites');
+
+      for (const fav of favorites) {
+        store.put(fav);
+      }
+      transaction.oncomplete = () => {
+        resolve(favorites.length);
+      };
+      transaction.onerror = (event) => {
+        reject(event.target.error);
+      };
+    });
+  }
+
   async _clearWatchlistStores() {
     if (!this.db) await this.openDB();
     
@@ -1381,6 +1420,17 @@ class HistoryStorage {
             for (const stock of parsedWatchlist) {
               await this.addWatchlistStock({ code: stock.code, name: stock.name }, stock.groupId || 'ungrouped');
             }
+          }
+        }
+
+        // 回灌收藏：后端 favorites.json → IndexedDB（put 按主键合并，不覆盖本地已有）
+        if (window.pywebview.api.get_favorites) {
+          const backendFavs = await window.pywebview.api.get_favorites();
+          const favs = typeof backendFavs === 'string' ? JSON.parse(backendFavs) : backendFavs;
+          if (Array.isArray(favs) && favs.length) {
+            await this._importFavorites(favs);
+            // 合并后回写全量快照，双端收敛（本地新增项也会同步上去）
+            await this._syncFavoritesToBackend();
           }
         }
       }

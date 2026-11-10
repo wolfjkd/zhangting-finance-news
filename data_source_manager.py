@@ -1401,7 +1401,11 @@ class DataSourceManager:
         import feedparser
         for rss in rss_sources:
             try:
-                feed = feedparser.parse(rss["url"])
+                # feedparser.parse(url) 内部 urllib 无超时，对端挂起会永久卡死轮询线程；
+                # 改为带超时的直连 session 先取内容（trust_env=False，不走系统代理）
+                resp = _session.get(rss["url"], timeout=10)
+                resp.raise_for_status()
+                feed = feedparser.parse(resp.content)
                 if not feed.entries:
                     continue
                 messages = []
@@ -1414,9 +1418,11 @@ class DataSourceManager:
                     content = entry.get('summary', entry.get('description', ''))[:500]
                     pub_time = ''
                     if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                        import time as _time
-                        ctime = int(_time.mktime(entry.published_parsed))
-                        pub_time = _time.strftime('%H:%M:%S', entry.published_parsed)
+                        # feedparser 的 published_parsed 是 UTC struct_time：mktime 按本地时区
+                        # 误读（时间戳偏 8 小时），必须 timegm；展示时间同步转本地时区
+                        import calendar as _calendar
+                        ctime = int(_calendar.timegm(entry.published_parsed))
+                        pub_time = time.strftime('%H:%M:%S', time.localtime(ctime))
                     else:
                         ctime = int(time.time())
 
@@ -1443,7 +1449,7 @@ class DataSourceManager:
                 if messages:
                     logger.info("RSS %s: 推送 %d 条", rss["name"], len(messages))
             except Exception as e:
-                logger.debug("RSS %s 获取失败: %s", rss["name"], e)
+                logger.warning("RSS %s 获取失败: %s", rss["name"], e)
 
     # ===== 消息处理 =====
     def _process_source_messages(self, source_id: str, messages: List[Dict]):

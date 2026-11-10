@@ -207,7 +207,7 @@ class TushareSource:
             if df is None or df.empty:
                 return
 
-            # 筛选异动：涨停(>=9.8%) 或 跌停(<=-9.8%) 或 大幅波动(>=5%)
+            # 筛选异动：按板块阈值判定涨停/跌停，或大幅波动(>=阈值/2)
             anomalies = df[
                 (df['pct_chg'].abs() >= 5) &
                 (df['vol'] > 0)
@@ -219,12 +219,13 @@ class TushareSource:
                 pct = float(row.get('pct_chg', 0))
                 close = float(row.get('close', 0))
 
-                # 涨停/跌停判断
-                if pct >= 9.8:
+                # 涨停/跌停判断：按板块取阈值（20cm/30cm 板不再被 9.8% 一刀切误标）
+                threshold = self._limit_threshold(ts_code)
+                if pct >= threshold:
                     tag = "涨停"
-                elif pct <= -9.8:
+                elif pct <= -threshold:
                     tag = "跌停"
-                elif pct >= 5:
+                elif pct >= threshold / 2:
                     tag = "大涨"
                 else:
                     tag = "大跌"
@@ -244,6 +245,21 @@ class TushareSource:
             logger.info("Tushare: 日线异动扫描完成，发现 %d 条", len(anomalies))
         except Exception as e:
             logger.error("Tushare 日线异动扫描失败: %s", e)
+
+    @staticmethod
+    def _limit_threshold(ts_code: str) -> float:
+        """涨停/跌停判定阈值（%）。
+
+        创业板(30)/科创板(68) 20cm、北交所(43/83/87/88/92 开头) 30cm、其余主板 10cm。
+        ST 5cm 需股票名称映射（pro.stock_basic），日线异动扫描拿不到名称暂不特判：
+        ST 票封板只会被标为"大涨"而非误标"涨停"，方向安全。
+        """
+        code = ts_code.split('.')[0]
+        if code[:2] in ('30', '68'):
+            return 19.8
+        if code[:2] in ('43', '83', '87', '88', '92'):
+            return 29.8
+        return 9.8
 
     def _fetch_news(self):
         """获取财经新闻"""

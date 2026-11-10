@@ -1,44 +1,44 @@
 @echo off
-:: æ¶¨åœè´¢ç»èšåˆæ’­æŠ¥ v3.10.1ï¼ˆå¼€æºç‰ˆï¼‰
-:: å¼€å‘æ¨¡å¼å¯åŠ¨è„šæœ¬ - ä½¿ç”¨é¡¹ç›®æœ¬åœ° .venv è¿è¡Œ
-:: æ‰“åŒ…åŽçš„ exe ä½äºŽ dist/ ç›®å½•
-chcp 65001 >nul
+:: ÕÇÍ£²Æ¾­¾ÛºÏ²¥±¨ v4.4.1£¨¿ªÔ´°æ£©
+:: ¿ª·¢Ä£Ê½Æô¶¯½Å±¾ - Ê¹ÓÃÏîÄ¿±¾µØ .venv ÔËÐÐ
+:: ´ò°üºóµÄ exe Î»ÓÚ dist/ Ä¿Â¼
+chcp 936 >nul
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 rem ---------------------------------------------------------------
-rem 2026-10-31 ä¿®å¤ï¼šåŽŸå…ˆç›´æŽ¥è°ƒ PATH ä¸Šçš„ pythonwï¼Œé‚£æ˜¯è£¸è§£é‡Šå™¨ï¼Œ
-rem æ²¡è£… pywebview/akshareï¼ŒåŒå‡»å³é—ªé€€ã€‚æ”¹ä¸ºå€™é€‰æŽ¢æµ‹ + å®žæµ‹ importã€‚
-rem åªåˆ¤æ–­è§£é‡Šå™¨æ–‡ä»¶å­˜åœ¨ä¸ç®—æ•° â€”â€” è§£é‡Šå™¨åœ¨ã€åŒ…æ²¡äº†ç…§æ ·èµ·ä¸æ¥ã€‚
+rem 2026-10-31 ÐÞ¸´£ºÔ­ÏÈÖ±½Óµ÷ PATH ÉÏµÄ pythonw£¬ÄÇÊÇÂã½âÊÍÆ÷£¬
+rem Ã»×° pywebview/akshare£¬Ë«»÷¼´ÉÁÍË¡£¸ÄÎªºòÑ¡Ì½²â + Êµ²â import¡£
+rem Ö»ÅÐ¶Ï½âÊÍÆ÷ÎÄ¼þ´æÔÚ²»ËãÊý ¡ª¡ª ½âÊÍÆ÷ÔÚ¡¢°üÃ»ÁËÕÕÑùÆð²»À´¡£
+rem 2026-11-10 Ìå¼ì£ºÏû³ý¿çÐÐÀ¨ºÅ¿é£¨bat ¹æ·¶£©£¬¸Ä call ×Ó¹ý³Ì½á¹¹£¬
+rem ÅÐ¾Ý²»±ä£ººòÑ¡½âÊÍÆ÷±ØÐëÊµ²â import webview, akshare ²ÅËã¿ÉÓÃ¡£
 rem ---------------------------------------------------------------
 set "PYW="
-if exist ".venv\Scripts\pythonw.exe" (
-    ".venv\Scripts\python.exe" -c "import webview, akshare" >nul 2>&1
-    if not errorlevel 1 set "PYW=.venv\Scripts\pythonw.exe"
-)
-if not defined PYW (
-    for /f "delims=" %%I in ('where pythonw 2^>nul') do (
-        if not defined PYW (
-            "%%~dpIpython.exe" -c "import webview, akshare" >nul 2>&1
-            if not errorlevel 1 set "PYW=%%I"
-        )
-    )
-)
-if not defined PYW goto :nopython
+if exist ".venv\Scripts\pythonw.exe" call :TRY ".venv\Scripts\python.exe" ".venv\Scripts\pythonw.exe"
+if defined PYW goto HAVE_PY
 
+for /f "delims=" %%I in ('where pythonw 2^>nul') do if not defined PYW call :TRY "%%~dpIpython.exe" "%%I"
+if not defined PYW goto NOPYTHON
+
+:HAVE_PY
 start "" "%PYW%" app.py
 goto :eof
 
-:nopython
+:TRY
+%1 -c "import webview, akshare" >nul 2>&1 && set "PYW=%~2"
+goto :eof
+
+:NOPYTHON
 echo.
-echo   [é”™è¯¯] æœªæ‰¾åˆ°å¯ç”¨çš„ Python çŽ¯å¢ƒï¼ˆéœ€è¦å·²è£… pywebview / akshareï¼‰
+echo   [´íÎó] Î´ÕÒµ½¿ÉÓÃµÄ Python »·¾³£¨ÐèÒªÒÑ×° pywebview / akshare£©
 echo.
-echo   å·²å°è¯•ï¼š
+echo   ÒÑ³¢ÊÔ£º
 echo     1) .venv\Scripts\pythonw.exe
-echo     2) PATH ä¸Šçš„ pythonw
+echo     2) PATH ÉÏµÄ pythonw
 echo.
-echo   ä¿®å¤ï¼šåœ¨æœ¬ç›®å½•æ‰§è¡Œ
+echo   ÐÞ¸´£ºÔÚ±¾Ä¿Â¼Ö´ÐÐ
 echo     uv venv --python 3.13
 echo     uv pip install -r requirements.txt
 echo.
 pause
+goto :eof

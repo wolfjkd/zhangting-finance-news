@@ -429,6 +429,9 @@ class Api:
 
     def download_update(self):
         try:
+            if not getattr(sys, 'frozen', False):
+                # 开发模式下 sys.executable 是 .venv 的 pythonw.exe，自更新删它等于自毁解释器
+                return json.dumps({'status': 'error', 'message': '开发模式不支持自更新，请手动重启'})
             # 与更新检测一致：走代理 session（国内直连 GitHub 常失败）
             session = self._get_github_session()
             resp = session.get(self._RELEASES_API_URL, timeout=10)
@@ -466,14 +469,26 @@ class Api:
 
             logger.info(f'下载完成: {new_exe_name}')
 
-            old_exe_path = sys.executable
+            old_exe_name = os.path.basename(old_exe_path)
             update_bat_path = os.path.join(exe_dir, 'update.bat')
-            with open(update_bat_path, 'w', encoding='utf-8') as f:
-                f.write(f'@echo off\n')
-                f.write(f'timeout /t 3 /nobreak >nul\n')
-                f.write(f'del "{old_exe_path}"\n')
-                f.write(f'start "" "{new_exe_path}"\n')
-                f.write(f'del "%~f0"\n')
+            # 自更新 bat 规约（Windows批处理文件规则）：GBK 编码 + CRLF + chcp 936——
+            # cmd 按 GBK 解析批处理，UTF-8 中文路径必乱码；先按 PID 杀掉运行中的本进程
+            # 再删旧 exe（直接 del 运行中文件必 Access Denied）；结尾 pause 兜底，
+            # start 失败时错误信息不会随窗口秒关，自删除放在最后一行
+            bat_content = (
+                '@echo off\r\n'
+                'chcp 936 >nul\r\n'
+                'cd /d "%~dp0"\r\n'
+                'timeout /t 3 /nobreak >nul\r\n'
+                f'taskkill /f /pid {os.getpid()} >nul 2>&1\r\n'
+                f'del "{old_exe_name}"\r\n'
+                f'start "" "{new_exe_name}"\r\n'
+                'echo [提示] 更新程序执行完毕，本窗口可关闭\r\n'
+                'pause >nul\r\n'
+                'del "%~f0"\r\n'
+            )
+            with open(update_bat_path, 'wb') as f:
+                f.write(bat_content.encode('gbk', errors='replace'))
 
             os.startfile(update_bat_path)
             return json.dumps({'status': 'ok', 'message': '更新已下载，即将自动重启'})
@@ -582,6 +597,34 @@ class Api:
             return json.dumps([])
         except Exception as e:
             logger.warning(f'读取自选股分组失败: {e}')
+            return json.dumps([])
+
+    def persist_favorites(self, favorites_json):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, 'favorites.json')
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(favorites_json)
+            logger.info(f'收藏已保存到 {config_path}')
+            return json.dumps({'status': 'ok'})
+        except Exception as e:
+            logger.warning(f'保存收藏失败: {e}')
+            return json.dumps({'status': 'error', 'message': str(e)})
+
+    def get_favorites(self):
+        try:
+            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'ZTFINews')
+            config_path = os.path.join(config_dir, 'favorites.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if content.strip():
+                        return content
+                    return json.dumps([])
+            return json.dumps([])
+        except Exception as e:
+            logger.warning(f'读取收藏失败: {e}')
             return json.dumps([])
 
     def get_window_size(self):

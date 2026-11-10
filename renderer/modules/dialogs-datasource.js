@@ -469,7 +469,7 @@
       } catch (err) { H().showToast('保存失败: ' + err.message, { type: 'error' }); }
     });
     // 刷新额度
-    dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', async () => {
+    const refreshWindQuota = async () => {
       try {
         const resp = await pywebview.api.get_wind_quota();
         const d = JSON.parse(resp);
@@ -479,13 +479,12 @@
             <span class="config-hint">(日期: ${U().esc(d.date)})</span>
             <button id="wind-refresh-quota-btn" class="config-secondary-btn">刷新</button>
           `;
-          // 重新绑定刷新按钮
-          dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', () => {
-            dialog.querySelector('#wind-refresh-quota-btn').click();
-          });
+          // 重新绑定刷新逻辑本身；此前绑的是 btn.click() 自递归，第二次点击即无限递归栈溢出
+          dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', refreshWindQuota);
         }
       } catch (err) { H().showToast('刷新失败: ' + err.message, { type: 'error' }); }
-    });
+    };
+    dialog.querySelector('#wind-refresh-quota-btn').addEventListener('click', refreshWindQuota);
     // 测试连接
     dialog.querySelector('#wind-test-btn').addEventListener('click', async () => {
       const resultDiv = dialog.querySelector('.wind-test-result');

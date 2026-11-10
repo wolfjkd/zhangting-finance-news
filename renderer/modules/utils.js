@@ -25,7 +25,9 @@
     if (!s) return '';
     const d = document.createElement('div');
     d.textContent = s;
-    return d.innerHTML;
+    // textContent→innerHTML 只转义 & < >，不转义引号；属性值上下文
+    // （如 <img src="${esc(url)}">）可被含引号的外部数据 breakout 成 XSS，必须补转义
+    return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   /** 数字补零到两位（时间格式化用） */
