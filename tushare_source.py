@@ -9,7 +9,6 @@ Tushare 独立数据源 — 权限自适应 + 多接口轮询
 - 配置文件：%APPDATA%/ZTFINews/tushare_config.json
 """
 
-import hashlib
 import time
 import logging
 import os
@@ -83,11 +82,8 @@ def save_token(token: str) -> bool:
         return False
 
 
-def _make_aid(source_id: str, unique_key: str) -> str:
-    """生成唯一 aid"""
-    h = hashlib.md5(f"{source_id}:{unique_key}".encode()).hexdigest()[:12]
-    return f"{source_id}_{h}"
-
+# 审计 P3：原四份逐字重复的 _make_aid 收口共享模块（调用点名称不变）
+from news_common import make_aid as _make_aid
 
 class TushareSource:
     """Tushare 独立数据源

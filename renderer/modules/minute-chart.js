@@ -9,17 +9,27 @@
 
 class MinuteChart {
     constructor(canvas) {
+        // 防监听累积：同一 canvas 重复 new 前先解绑旧实例的监听（审计 P3）
+        if (canvas.__minuteChartDestroy) canvas.__minuteChartDestroy();
+
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.data = null;
         this._hoverIndex = -1;
 
-        // 绑定鼠标事件
-        canvas.addEventListener('mousemove', (e) => this._onMouseMove(e));
-        canvas.addEventListener('mouseleave', () => {
+        // 绑定鼠标事件（引用存实例，供销毁解绑）
+        this._onMouseMoveBound = (e) => this._onMouseMove(e);
+        this._onMouseLeaveBound = () => {
             this._hoverIndex = -1;
             this.draw();
-        });
+        };
+        canvas.addEventListener('mousemove', this._onMouseMoveBound);
+        canvas.addEventListener('mouseleave', this._onMouseLeaveBound);
+        canvas.__minuteChartDestroy = () => {
+            canvas.removeEventListener('mousemove', this._onMouseMoveBound);
+            canvas.removeEventListener('mouseleave', this._onMouseLeaveBound);
+            delete canvas.__minuteChartDestroy;
+        };
 
         // 高分屏适配
         this._setupDPR();

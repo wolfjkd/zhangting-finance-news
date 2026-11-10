@@ -14,7 +14,6 @@ MCP 协议：JSON-RPC 2.0 over HTTP
 端点：https://mcp.wind.com.cn/vserver_<server_type>/mcp/
 """
 
-import hashlib
 import time
 import logging
 import os
@@ -121,10 +120,8 @@ def save_wind_config(config: Dict) -> bool:
         return False
 
 
-def _make_aid(source_id: str, unique_key: str) -> str:
-    """生成唯一 aid"""
-    h = hashlib.md5(f"{source_id}:{unique_key}".encode()).hexdigest()[:12]
-    return f"{source_id}_{h}"
+# 审计 P3：原四份逐字重复的 _make_aid 收口共享模块（调用点名称不变）
+from news_common import make_aid as _make_aid
 
 
 def _parse_sse(text: str) -> Dict:
@@ -233,6 +230,9 @@ class WindSource:
 
         try:
             resp = _http.post(endpoint, headers=headers, data=body, timeout=timeout)
+            # 请求级计费：每次 HTTP 调用（initialize/tools/call）统一计 1，原业务层只计
+            # tools/call 一次、initialize 漏计（审计 P3 额度修正）
+            self._increment_quota(1)
             if resp.status_code != 200:
                 logger.error("Wind MCP 调用失败: HTTP %d, server=%s", resp.status_code, server_type)
                 return None
@@ -314,8 +314,6 @@ class WindSource:
 
                 if not result:
                     continue
-
-                self._increment_quota(1)
 
                 # 解析结果
                 content = result.get('content', [])
@@ -408,8 +406,6 @@ class WindSource:
             if not result:
                 return
 
-            self._increment_quota(1)
-
             content = result.get('content', [])
             for item in content:
                 text = item.get('text', '')
@@ -498,8 +494,6 @@ class WindSource:
 
                 if not result:
                     continue
-
-                self._increment_quota(1)
 
                 content = result.get('content', [])
                 for item in content:

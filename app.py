@@ -170,6 +170,7 @@ class Api:
         self._ws_config = None
         self._token = None
         self._ws = None
+        self._ws_reconnect_delay = 2  # WS 重连退避秒数（连接成功重置——审计 P3）
         self._ws_thread = None
         self._running = False
         self._data_source_manager = None
@@ -766,7 +767,6 @@ class Api:
         path = cfg.get('path', '/')
         ws_url = f"{scheme}://{host}:{port}{path}?token={requests.utils.quote(self._token)}"
 
-        delay = 2
         while self._running:
             try:
                 self._ws = websocket.WebSocketApp(
@@ -783,11 +783,12 @@ class Api:
 
             if not self._running:
                 break
-            logger.info('WebSocket 断线，%d秒后重连...', int(delay))
-            time.sleep(delay)
-            delay = min(delay * 1.5, 30)
+            logger.info('WebSocket 断线，%d秒后重连...', int(self._ws_reconnect_delay))
+            time.sleep(self._ws_reconnect_delay)
+            self._ws_reconnect_delay = min(self._ws_reconnect_delay * 1.5, 30)
 
     def _on_ws_open(self):
+        self._ws_reconnect_delay = 2  # 连接成功重置退避（原不重置，长断线恢复后仍等最大退避——审计 P3）
         logger.info('WebSocket 连接已建立')
         self._notify_js('ws_open', '')
 
@@ -994,7 +995,7 @@ class Api:
             params = {
                 'industryCode': '*', 'pageSize': 50, 'industry': '*',
                 'rating': '', 'ratingChange': '',
-                'beginTime': '2024-01-01', 'endTime': '2026-12-31',
+                'beginTime': '2024-01-01', 'endTime': f"{time.localtime().tm_year}-12-31",  # 动态取当前年（审计 P3）
                 'pageNo': 1, 'fields': '', 'qType': 0, 'orgCode': '',
             }
             resp = _http.get(url, params=params, timeout=15)

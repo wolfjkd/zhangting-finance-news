@@ -20,7 +20,6 @@
 降级链：AKShare → Tushare → efinance
 """
 
-import hashlib
 import random
 import time
 import logging
@@ -290,11 +289,8 @@ def _parse_datetime(dt_str: str) -> int:
     return int(time.time())
 
 
-def _make_aid(source_id: str, unique_key: str) -> str:
-    """生成唯一 aid"""
-    h = hashlib.md5(f"{source_id}:{unique_key}".encode()).hexdigest()[:12]
-    return f"{source_id}_{h}"
-
+# 审计 P3：原四份逐字重复的 _make_aid 收口共享模块（调用点名称不变）
+from news_common import make_aid as _make_aid
 
 # ===== 双重去重工具 =====
 

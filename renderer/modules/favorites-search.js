@@ -86,7 +86,7 @@
       DOM.$favoritesList.innerHTML = favorites.map(fav => `
         <div class="favorite-item" data-id="${fav.id}">
           <div class="fav-title">${U().esc(fav.title)}</div>
-          <div class="fav-meta">${fav.source || ''} · ${U().formatTime(fav.timestamp)}</div>
+          <div class="fav-meta">${U().esc(fav.source || '')} · ${U().formatTime(fav.timestamp)}</div>
           <div class="fav-actions">
             <button class="btn-fav-copy">复制</button>
             <button class="btn-fav-remove">取消收藏</button>
@@ -151,7 +151,7 @@
       DOM.$searchResults.innerHTML = results.map(msg => `
         <div class="search-result-item" data-id="${msg.id}">
           <div class="result-title">${U().esc(msg.title)}</div>
-          <div class="result-meta">${msg.source || ''} · ${U().formatTime(msg.timestamp)} · ${msg.category || ''}</div>
+          <div class="result-meta">${U().esc(msg.source || '')} · ${U().formatTime(msg.timestamp)} · ${U().esc(msg.category || '')}</div>
         </div>
       `).join('');
 

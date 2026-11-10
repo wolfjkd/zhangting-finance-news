@@ -6,7 +6,6 @@
 
 import json
 import time
-import hashlib
 import threading
 import requests
 import logging
@@ -337,11 +336,8 @@ def _get_json(url, params=None, timeout=10):
     return None
 
 
-def _make_aid(source_id: str, unique_key: str) -> str:
-    """生成唯一 aid，避免与其他数据源的 aid 冲突"""
-    h = hashlib.md5(f"{source_id}:{unique_key}".encode()).hexdigest()[:12]
-    return f"{source_id}_{h}"
-
+# 审计 P3：原四份逐字重复的 _make_aid 收口共享模块（调用点名称不变）
+from news_common import make_aid as _make_aid
 
 class DataSourceType(Enum):
     WEBSOCKET = "websocket"
@@ -1582,9 +1578,10 @@ class DataSourceManager:
         if source_id == "research":
             url = source.endpoints["reports"]
             t0 = time.time()
+            _year = time.localtime().tm_year  # 动态取当前年，原硬编码 2026 起 2027 静默失效（审计 P3）
             data = _get_json(url, {"industryCode": "*", "pageSize": 1, "industry": "*",
-                                   "pageNo": 1, "qType": 0, "beginTime": "2026-01-01",
-                                   "endTime": "2026-12-31"}, timeout=8)
+                                   "pageNo": 1, "qType": 0, "beginTime": f"{_year}-01-01",
+                                   "endTime": f"{_year}-12-31"}, timeout=8)
             latency = int((time.time() - t0) * 1000)
             if data and data.get("data"):
                 return {"success": True, "message": "连接成功", "latency": latency}

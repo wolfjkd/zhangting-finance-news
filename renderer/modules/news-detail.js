@@ -43,9 +43,13 @@
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) overlay.remove();
     });
-    overlay.querySelector('.news-detail-close').addEventListener('click', () => overlay.remove());
+    const closeOverlay = () => {
+      document.removeEventListener('keydown', escHandler);
+      overlay.remove();
+    };
+    overlay.querySelector('.news-detail-close').addEventListener('click', closeOverlay);
     const escHandler = (e) => {
-      if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+      if (e.key === 'Escape') closeOverlay();
     };
     document.addEventListener('keydown', escHandler);
 
