@@ -50,7 +50,7 @@
 
   async function checkWatchlistAlerts() {
     if (!S().watchlistAlertEnabled) return;
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
 
     // 收盘后不执行自选股异动提醒（交易时间：9:25-11:30, 13:00-15:00）
     const dateNow = new Date();
@@ -66,7 +66,7 @@
     if (!inMorning && !inAfternoon) return;
 
     try {
-      const watchlist = await window.historyStorage.getAllWatchlist();
+      const watchlist = await window.ztfi.historyStorage.getAllWatchlist();
       if (!watchlist || watchlist.length === 0) return;
 
       // 获取所有自选股代码

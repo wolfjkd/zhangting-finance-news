@@ -3,7 +3,7 @@
  *
  * 覆盖：checkFavoriteStatus（收藏状态回填）/ toggleFavorite（收藏切换）/ updateFavoritesBadge（徽章）/
  *       loadFavorites（收藏列表对话框）/ performSearch（历史搜索对话框）。
- * 接缝：数据层由 window.historyStorage 承载；host 仅 showToast + debugMode；
+ * 接缝：数据层由 window.ztfi.historyStorage 承载；host 仅 showToast + debugMode；
  *       DOM 走 window.ztfi.dom，esc/formatTime 走 utils。
  * 加载顺序：core → utils → dom → … → favorites-search → app.js。
  */
@@ -20,9 +20,9 @@
 
   // ===== 收藏功能 =====
   async function checkFavoriteStatus(messageId, btn) {
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
     try {
-      const isFav = await window.historyStorage.isFavorite(messageId);
+      const isFav = await window.ztfi.historyStorage.isFavorite(messageId);
       if (isFav) {
         btn.classList.add('favorited');
       }
@@ -32,21 +32,21 @@
   }
 
   async function toggleFavorite(item, btn) {
-    if (!window.historyStorage) {
+    if (!window.ztfi.historyStorage) {
       console.warn('收藏功能未初始化');
       return;
     }
 
     const messageId = item.aid;
     try {
-      const isFav = await window.historyStorage.isFavorite(messageId);
+      const isFav = await window.ztfi.historyStorage.isFavorite(messageId);
 
       if (isFav) {
-        await window.historyStorage.removeFavorite(messageId);
+        await window.ztfi.historyStorage.removeFavorite(messageId);
         btn.classList.remove('favorited');
         if (H().debugMode) console.log('取消收藏:', item.title);
       } else {
-        await window.historyStorage.addFavorite(item);
+        await window.ztfi.historyStorage.addFavorite(item);
         btn.classList.add('favorited');
         if (H().debugMode) console.log('已收藏:', item.title);
       }
@@ -57,9 +57,9 @@
   }
 
   async function updateFavoritesBadge() {
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
     try {
-      const count = await window.historyStorage.getFavoritesCount();
+      const count = await window.ztfi.historyStorage.getFavoritesCount();
       if (DOM.$favoritesBadge) {
         if (count > 0) {
           DOM.$favoritesBadge.textContent = count;
@@ -74,9 +74,9 @@
   }
 
   async function loadFavorites() {
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
     try {
-      const favorites = await window.historyStorage.getAllFavorites();
+      const favorites = await window.ztfi.historyStorage.getAllFavorites();
 
       if (!favorites || favorites.length === 0) {
         DOM.$favoritesList.innerHTML = '<div class="favorites-empty">暂无收藏消息</div>';
@@ -115,7 +115,7 @@
       DOM.$favoritesList.querySelectorAll('.btn-fav-remove').forEach((btn, idx) => {
         btn.addEventListener('click', async () => {
           const fav = favorites[idx];
-          await window.historyStorage.removeFavorite(fav.id);
+          await window.ztfi.historyStorage.removeFavorite(fav.id);
           updateFavoritesBadge();
           loadFavorites();
           H().showToast('已取消收藏');
@@ -128,7 +128,7 @@
   }
 
   async function performSearch() {
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
 
     const query = DOM.$searchInput.value.trim();
     const category = DOM.$searchCategory.value || null;
@@ -137,7 +137,7 @@
     try {
       DOM.$searchResults.innerHTML = '<div class="search-empty">搜索中...</div>';
 
-      const results = await window.historyStorage.searchMessages(query, {
+      const results = await window.ztfi.historyStorage.searchMessages(query, {
         limit: 50,
         category,
         priority

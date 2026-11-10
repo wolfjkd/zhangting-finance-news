@@ -3,7 +3,7 @@
  *
  * 覆盖：showWatchlistDialog（分组列表 + 增删改 + 移动）、updateWatchlistBadge、
  *       createStockItemHTML、bindWatchlistItemEvents（含分时图）、showStockQuoteDialog。
- * 接缝：数据层已由 renderer/modules/history-storage.js（window.historyStorage）承载，
+ * 接缝：数据层已由 renderer/modules/history-storage.js（window.ztfi.historyStorage）承载，
  *       本模块只做「视图 + 交互」，仅依赖极少 host 钩子：
  *   - showToast（app.js）
  *   - debugMode（DEBUG_MODE，仅用于一条调试日志）
@@ -22,15 +22,15 @@
 
   // ===== 自选股功能 =====
   async function showWatchlistDialog() {
-    if (!window.historyStorage) {
+    if (!window.ztfi.historyStorage) {
       console.warn('自选股功能未初始化');
       return;
     }
 
     try {
-      const watchlist = await window.historyStorage.getAllWatchlist();
-      const groups = await window.historyStorage.getAllWatchlistGroups();
-      const count = await window.historyStorage.getWatchlistCount();
+      const watchlist = await window.ztfi.historyStorage.getAllWatchlist();
+      const groups = await window.ztfi.historyStorage.getAllWatchlistGroups();
+      const count = await window.ztfi.historyStorage.getWatchlistCount();
 
       const dialog = document.createElement('div');
       dialog.className = 'watchlist-dialog';
@@ -140,7 +140,7 @@
           const resp = U().unwrapResult(result);
 
           if (resp.status === 'ok' && resp.quote) {
-            await window.historyStorage.addWatchlistStock({
+            await window.ztfi.historyStorage.addWatchlistStock({
               code: code,
               name: resp.quote.name
             }, groupId);
@@ -162,7 +162,7 @@
       dialog.querySelector('#watchlistAddGroupBtn').addEventListener('click', async () => {
         const name = prompt('输入分组名称：');
         if (name && name.trim()) {
-          await window.historyStorage.createWatchlistGroup(name.trim());
+          await window.ztfi.historyStorage.createWatchlistGroup(name.trim());
           dialog.remove();
           showWatchlistDialog();
         }
@@ -188,7 +188,7 @@
           const groupName = btn.closest('.watchlist-group-header').querySelector('.watchlist-group-name').textContent;
           const newName = prompt('输入新名称：', groupName);
           if (newName && newName.trim()) {
-            await window.historyStorage.renameWatchlistGroup(groupId, newName.trim());
+            await window.ztfi.historyStorage.renameWatchlistGroup(groupId, newName.trim());
             dialog.remove();
             showWatchlistDialog();
           }
@@ -201,7 +201,7 @@
           e.stopPropagation();
           const groupId = btn.dataset.group;
           if (confirm('删除分组后，组内股票将移至"未分组"，确定删除？')) {
-            await window.historyStorage.deleteWatchlistGroup(groupId);
+            await window.ztfi.historyStorage.deleteWatchlistGroup(groupId);
             dialog.remove();
             showWatchlistDialog();
           }
@@ -224,9 +224,9 @@
   }
 
   async function updateWatchlistBadge() {
-    if (!D().$watchlistBadge || !window.historyStorage) return;
+    if (!D().$watchlistBadge || !window.ztfi.historyStorage) return;
     try {
-      const count = await window.historyStorage.getWatchlistCount();
+      const count = await window.ztfi.historyStorage.getWatchlistCount();
       if (count > 0) {
         D().$watchlistBadge.textContent = count;
         D().$watchlistBadge.style.display = 'inline';
@@ -271,10 +271,10 @@
         if (!confirm(`确定移除 ${code} 吗？`)) return;
 
         try {
-          await window.historyStorage.removeWatchlistStock(code);
+          await window.ztfi.historyStorage.removeWatchlistStock(code);
           item.remove();
 
-          const newCount = await window.historyStorage.getWatchlistCount();
+          const newCount = await window.ztfi.historyStorage.getWatchlistCount();
           dialog.querySelector('.watchlist-count').textContent = newCount + ' 只';
           updateWatchlistBadge();
 
@@ -363,7 +363,7 @@
         const item = btn.closest('.watchlist-item');
         const code = item.dataset.code;
 
-        const groups = await window.historyStorage.getAllWatchlistGroups();
+        const groups = await window.ztfi.historyStorage.getAllWatchlistGroups();
 
         // 显示分组选择对话框
         const menu = document.createElement('div');
@@ -373,7 +373,7 @@
         const ungroupedBtn = document.createElement('button');
         ungroupedBtn.textContent = '未分组';
         ungroupedBtn.onclick = async () => {
-          await window.historyStorage.updateWatchlistStockGroup(code, 'ungrouped');
+          await window.ztfi.historyStorage.updateWatchlistStockGroup(code, 'ungrouped');
           menu.remove();
           dialog.remove();
           showWatchlistDialog();
@@ -384,7 +384,7 @@
           const groupBtn = document.createElement('button');
           groupBtn.textContent = group.name;
           groupBtn.onclick = async () => {
-            await window.historyStorage.updateWatchlistStockGroup(code, group.id);
+            await window.ztfi.historyStorage.updateWatchlistStockGroup(code, group.id);
             menu.remove();
             dialog.remove();
             showWatchlistDialog();
@@ -430,7 +430,7 @@
         }
 
         try {
-          await window.historyStorage.updateWatchlistStockAlertThreshold(code, threshold);
+          await window.ztfi.historyStorage.updateWatchlistStockAlertThreshold(code, threshold);
           if (H().debugMode) console.log(`[自选股] 已更新 ${code} 的预警阈值为 ${threshold}%`);
         } catch (err) {
           console.error('更新预警阈值失败:', err);

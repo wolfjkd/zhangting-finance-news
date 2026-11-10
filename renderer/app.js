@@ -246,8 +246,8 @@
 
     // 2. 从后端初始化自选股（打包后 IndexedDB 不稳定）
     try {
-      if (window.historyStorage && window.historyStorage.initFromBackend) {
-        await window.historyStorage.initFromBackend();
+      if (window.ztfi.historyStorage && window.ztfi.historyStorage.initFromBackend) {
+        await window.ztfi.historyStorage.initFromBackend();
       }
     } catch (e) {}
     
@@ -586,11 +586,11 @@
 
   // ===== 自选股匹配标记 =====
   async function markWatchlistMatch(el, item) {
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
     
     try {
       const text = (item.title || '') + ' ' + (item.content || '');
-      const matches = await window.historyStorage.matchWatchlistInText(text);
+      const matches = await window.ztfi.historyStorage.matchWatchlistInText(text);
       
       if (matches && matches.length > 0) {
         el.classList.add('watchlist-match');

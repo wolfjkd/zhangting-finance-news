@@ -213,8 +213,8 @@ ALLOWED_WINDOW_GLOBALS = {
     '_onUpdateAvailable', 'openSettingsAtSection', '_onBackendEvent', '_settings',
     # 功能接口：AI 分析器 / 新手引导流程
     'aiAnalyzer', '_closeOnboarding', 'closeOnboarding', 'hideOnboardingTemporarily', 'resumeOnboarding',
-    # 旧全局模块（未迁 ztfi；historyStorage 随架构 #1 拆分迁移后应从白名单移除）
-    'newsClassifier', 'ThemeSystem', 'historyStorage',
+    # 旧全局模块（未迁 ztfi 的历史债；historyStorage 已随架构 #1 拆分迁入 window.ztfi 并移出白名单）
+    'newsClassifier', 'ThemeSystem',
 }
 
 WIN_ASSIGN_RE = re.compile(r'window\.([A-Za-z_$][\w$]*)((?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*=(?![=~>)])')

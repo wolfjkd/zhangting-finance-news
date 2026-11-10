@@ -2,7 +2,7 @@
  * ztfi.historyBuffer — 历史消息批量写入与清理
  *
  * 覆盖：historyBuffer 缓冲 + 批量 flush（BATCH_SIZE / FLUSH_INTERVAL）+ 定时清理（cleanupOldHistory）。
- * 接缝：数据层由 window.historyStorage 承载；host 仅 debugMode（调试日志）与 maxHistoryDays（清理边界）。
+ * 接缝：数据层由 window.ztfi.historyStorage 承载；host 仅 debugMode（调试日志）与 maxHistoryDays（清理边界）。
  * 加载顺序：core → utils → dom → … → history-buffer → app.js。
  */
 (function () {
@@ -20,9 +20,9 @@
   const FLUSH_INTERVAL = 2000;  // 刷新间隔(ms)
 
   function flushHistoryBuffer() {
-    if (!window.historyStorage || historyBuffer.length === 0) return;
+    if (!window.ztfi.historyStorage || historyBuffer.length === 0) return;
     const items = historyBuffer.splice(0, historyBuffer.length);
-    window.historyStorage.storeMessagesBatch(items).catch(() => {});
+    window.ztfi.historyStorage.storeMessagesBatch(items).catch(() => {});
   }
 
   function scheduleFlush() {
@@ -34,7 +34,7 @@
   }
 
   function storeToHistory(item) {
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
     try {
       historyBuffer.push(item);
       // 达到批量大小则立即刷新
@@ -53,10 +53,10 @@
   }
 
   async function cleanupOldHistory() {
-    if (!window.historyStorage) return;
+    if (!window.ztfi.historyStorage) return;
     try {
       const cutoffTime = Date.now() - H().maxHistoryDays * 24 * 60 * 60 * 1000;
-      const deletedCount = await window.historyStorage.deleteOldMessages(cutoffTime);
+      const deletedCount = await window.ztfi.historyStorage.deleteOldMessages(cutoffTime);
       if (H().debugMode && deletedCount > 0) {
         if (H().debugMode) console.log(`清理过期消息: 删除 ${deletedCount} 条`);
       }
