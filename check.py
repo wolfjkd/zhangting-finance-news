@@ -15,6 +15,7 @@
   4. bat 文件编码体检：GBK 可解 + CRLF + chcp 936（build.bat / 启动.bat）
   5. 版本号同步：以 version.json 为基准，比对 app.py / index.html /
      spec / build.bat / README.md / VERSION-CONTROL-RULES.md / 启动.bat
+  6. window.* 越界挂载扫描：模块全局只许挂 window.ztfi.*，其余挂载点须在白名单
 """
 import glob
 import json
@@ -202,6 +203,48 @@ def check_versions():
             fail(f'{rel}: {ver} 仅出现 {count} 次，应 ≥{min_count}（{why}）——版本号漏改')
 
 
+# ---------- 6. window.* 越界挂载扫描 ----------
+# 架构约定（v4.4.1 拆模块）：模块能力挂 window.ztfi.* 命名空间，禁止散挂 window 顶层。
+# 白名单仅收两类：① 冻结接口/事件桥（拆模块交接冻结的公开签名）② 旧全局模块
+# （未迁 ztfi 的历史债，迁移后应从白名单移除收紧）。
+ALLOWED_WINDOW_GLOBALS = {
+    'ztfi',  # 模块命名空间（window.ztfi 与 window.ztfi.<mod> 均放行）
+    # 冻结接口 / pywebview 事件桥（app.js / settings-panel / update-check）
+    '_onUpdateAvailable', 'openSettingsAtSection', '_onBackendEvent', '_settings',
+    # 功能接口：AI 分析器 / 新手引导流程
+    'aiAnalyzer', '_closeOnboarding', 'closeOnboarding', 'hideOnboardingTemporarily', 'resumeOnboarding',
+    # 旧全局模块（未迁 ztfi；historyStorage 随架构 #1 拆分迁移后应从白名单移除）
+    'newsClassifier', 'ThemeSystem', 'historyStorage',
+}
+
+WIN_ASSIGN_RE = re.compile(r'window\.([A-Za-z_$][\w$]*)((?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*=(?![=~>)])')
+
+
+def check_window_globals():
+    print('\n== 6. window.* 越界挂载扫描（模块只许挂 window.ztfi.*，白名单外报错）==')
+    js_files = sorted(glob.glob(os.path.join(ROOT, 'renderer', '*.js')) +
+                      glob.glob(os.path.join(ROOT, 'renderer', 'modules', '*.js')))
+    violations = []
+    for path in js_files:
+        rel = os.path.relpath(path, ROOT)
+        text = read_bytes(path).decode('utf-8', errors='replace')
+        for lineno, line in enumerate(text.split('\n'), start=1):
+            code = line.split('//')[0]  # 剥离行尾注释，防文档性提及误报
+            for m in WIN_ASSIGN_RE.finditer(code):
+                root_name = m.group(1)
+                subs = re.findall(r'[A-Za-z_$][\w$]*', m.group(2) or '')
+                if root_name == 'ztfi':
+                    continue  # window.ztfi 与 window.ztfi.<mod> 均为约定内挂载
+                if root_name in ALLOWED_WINDOW_GLOBALS:
+                    continue
+                violations.append(f'{rel}:{lineno} → window.{root_name}{"".join("." + s for s in subs)}')
+    if violations:
+        for v in violations:
+            fail(f'越界挂载（白名单外 window.* 赋值）: {v}')
+    else:
+        ok(f'window.* 挂载全在约定内（{len(js_files)} 个 JS 扫描，白名单 {len(ALLOWED_WINDOW_GLOBALS) - 1} 项）')
+
+
 def main():
     print('涨停财经聚合播报 · 护栏检查开始')
     check_python()
@@ -209,6 +252,7 @@ def main():
     check_modules()
     check_bat()
     check_versions()
+    check_window_globals()
     print('\n== 汇总 ==')
     if NOTES:
         for n in NOTES:
