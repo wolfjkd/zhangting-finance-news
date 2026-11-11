@@ -157,7 +157,9 @@ def _fetch_wallstreetcn() -> List[Dict]:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'application/json',
         }
-        resp = requests.get(url, params=params, headers=headers, timeout=10, trust_env=False)
+        session = requests.Session()
+        session.trust_env = False  # 国内源直连（AGENTS.md 硬条款；trust_env 是 Session 属性非 request 参数）
+        resp = session.get(url, params=params, headers=headers, timeout=10)
         if resp.status_code != 200:
             logger.warning("华尔街见闻 HTTP %d", resp.status_code)
             return []

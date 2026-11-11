@@ -52,9 +52,10 @@ class CustomAdapter(AIAnalyzer):
     def analyze(self, title: str, content: str) -> dict:
         try:
             prompt = self._build_prompt(title, content)
-            response = requests.post(
+            session = requests.Session()
+            session.trust_env = False  # MiMo API 直连（AGENTS.md 硬条款；trust_env 是 Session 属性非 request 参数）
+            response = session.post(
                 self.base_url,
-                trust_env=False,
                 headers={
                     'Authorization': f'Bearer {self.api_key}',
                     'Content-Type': 'application/json'

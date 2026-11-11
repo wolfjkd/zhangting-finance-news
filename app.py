@@ -660,7 +660,9 @@ class Api:
     def fetch_initial(self):
         logger.info('开始抓取初始页面: %s', SOURCE_URL)
         try:
-            resp = requests.get(SOURCE_URL, timeout=15, trust_env=False, headers={
+            # _http 为模块级直连 Session（trust_env=False）——trust_env 是 Session 属性，
+            # 不能作 request kwarg（会 TypeError: Session.request() got an unexpected keyword argument）
+            resp = _http.get(SOURCE_URL, timeout=15, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             })
             resp.encoding = 'utf-8'
@@ -744,11 +746,10 @@ class Api:
 
     def load_more(self, oldest_ctime):
         try:
-            resp = requests.post(
+            resp = _http.post(
                 'https://724.guzhang.com/index',
                 json={'stime': int(oldest_ctime)},
                 timeout=10,
-                trust_env=False,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Content-Type': 'application/json'

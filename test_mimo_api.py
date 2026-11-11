@@ -52,7 +52,9 @@ print("正在发送请求...")
 print("-"*60)
 
 try:
-    response = requests.post(full_url, headers=headers, json=data, timeout=30, trust_env=False)
+    session = requests.Session()
+    session.trust_env = False
+    response = session.post(full_url, headers=headers, json=data, timeout=30)
     print(f"\n响应状态码: {response.status_code}")
     print(f"响应Headers: {dict(response.headers)}")
     print(f"\n响应内容:")
